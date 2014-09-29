@@ -1,0 +1,16 @@
+#! /usr/bin/env python
+# Copyright (c) 2014 Foudil Brétel. All rights reserved.
+
+def configure(ctx):
+    ctx.env.TEST_DIR = ctx.path.get_src().abspath()
+
+
+def build(ctx):
+    sources = ctx.path.ant_glob('*.c')
+    for t in sources:
+        name = t.name
+        ctx.program(
+            source   = name,
+            target   = name[:-2],
+            includes = ['.', ctx.env.SRC_DIR]
+        )
