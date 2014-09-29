@@ -72,6 +72,7 @@ int main ()
     assert(item == first);
     assert(list.next == second);
 
+    // FIXME: mem cleaning
     /* pp_list_erase (&list, &that.item); */
     /* pp_list_erase (&list, &other.item); */
     /* pp_list_item_term (&that.item); */
