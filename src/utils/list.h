@@ -25,6 +25,14 @@ static inline void list_init(struct list_item* item) {
 }
 
 /**
+ * Test wether a list is empty.
+ */
+static inline int list_is_empty(struct list_item* list)
+{
+    return list->next == list;
+}
+
+/**
  * Insert an item between item @at and the previous one.
  */
 static inline void list_insert(struct list_item* at, struct list_item* new)
@@ -40,10 +48,6 @@ static inline void list_insert(struct list_item* at, struct list_item* new)
  */
 static inline void list_prepend(struct list_item* list, struct list_item* item) {
     list_insert(list->next, item);
-    /* list->next->prev = item; */
-    /* item->next = list->next; */
-    /* item->prev = list; */
-    /* list->next = item; */
 }
 
 /**
@@ -51,48 +55,32 @@ static inline void list_prepend(struct list_item* list, struct list_item* item) 
  */
 static inline void list_append(struct list_item* list, struct list_item* item) {
     list_insert(list, item);
-    /* list->prev->next = item; */
-    /* item->prev = list->prev; */
-    /* item->next = list; */
-    /* list->prev = item; */
 }
 
 /**
  * Remove the item @at from a list and return it.
  */
-static inline struct list_item* list_delete(struct list_item* list,
-                                            struct list_item* at)
+static inline void list_delete(struct list_item* item)
 {
-    at->next->prev = list;
-    list->next = at->next;
-    list_init(at);
-    return at;
+    item->next->prev = item->prev;
+    item->prev->next = item->next;
+    list_init(item);
 }
 
 /**
  * Remove the first item from a list and return it.
  */
-static inline struct list_item* list_delete_first(struct list_item* list)
+static inline void list_delete_first(struct list_item* list)
 {
-    return list_delete(list, list->next);
-    /* struct list_item* first = list->next; */
-    /* first->next->prev = list; */
-    /* list->next = first->next; */
-    /* list_init(first); */
-    /* return first; */
+    list_delete(list->next);
 }
 
 /**
  * Remove the last item from a list and return it.
  */
-static inline struct list_item* list_delete_last(struct list_item* list)
+static inline void list_delete_last(struct list_item* list)
 {
-    return list_delete(list, list->prev);
-    /* struct list_item* last = list->prev; */
-    /* last->prev->next = list; */
-    /* list->prev = last->prev; */
-    /* list_init(last); */
-    /* return last; */
+    list_delete(list->prev);
 }
 
 /**

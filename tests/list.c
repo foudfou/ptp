@@ -15,10 +15,12 @@ int main ()
     struct something one = {1, LIST_ITEM_DECL(one.item)};
     assert(&one.item == one.item.prev);
     assert(&one.item == one.item.next);
+    assert(list_is_empty(&one.item));
 
     /* List declaration and initialization */
     struct list_item list = LIST_ITEM_DECL(list);
     assert(&list == list.prev && list.prev == list.next);
+    assert(list_is_empty(&list));
     list.next = &one.item; list.prev = &one.item;
     list_init(&list);
     assert(&list == list.prev && list.prev == list.next);
@@ -67,17 +69,9 @@ int main ()
     /* List delete/remove/pop */
     struct list_item * first = list.next;
     struct list_item * second = list.next->next;
-    struct list_item * item = list_delete_first(&list);
-    assert(item == item->prev && item->prev == item->next);
-    assert(item == first);
+    list_delete_first(&list);
+    assert(first == first->prev && first->prev == first->next);
     assert(list.next == second);
-
-    // FIXME: mem cleaning
-    /* pp_list_erase (&list, &that.item); */
-    /* pp_list_erase (&list, &other.item); */
-    /* pp_list_item_term (&that.item); */
-    /* pp_list_item_term (&other.item); */
-    /* pp_list_term (&list); */
 
     return 0;
 }
