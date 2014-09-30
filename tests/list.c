@@ -1,4 +1,3 @@
-/* #include <stdio.h> */
 #include <assert.h>
 #include "../src/utils/cont.h"
 #include "../src/utils/list.h"
