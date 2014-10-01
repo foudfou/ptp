@@ -12,9 +12,9 @@ static const unsigned char HASH_SIZE = 0xff;
 #define HASH_KEY_MEMBER key
 #define HASH_FUNCTION_PROVIDED
 HASH_TYPE {
+    struct list_item HASH_ITEM_MEMBER;
     HASH_KEY_TYPE HASH_KEY_MEMBER;
     int val;
-    struct list_item HASH_ITEM_MEMBER;
 };
 #include "../src/utils/hash.h"
 
@@ -54,13 +54,13 @@ int main ()
     assert(hash[1].prev == hash[1].next);
 
     /* Hash insertion */
-    struct stoi one = {"one", 1, LIST_ITEM_DECL(one.item)}; // static decl
-    hash_stoi_insert(hash, HASH_SIZE, one.key, &one.item);
-    struct stoi bogus_one = {"one", 10, LIST_ITEM_DECL(one.item)};
+    struct stoi one = {.key="one", .val=1, .item=LIST_ITEM_INIT(one.item)}; // static decl
+    hash_stoi_insert(hash, HASH_SIZE, one.key, &(one.item));
+    struct stoi bogus_one = {.key="one", .val=10, .item=LIST_ITEM_INIT(one.item)};
     // duplicate key not checked !!
-    hash_stoi_insert(hash, HASH_SIZE, bogus_one.key, &bogus_one.item);
-    struct stoi two = {"two", 2, LIST_ITEM_DECL(two.item)};
-    hash_stoi_insert(hash, HASH_SIZE, two.key, &two.item);
+    hash_stoi_insert(hash, HASH_SIZE, bogus_one.key, &(bogus_one.item));
+    struct stoi two = {.key="two", .val=2, .item=LIST_ITEM_INIT(two.item)};
+    hash_stoi_insert(hash, HASH_SIZE, two.key, &(two.item));
 
     /* Hash getting item */
     struct stoi * found = hash_stoi_get(hash, HASH_SIZE, "two");
@@ -89,10 +89,10 @@ int main ()
 
 
     /* Another hash */
-    struct person bob = {LIST_ITEM_DECL(bob.item), 0xad00fe00, {"bob", 28, 'M'}};
-    DECLARE_HASHTABLE(phone_book, HASH_SIZE);
+    struct person bob = {LIST_ITEM_INIT(bob.item), 0xad00fe00, {"bob", 28, 'M'}};
+    HASH_DECL(phone_book, HASH_SIZE);
     hash_init(phone_book, HASH_SIZE);
-    hash_person_insert(phone_book, HASH_SIZE, bob.key, &bob.item);
+    hash_person_insert(phone_book, HASH_SIZE, bob.key, &(bob.item));
     struct person * someone = hash_person_get(phone_book, HASH_SIZE, 0xad00fe00);
     assert(!strncmp(someone->val.name, "bob", 3));
 

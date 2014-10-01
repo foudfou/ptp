@@ -14,7 +14,7 @@
  *
  * The size is likely to be a reusable constant.
  */
-#define DECLARE_HASHTABLE(name, size)           \
+#define HASH_DECL(name, size)                   \
     struct list_item name[size]
 
 /**

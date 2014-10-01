@@ -11,7 +11,7 @@ struct list_item {
     struct list_item * next;
 };
 
-#define LIST_ITEM_DECL(name) { &(name), &(name) }
+#define LIST_ITEM_INIT(name) { &(name), &(name) }
 
 /**
  * Initialize a list or an item.
