@@ -6,14 +6,15 @@ static const unsigned char HASH_SIZE = 0xff;
 
 /*  Define a hash type. */
 #define HASH_NAME stoi
-#define HASH_ENTRY_TYPE struct stoi
-#define HASH_ENTRY_ITEM item
+#define HASH_TYPE struct stoi
+#define HASH_ITEM_MEMBER item
 #define HASH_KEY_TYPE const char *
+#define HASH_KEY_MEMBER key
 #define HASH_FUNCTION_PROVIDED
-HASH_ENTRY_TYPE {
-    HASH_KEY_TYPE key;
+HASH_TYPE {
+    HASH_KEY_TYPE HASH_KEY_MEMBER;
     int val;
-    struct list_item HASH_ENTRY_ITEM;
+    struct list_item HASH_ITEM_MEMBER;
 };
 #include "../src/utils/hash.h"
 
@@ -32,12 +33,13 @@ static inline uint32_t hash_stoi_hash(const char* str)
 
 /* Here's how we create another hash type. */
 #define HASH_NAME person
-#define HASH_ENTRY_TYPE struct person
-#define HASH_ENTRY_ITEM item
+#define HASH_TYPE struct person
+#define HASH_ITEM_MEMBER item
 #define HASH_KEY_TYPE uint64_t
-HASH_ENTRY_TYPE {
-    struct list_item HASH_ENTRY_ITEM;
-    HASH_KEY_TYPE key;
+#define HASH_KEY_MEMBER key
+HASH_TYPE {
+    struct list_item HASH_ITEM_MEMBER;
+    HASH_KEY_TYPE HASH_KEY_MEMBER;
     struct {char* name; int age; char gender;} val;
 };
 #include "../src/utils/hash.h"  // imported multiple times!

@@ -17,6 +17,9 @@
 #define DECLARE_HASHTABLE(name, size)           \
     struct list_item name[size]
 
+/**
+ * Initialize a hash.
+ */
 static inline void hash_init(struct list_item* hash, const size_t size)
 {
     for (size_t i = 0; i < size; i++) {
@@ -43,19 +46,22 @@ static inline void hash_delete(struct list_item* item)
 #endif  /* HASH_H */
 
 
+#ifndef HASH_NAME
+    #error must give this map type a name by defining HASH_NAME
+#endif
+#ifndef HASH_TYPE
+    #error must define HASH_TYPE
+#endif
+#ifndef HASH_ITEM_MEMBER
+    #error must define HASH_ITEM_MEMBER
+#endif
 #if defined(HASH_KEY_TYPE)
     assert_compilation(!(sizeof(HASH_KEY_TYPE) % 4));
 #else
     #error must define HASH_KEY_TYPE
 #endif
-#ifndef HASH_NAME
-    #error must give this map type a name by defining HASH_NAME
-#endif
-#ifndef HASH_ENTRY_TYPE
-    #error must define HASH_ENTRY_TYPE
-#endif
-#ifndef HASH_ENTRY_ITEM
-    #error must define HASH_ENTRY_ITEM
+#ifndef HASH_KEY_MEMBER
+    #error must define HASH_KEY_MEMBER
 #endif
 
 #define HASH_FUNCTION(name) HASH_GLUE(HASH_GLUE(HASH_GLUE(hash_, HASH_NAME), _), name)
@@ -90,26 +96,31 @@ HASH_FUNCTION(insert)(struct list_item* hash, const size_t size,
     list_prepend(&hash[index], item);
 }
 
-/*  Define your own facility function for retrieving items. */
-static inline HASH_ENTRY_TYPE*
+/**
+ * Gets an entry by its key.
+ *
+ * Returns NULL when not found.
+ */
+static inline HASH_TYPE*
 HASH_FUNCTION(get)(struct list_item* hash, const size_t size, HASH_KEY_TYPE key)
 {
     uint32_t index = HASH_FUNCTION(hash)(key) % size;
     struct list_item* slot = &hash[index];
     struct list_item* it = slot;
-    HASH_ENTRY_TYPE* found;
+    HASH_TYPE* found;
     list_for(it, slot) {
-        found = cont(it, HASH_ENTRY_TYPE, HASH_ENTRY_ITEM);
-        if (found->key == key)
+        found = cont(it, HASH_TYPE, HASH_ITEM_MEMBER);
+        if (found->HASH_KEY_MEMBER == key)
             return found;
     }
     return NULL;
 }
 
 
-#undef HASH_ENTRY_ITEM
-#undef HASH_ENTRY_TYPE
+#undef HASH_ITEM_MEMBER
 #undef HASH_FUNCTION_PROVIDED
 #undef HASH_FUNCTION
-#undef HASH_NAME
 #undef HASH_KEY_TYPE
+#undef HASH_KEY_MEMBER
+#undef HASH_TYPE
+#undef HASH_NAME
