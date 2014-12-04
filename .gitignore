@@ -32,3 +32,4 @@ build/
 .lock-waf*
 .waf*
 TAGS
+data/

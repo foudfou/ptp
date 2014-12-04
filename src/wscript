@@ -11,4 +11,12 @@ def build(ctx):
     #     source   = 'main.c',
     #     target   = ctx.env.APPNAME,
     # )
-    pass
+
+    if ctx.options.do_valgrind:
+        ctx(name = 'valgrind',
+            rule   = ('${env.VALGRIND} --leak-check=full --show-leak-kinds=all'
+                      ' --error-exitcode=1 ${SRC[0].abspath()}'
+                      ' ${ctx.options.do_valgrind}'),
+            source = 'termites', # FIXME:
+            always = True,
+        )

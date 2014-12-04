@@ -14,3 +14,28 @@ def build(ctx):
             target   = name[:-2],
             includes = ['.', ctx.env.SRC_DIR]
         )
+
+    if ctx.options.do_coverage:
+        bldtest = ctx.path.get_bld()
+        bldsrc  = bldtest.parent.make_node('src')
+        # could also use --remove instead of --no-external
+        # FIXME: add bldsrc
+        # lcov_args = ' -c -d %s -d %s -d %s --no-external --quiet' % \
+        #             (ctx.env.SRC_DIR, bldsrc.abspath(), bldtest.abspath())
+        lcov_args = ' -c -d %s -d %s --no-external --quiet' % \
+                    (ctx.env.SRC_DIR, bldtest.abspath())
+        lcov_bin = ctx.env.LCOV[0]
+        print(type(lcov_bin))
+        ctx(name='lcov_ini', after='utest', always=True, rule=(
+            lcov_bin+lcov_args+' -i -o ${env.LCOV_DIR}/run_base.info'))
+        ctx(name='cov_run', after='lcov_ini', always=True, rule=
+            '${SRC}', source=ctx.env.TARGET_APP_TEST)
+        ctx(name='lcov_test', after='cov_run', always=True, rule=(
+            lcov_bin+lcov_args+' -o ${env.LCOV_DIR}/run_test.info'))
+        ctx(name='lcov_add', after='lcov_test', always=True, rule=(
+            lcov_bin+' -a ${env.LCOV_DIR}/run_base.info'
+            ' -a ${env.LCOV_DIR}/run_test.info'
+            ' -o ${env.LCOV_DIR}/run_total.info'))
+        ctx(name='cov_genhtml', always=True, after='lcov_add', rule=(
+            ctx.env.GENHTML[0] + ' --output-directory ${env.LCOV_DIR}'
+            ' ${env.LCOV_DIR}/run_total.info --quiet'))
