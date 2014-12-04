@@ -5,12 +5,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define FREE(p) do{                             \
+#define safe_free(p) do {                       \
         free(p);                                \
         p = NULL;                               \
     } while(0)
 
-#define FCLOSE(fid) do {                        \
+#define safe_fclose(fid) do {                   \
         fclose(fid);                            \
         fid = NULL;                             \
     } while(0)
