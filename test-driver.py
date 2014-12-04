@@ -1,3 +1,4 @@
+#!/bin/env python
 # Simple test driver
 #
 # Launches tests in parallel. Should be integrated to waf.
@@ -5,10 +6,11 @@ import multiprocessing
 import subprocess
 import shlex
 import glob
+import os
 
 from multiprocessing.pool import ThreadPool
 
-BUILD_DIR = 'build/'
+BUILD_DIR = 'build'
 
 COLORS = {
     "red": '[0;31m',
@@ -29,7 +31,12 @@ def call_proc(cmd):
 
 
 if __name__ == '__main__':
-    tests = [BUILD_DIR + f[:-2] for f in glob.glob('tests/*.c')]
+    tests = []
+    for f in glob.glob('tests/*.c'):
+        path = os.path.join(BUILD_DIR, f[:-2])
+        path = "/".join(path.split('\\'))  # win32
+        tests.append(path)
+
     expected_failure = ""       # FIXME: each test can have an expected result
     pool = ThreadPool(multiprocessing.cpu_count())
 

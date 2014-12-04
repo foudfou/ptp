@@ -32,13 +32,14 @@ def configure(ctx):
     ctx.msg("Compilation mode", release)
 
     ctx.env.append_unique("CFLAGS", [
-        '-Wall', '-pedantic', '-Wextra', '-std=c99', '-Wfatal-errors',
+        '-Wall', '-std=c99', '-Wfatal-errors', '-pedantic', '-Wextra',
     ])
 
     ctx.define('PACKAGE_NAME', APPNAME)
     ctx.define('PACKAGE_VERSION', VERSION)
     ctx.define('PACKAGE_COPYRIGHT',
                "Copyright (c) 2014 Foudil Brétel. All rights reserved.")
+    ctx.write_config_header('config.h')
 
 
 def build(ctx):
