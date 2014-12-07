@@ -1,8 +1,10 @@
 #include <assert.h>
+#include <stdint.h>
 #include <string.h>
 #include "../src/utils/list.h"
 
-static const unsigned char HASH_SIZE = 0xff;
+static const unsigned char HASH_SIZE     = 0xff;
+static const unsigned int KEY_MAX_LENGTH = 1024;
 
 /*  Define a hash type. */
 #define HASH_NAME stoi
@@ -10,26 +12,29 @@ static const unsigned char HASH_SIZE = 0xff;
 #define HASH_ITEM_MEMBER item
 #define HASH_KEY_TYPE const char *
 #define HASH_KEY_MEMBER key
-#define HASH_FUNCTION_PROVIDED
 HASH_TYPE {
     struct list_item HASH_ITEM_MEMBER;
     HASH_KEY_TYPE HASH_KEY_MEMBER;
     int val;
 };
-#include "../src/utils/hash.h"
 
-/* Provide our own hash function. We must:
-   - name it according to hash.h conventions
-   - make it return a uint32_t
-   - define HASH_FUNCTION_PROVIDED
-   Here is djb2 reported by Dan Bernstein in comp.lang.c */
-static inline uint32_t hash_stoi_hash(const char* str)
+/* We MUST provide our own hash function. See hash.h.
+ * Here is djb2 reported by Dan Bernstein in comp.lang.c */
+static inline uint32_t hash_stoi_hash(HASH_KEY_TYPE str)
 {
     unsigned long hash = 5381;
     int c;
     while ((c = *str++)) hash = ((hash << 5) + hash) + c;
     return hash;
 }
+
+/* We MUST provide our own key comparison function. See hash.h. */
+static inline int hash_stoi_compare(HASH_KEY_TYPE keyA, HASH_KEY_TYPE keyB)
+{
+    return strncmp(keyA, keyB, KEY_MAX_LENGTH);
+}
+#include "../src/utils/hash.h"
+
 
 /* Here's how we create another hash type. */
 #define HASH_NAME person
@@ -42,6 +47,16 @@ HASH_TYPE {
     HASH_KEY_TYPE HASH_KEY_MEMBER;
     struct {char* name; int age; char gender;} val;
 };
+
+static inline uint32_t hash_person_hash(HASH_KEY_TYPE key)
+{
+    return (uint32_t)key;
+}
+
+static inline int hash_person_compare(HASH_KEY_TYPE keyA, HASH_KEY_TYPE keyB)
+{
+    return keyB - keyA;
+}
 #include "../src/utils/hash.h"  // imported multiple times!
 
 

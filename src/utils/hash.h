@@ -1,8 +1,19 @@
 #ifndef HASH_H
 #define HASH_H
 /**
+ * A simple hash table inspired from the Linux Kernel and cjdns.
+ *
  * This header can be imported multiple times to create different hash types.
  * Just make sure to use a different HASH_NAME.
+ *
+ * Consumer MUST provide a hash function and a key comparison function, with the
+ * following signatures:
+ *
+ * uint32_t HASH_FUNCTION(hash)(HASH_KEY_TYPE key);
+ * int HASH_FUNCTION(compare)(HASH_KEY_TYPE keyA, HASH_KEY_TYPE keyB);
+ *
+ * The reason is that we can hardly make a hash function for all types (struct,
+ * char*, int). Neither can we compare keys of unknow formats.
  */
 
 #include "base.h"
@@ -68,23 +79,8 @@ static inline void hash_delete(struct list_item* item)
 #define HASH_GLUE(x, y) HASH_GLUE2(x, y)
 #define HASH_GLUE2(x, y) x ## y
 
-#if defined(HASH_FUNCTION_PROVIDED)
-    /**
-     * Consumer provided hash function.
-     */
-    static inline uint32_t HASH_FUNCTION(hash)(HASH_KEY_TYPE key);
-#else
-    /**
-     * Default hash function (last 4 bytes of the key).
-     */
-    static inline uint32_t HASH_FUNCTION(hash)(HASH_KEY_TYPE key)
-    {
-        return (uint32_t)key;
-    }
-#endif
-
 /**
- * Insert an list item into a hash.
+ * Insert a list item into a hash.
  *
  * @warning we don't check if an item with key @key has already been inserted!
  */
@@ -110,7 +106,7 @@ HASH_FUNCTION(get)(struct list_item* hash, const size_t size, HASH_KEY_TYPE key)
     HASH_TYPE* found;
     list_for(it, slot) {
         found = cont(it, HASH_TYPE, HASH_ITEM_MEMBER);
-        if (found->HASH_KEY_MEMBER == key)
+        if (!HASH_FUNCTION(compare)(found->HASH_KEY_MEMBER, key))
             return found;
     }
     return NULL;
@@ -118,7 +114,6 @@ HASH_FUNCTION(get)(struct list_item* hash, const size_t size, HASH_KEY_TYPE key)
 
 
 #undef HASH_ITEM_MEMBER
-#undef HASH_FUNCTION_PROVIDED
 #undef HASH_FUNCTION
 #undef HASH_KEY_TYPE
 #undef HASH_KEY_MEMBER
