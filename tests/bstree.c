@@ -1,75 +1,48 @@
 #include <assert.h>
-#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include "../src/utils/cont.h"
-#include "../src/utils/bstree.h"
+#include "../src/utils/bstree_defs.h"
 
-struct mytype {
-    struct bstree_node node;
-    char *key;
+static const unsigned int KEY_MAX_LENGTH = 1024;
+
+/*  Define a bstree type. */
+#define BSTREE_NAME my
+#define BSTREE_TYPE struct mytype
+#define BSTREE_NODE_MEMBER node
+#define BSTREE_KEY_TYPE const char *
+#define BSTREE_KEY_MEMBER key
+BSTREE_TYPE {
+    struct bstree_node BSTREE_NODE_MEMBER;
+    BSTREE_KEY_TYPE BSTREE_KEY_MEMBER;
 };
 
-struct mytype *my_search(struct bstree_node *tree, char *key)
+/* We MUST provide our own key comparison function. See bstree.h. */
+static inline int bstree_my_compare(BSTREE_KEY_TYPE keyA, BSTREE_KEY_TYPE keyB)
 {
-    struct bstree_node *it = tree;
-
-    while (it) {
-        struct mytype *data = cont(it, struct mytype, node);
-        int result = strcmp(key, data->key);
-
-        if (result == 0)
-            return data;
-        else
-            it = it->link[result > 0];
-    }
-    return NULL;
+    return strncmp(keyA, keyB, KEY_MAX_LENGTH);
 }
-
-bool my_insert(struct bstree_node **tree, struct mytype *data)
-{
-    /* We'll iterate on the *link* fields, which enables use to look for the
-       next node while keeping a hold on the current node. Hence the double
-       pointer. */
-    struct bstree_node **it = tree, *parent = NULL;
-
-    while (*it) {
-        struct mytype *this = cont(*it, struct mytype, node);
-        int result = strcmp(data->key, this->key);
-
-        if (result == 0)
-            return false;       // already there
-        else {
-            parent = *it;
-            it = &((*it)->link[result > 0]);
-        }
-    }
-
-    bstree_link_node(&data->node, parent, it);
-
-    return true;
-}
+#include "../src/utils/bstree.h"
 
 
-#include <stdio.h>
 int main ()
 {
     /* Btree declaration */
     BSTREE_DECL(tree);
     assert(!tree);
     assert(bstree_is_empty(tree));
-    assert(!my_search(tree, "hello"));
+    assert(!bstree_my_search(tree, "hello"));
 
     /* artificial tree */
     struct mytype t1 = { {NULL, {NULL,}}, "eee"};
     tree = &(t1.node);
-    assert(my_search(tree, "eee"));
+    assert(bstree_my_search(tree, "eee"));
     struct mytype t2 = { {NULL, {NULL,}}, "aaa"};
     struct mytype t3 = { {NULL, {NULL,}}, "mmm"};
     t1.node.link[LEFT] = &(t2.node);
     t1.node.link[RIGHT] = &(t3.node);
-    assert(my_search(tree, "aaa"));
-    assert(my_search(tree, "mmm"));
+    assert(bstree_my_search(tree, "aaa"));
+    assert(bstree_my_search(tree, "mmm"));
 
     /* start over */
     tree = NULL;
@@ -79,21 +52,21 @@ int main ()
     BSTREE_NODE_INIT(t3.node);
 
     /* Btree insertion */
-    assert(my_insert(&tree, &t1));
+    assert(bstree_my_insert(&tree, &t1));
     assert(tree == &(t1.node));
     assert(!(*tree).parent);
-    assert(my_search(tree, "eee"));
-    assert(!my_search(tree, "mmm"));
-    assert(!my_insert(&tree, &t1));
-    assert(my_insert(&tree, &t2));
-    assert(my_insert(&tree, &t3));
+    assert(bstree_my_search(tree, "eee"));
+    assert(!bstree_my_search(tree, "mmm"));
+    assert(!bstree_my_insert(&tree, &t1));
+    assert(bstree_my_insert(&tree, &t2));
+    assert(bstree_my_insert(&tree, &t3));
     assert(t1.node.link[LEFT] == &(t2.node));
     assert(t1.node.link[RIGHT] == &(t3.node));
-    assert(my_search(tree, "mmm"));
+    assert(bstree_my_search(tree, "mmm"));
 
     /* Btree deletion */
     struct mytype t4 = { {NULL, {NULL,}}, "rrr"};
-    assert(my_insert(&tree, &t4));
+    assert(bstree_my_insert(&tree, &t4));
     /*
      *   e
      *  / \
@@ -102,11 +75,11 @@ int main ()
      *       r
      */
     bstree_delete(&tree, &t3.node);
-    assert(!my_search(tree, "mmm"));
+    assert(!bstree_my_search(tree, "mmm"));
     assert(t1.node.link[LEFT] == &(t2.node));
     assert(t1.node.link[RIGHT] == &(t4.node));
     assert(bstree_delete(&tree, &t4.node));
-    assert(!my_search(tree, "rrr"));
+    assert(!bstree_my_search(tree, "rrr"));
     assert(t1.node.link[LEFT] == &(t2.node));
     assert(!t1.node.link[RIGHT]);
 
@@ -119,14 +92,14 @@ int main ()
     struct mytype eight  = { {NULL, {NULL,}}, "8"};
     struct mytype nine   = { {NULL, {NULL,}}, "9"};
     struct mytype eleven = { {NULL, {NULL,}}, "11"};
-    assert(my_insert(&numbers, &two));
-    assert(my_insert(&numbers, &one));
-    assert(my_insert(&numbers, &five));
-    assert(my_insert(&numbers, &four));
-    assert(my_insert(&numbers, &seven));
-    assert(my_insert(&numbers, &nine));
-    assert(my_insert(&numbers, &eight));
-    assert(my_insert(&numbers, &eleven));
+    assert(bstree_my_insert(&numbers, &two));
+    assert(bstree_my_insert(&numbers, &one));
+    assert(bstree_my_insert(&numbers, &five));
+    assert(bstree_my_insert(&numbers, &four));
+    assert(bstree_my_insert(&numbers, &seven));
+    assert(bstree_my_insert(&numbers, &nine));
+    assert(bstree_my_insert(&numbers, &eight));
+    assert(bstree_my_insert(&numbers, &eleven));
     /*
      *    2
      *   / \
@@ -139,7 +112,7 @@ int main ()
      *        8
      */
     assert(bstree_delete(&numbers, &five.node));
-    assert(!my_search(tree, "5"));
+    assert(!bstree_my_search(tree, "5"));
     assert(numbers == &two.node);
     assert(nine.node.link[LEFT] == &(eight.node));
     assert(seven.node.link[LEFT] == &(four.node));
@@ -165,7 +138,7 @@ int main ()
     int digits_ins_len = 9;
     digits_ins = (int[]) {2,1,4,3,8,5,9,6,7};
     for (int i=0; i<digits_ins_len; ++i)
-        assert(my_insert(&digits, &digits_ary[digits_ins[i]]));
+        assert(bstree_my_insert(&digits, &digits_ary[digits_ins[i]]));
     /*
      *    2
      *   / \
@@ -205,7 +178,7 @@ int main ()
     digits_ins_len = 10;
     digits_ins = (int[]) {2,1,5,0,4,9,3,7,6,8};
     for (int i=0; i<digits_ins_len; ++i)
-        assert(my_insert(&digits, &digits_ary[digits_ins[i]]));
+        assert(bstree_my_insert(&digits, &digits_ary[digits_ins[i]]));
     /*
      *        2
      *       / \

@@ -1,35 +1,29 @@
 #ifndef BSTREE_H
 #define BSTREE_H
-
-#include <stdbool.h>
-#include <stddef.h>
-
 /**
  * A simple, non-balanced, binary search tree.
  *
  * Inspired by the Linux kernel and Julienne Walker.
+ *
+ * This header can be imported multiple times to create different bstree types.
+ * Just make sure to use a different BSTREE_NAME.
+ *
+ * Consumer MUST provide a key comparison function:
+ *
+ * int BSTREE_FUNCTION(compare)(BSTREE_KEY_TYPE keyA, BSTREE_KEY_TYPE keyB);
  */
 
-struct bstree_node {
-    struct bstree_node * parent;
-    struct bstree_node * link[2];
-#define LEFT  0
-#define RIGHT 1
-};
-
-/**
- * Declare and init a btree.
- */
-#define BSTREE_DECL(tree) struct bstree_node *tree = NULL
-#define BSTREE_NODE_INIT(node) (node).parent = NULL;     \
-    (node).link[LEFT] = NULL; (node).link[RIGHT] = NULL
+#include <stdbool.h>
+#include "base.h"
+#include "bstree_defs.h"
+#include "cont.h"
 
 /**
  * Link a node to a parent node.
  */
 static inline void bstree_link_node(struct bstree_node *node,
-                                   struct bstree_node *parent,
-                                   struct bstree_node **target)
+                                    struct bstree_node *parent,
+                                    struct bstree_node **target)
 {
     node->parent = parent;
     *target = node;
@@ -170,3 +164,86 @@ static inline struct bstree_node *bstree_prev(const struct bstree_node *node)
 }
 
 #endif /* BSTREE_H */
+
+
+#ifndef BSTREE_NAME
+    #error must give this map type a name by defining BSTREE_NAME
+#endif
+#ifndef BSTREE_TYPE
+    #error must define BSTREE_TYPE
+#endif
+#ifndef BSTREE_NODE_MEMBER
+    #error must define BSTREE_NODE_MEMBER
+#endif
+#if defined(BSTREE_KEY_TYPE)
+    assert_compilation(!(sizeof(BSTREE_KEY_TYPE) % 4));
+#else
+    #error must define BSTREE_KEY_TYPE
+#endif
+#ifndef BSTREE_KEY_MEMBER
+    #error must define BSTREE_KEY_MEMBER
+#endif
+
+#define BSTREE_FUNCTION(name)                                       \
+    BSTREE_GLUE(BSTREE_GLUE(BSTREE_GLUE(bstree_, BSTREE_NAME), _), name)
+#define BSTREE_GLUE(x, y) BSTREE_GLUE2(x, y)
+#define BSTREE_GLUE2(x, y) x ## y
+
+/**
+ * Insert a list item into a hash.
+ */
+static inline bool
+BSTREE_FUNCTION(insert)(struct bstree_node **tree, BSTREE_TYPE *data)
+{
+    /* We'll iterate on the *link* fields, which enables use to look for the
+       next node while keeping a hold on the current node. Hence the double
+       pointer. */
+    struct bstree_node **it = tree, *parent = NULL;
+
+    while (*it) {
+        BSTREE_TYPE *this = cont(*it, BSTREE_TYPE, BSTREE_NODE_MEMBER);
+        int result = BSTREE_FUNCTION(compare)(data->BSTREE_KEY_MEMBER,
+                                              this->BSTREE_KEY_MEMBER);
+
+        if (result == 0)
+            return false;       // already there
+        else {
+            parent = *it;
+            it = &((*it)->link[result > 0]);
+        }
+    }
+
+    bstree_link_node(&data->BSTREE_NODE_MEMBER, parent, it);
+
+    return true;
+}
+
+/**
+ * Gets an entry by its key.
+ *
+ * Returns NULL when not found.
+ */
+static inline BSTREE_TYPE*
+BSTREE_FUNCTION(search)(struct bstree_node *tree, BSTREE_KEY_TYPE key)
+{
+    struct bstree_node *it = tree;
+
+    while (it) {
+        BSTREE_TYPE *data = cont(it, BSTREE_TYPE, BSTREE_NODE_MEMBER);
+        int result = BSTREE_FUNCTION(compare)(key, data->BSTREE_KEY_MEMBER);
+
+        if (result == 0)
+            return data;
+        else
+            it = it->link[result > 0];
+    }
+    return NULL;
+}
+
+
+#undef BSTREE_NODE_MEMBER
+#undef BSTREE_FUNCTION
+#undef BSTREE_KEY_TYPE
+#undef BSTREE_KEY_MEMBER
+#undef BSTREE_TYPE
+#undef BSTREE_NAME
