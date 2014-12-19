@@ -1,7 +1,7 @@
 #ifndef BSTREE_H
 #define BSTREE_H
 /**
- * A simple, non-balanced, binary search tree.
+ * A basic, non-balanced, binary search tree.
  *
  * Inspired by the Linux kernel and Julienne Walker.
  *
@@ -130,14 +130,11 @@ __bstree_iterate(const struct bstree_node *node, int dir)
 {
     if (!node) return NULL;
 
-    int opp = dir ^ RIGHT;
-    dir = opp ^ RIGHT; // just make sure dir is RIGHT or LEFT
-
     struct bstree_node *it = (struct bstree_node *)node;
     // last opp child after dir child
     if ((it = node->link[dir])) {
-        while (it->link[opp])
-            it = it->link[opp];
+        while (it->link[!dir])
+            it = it->link[!dir];
     }
     // first dir parent after last opp parent, or null
     else {
@@ -190,12 +187,12 @@ static inline struct bstree_node *bstree_prev(const struct bstree_node *node)
 #define BSTREE_GLUE2(x, y) x ## y
 
 /**
- * Insert a list item into a hash.
+ * Insert a node into a tree.
  */
 static inline bool
 BSTREE_FUNCTION(insert)(struct bstree_node **tree, BSTREE_TYPE *data)
 {
-    /* We'll iterate on the *link* fields, which enables use to look for the
+    /* We'll iterate on the *link* fields, which enables us to look for the
        next node while keeping a hold on the current node. Hence the double
        pointer. */
     struct bstree_node **it = tree, *parent = NULL;
