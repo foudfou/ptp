@@ -25,7 +25,8 @@ COLORS = {
 def call_proc(cmd):
     """ This runs in a separate thread. """
     p = subprocess.Popen(shlex.split(cmd),
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         bufsize=0)
     out, err = p.communicate()
     return (cmd, p.returncode, out, err)
 
