@@ -39,7 +39,9 @@ def configure(ctx):
     ctx.load('compiler_c')
     ctx.load('waf_unit_test')
 
-    ctx.check_cc(cflags=['-Wall', '-std=c99'])
+    CFLAGS_MIN = ['-Wall', '-std=c11']
+    ctx.check_cc(cflags=CFLAGS_MIN)
+    ctx.check_cc(function_name='strsignal', header_name="string.h")
 
     ctx.find_program('valgrind', var='VALGRIND', mandatory=False)
     ctx.find_program('lcov', var='LCOV', mandatory=ctx.options.coverage)
@@ -51,8 +53,8 @@ def configure(ctx):
         ctx.env.append_value('CFLAGS', ['-g'])
     ctx.msg("Compilation mode", release)
 
-    ctx.env.append_unique("CFLAGS", [
-        '-Wall', '-std=c99', '-Wfatal-errors', '-pedantic', '-Wextra',
+    ctx.env.append_unique("CFLAGS", CFLAGS_MIN + [
+        '-Wfatal-errors', '-pedantic', '-Wextra',
     ])
 
     data_dir = ctx.path.make_node('data')
@@ -92,6 +94,7 @@ def tags(ctx):
 
 def distclean(ctx):
     import os
+
     CACHE_PATH = out + "/c4che/_cache.py"
     node = ctx.path.find_node(CACHE_PATH)
     if node:
@@ -99,6 +102,11 @@ def distclean(ctx):
         env.load(node.abspath())
         if ctx.options.coverage:
             _rm_in_dir(env.get_flat('LCOV_DIR'))
+
+    if env['COMPILER_CC'] == 'gcc':
+        gch = ctx.path.ant_glob('**/*.gch')
+        for f in gch:
+            os.remove(f.abspath())
 
     Scripting.distclean(ctx)
 

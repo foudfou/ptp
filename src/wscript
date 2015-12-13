@@ -7,10 +7,13 @@ def configure(ctx):
 
 
 def build(ctx):
-    # ctx.program(
-    #     source   = 'main.c',
-    #     target   = ctx.env.APPNAME,
-    # )
+    ctx.recurse('utils')
+
+    ctx.program(
+        source     = 'runtests.c',
+        target     = 'runtests',
+        use        = 'utils',
+    )
 
     if ctx.options.do_valgrind:
         ctx(name = 'valgrind',
