@@ -40,11 +40,8 @@ struct test_
 
 int read_child_input(const int fd, char *buf) {
     int count = read(fd, buf, BUF_SIZE-1);
-    if (count < 0) {
-        return PTP_ESYS;
-    }
     buf[count] = '\0';
-    return PTP_SUCC;
+    return count;
 }
 
 void test_report(const struct test_ test, const int cols) {
@@ -53,7 +50,7 @@ void test_report(const struct test_ test, const int cols) {
     const int PAD_MAX = cols / 2;
     int pad_len = PAD_MAX - (int)strlen(test.filename);
     char pad[PAD_MAX];
-    snprintf(pad, pad_len, "%s", "........................................");
+    snprintf(pad, pad_len, "%s", "................................................................................");
 
     int rv = 0;
     if (WIFEXITED(test.ret)) {
@@ -81,7 +78,7 @@ int main(int argc, char *argv[])
     int tests_count = argc - 1;
     struct test_ tests[tests_count];
 
-    for (int i = 0; i < argc - 1; i++) {
+    for (int i = 0; i < tests_count; i++) {
         int rv = safe_strcpy(tests[i].filename, argv[i + 1], PATH_MAX);
         if (rv != PTP_SUCC)
             fprintf(stderr, "strcpy failed for %s: %d\n", argv[i + 1], rv);
@@ -120,18 +117,6 @@ int main(int argc, char *argv[])
         default:                /* Parent - reads from pipe */
             close(tests[i].pout[PIPE_WRITE]);
             close(tests[i].perr[PIPE_WRITE]);
-
-            // FIXME: reads are obviously blocking here
-            if ((rv = read_child_input(tests[i].perr[PIPE_READ],
-                                       tests[i].err)) ||
-                (rv = read_child_input(tests[i].pout[PIPE_READ],
-                                       tests[i].out))) {
-                fprintf(stderr, "Error while reading child '%s' output\n",
-                        tests[i].filename);
-                return rv;
-            }
-            close(tests[i].pout[PIPE_READ]);
-            close(tests[i].perr[PIPE_READ]);
         }
     }
 
@@ -140,28 +125,28 @@ int main(int argc, char *argv[])
 
     pid_t wpid;
     int status = 0;
-    while ((wpid = wait(&status)) > 0)
-    {
+    while ((wpid = wait(&status)) > 0) {
         int i = 0;
-        for (; i < tests_count; i++) {
-            if (wpid == tests[i].pid) {
-                if (WIFSTOPPED(status)) {
-                    fprintf(stderr, "Child %s (%d) stopped\n",
-                            tests[i].filename, (int)wpid);
-                    // FIXME: handle error -> kill()
-                }
-                tests[i].ret = status;
-                test_report(tests[i], win.ws_col);
-                break;
-            }
-        }
-
+        for (; i < tests_count; i++)
+            if (wpid == tests[i].pid) break;
         if (i == tests_count) {
             fprintf(stderr, "Unknown pid %d\n", (int)wpid);
             return PTP_ERUN;
         }
 
-        /* TODO: close all pipes ? */
+        read_child_input(tests[i].perr[PIPE_READ], tests[i].err);
+        read_child_input(tests[i].pout[PIPE_READ], tests[i].out);
+        close(tests[i].pout[PIPE_READ]);
+        close(tests[i].perr[PIPE_READ]);
+
+        if (WIFSTOPPED(status)) {
+            fprintf(stderr, "Child %s (%d) stopped\n",
+                    tests[i].filename, (int)wpid);
+            // FIXME: handle error -> kill()
+        }
+        tests[i].ret = status;
+
+        test_report(tests[i], win.ws_col);
     }
 
     return(0);
