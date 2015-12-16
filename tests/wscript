@@ -7,23 +7,27 @@ def configure(ctx):
 
 def build(ctx):
     sources = ctx.path.ant_glob('*.c')
-    for t in sources:
-        name = t.name
+    bldtests = ctx.path.get_bld()
+    test_nodes = []
+    for s in sources:
+        name = s.name
+        target = name[:-2]
         ctx.program(
             source   = name,
-            target   = name[:-2],
+            target   = target,
             includes = ['.', ctx.env.SRC_DIR]
         )
+        test_nodes.append(bldtests.make_node(target))
+    ctx.stash['test_nodes'] = test_nodes
 
     if ctx.options.do_coverage:
-        bldtest = ctx.path.get_bld()
-        bldsrc  = bldtest.parent.make_node('src')
+        bldsrc  = bldtests.parent.make_node('src')
         # could also use --remove instead of --no-external
         # FIXME: add bldsrc
         # lcov_args = ' -c -d %s -d %s -d %s --no-external --quiet' % \
-        #             (ctx.env.SRC_DIR, bldsrc.abspath(), bldtest.abspath())
+        #             (ctx.env.SRC_DIR, bldsrc.abspath(), bldtests.abspath())
         lcov_args = ' -c -d %s -d %s --no-external --quiet' % \
-                    (ctx.env.SRC_DIR, bldtest.abspath())
+                    (ctx.env.SRC_DIR, bldtests.abspath())
         lcov_bin = ctx.env.LCOV[0]
         print(type(lcov_bin))
         ctx(name='lcov_ini', after='utest', always=True, rule=(

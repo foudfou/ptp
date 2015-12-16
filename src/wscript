@@ -9,11 +9,13 @@ def configure(ctx):
 def build(ctx):
     ctx.recurse('utils')
 
-    ctx.program(
+    runner = ctx.program(
         source     = 'runtests.c',
         target     = 'runtests',
         use        = 'utils',
     )
+    bldsrc = ctx.path.get_bld()
+    ctx.stash['test_runner_node'] = bldsrc.make_node(runner.target)
 
     if ctx.options.do_valgrind:
         ctx(name = 'valgrind',

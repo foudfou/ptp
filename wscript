@@ -2,7 +2,7 @@
 # Copyright (c) 2014 Foudil Brétel. All rights reserved.
 
 import waflib
-from waflib import Build, ConfigSet, Logs, Options, Scripting
+from waflib import Build, ConfigSet, Logs, Options, Scripting, Task
 
 VERSION = '0.0.1'
 APPNAME = 'ptp'
@@ -83,11 +83,31 @@ def configure(ctx):
 
 
 def build(ctx):
+    ctx.stash = {}
+
     ctx.recurse('src tests')
+
+    if ctx.cmd == "test":
+        tsk = runtests(env=ctx.env)
+        args = [ctx.stash['test_runner_node']] + ctx.stash['test_nodes']
+        tsk.set_inputs(args)
+        ctx.add_to_group(tsk)
+
+
+class runtests(Task.Task):
+    def run(self):
+        import os
+        os.system(" ".join([t.abspath() for t in self.inputs]))
+runtests = waflib.Task.always_run(runtests)
+
+
+class TestContext(Build.BuildContext):
+    "run tests (waf_unit_test blocks on io)"
+    cmd = 'test'
 
 
 def tags(ctx):
-    cmd = 'find src include test -type f -name "*.c" -o -name "*.h"' \
+    cmd = 'find src include tests -type f -name "*.c" -o -name "*.h"' \
           ' | etags -'
     ctx.exec_command(cmd)
 
