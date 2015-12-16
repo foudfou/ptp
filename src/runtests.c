@@ -17,8 +17,6 @@
 #include "utils/defs.h"
 #include "utils/string_s.h"
 
-#define PIPE_STDOUT 0
-#define PIPE_STDERR 1
 #define PIPE_READ   0
 #define PIPE_WRITE  1
 
@@ -38,7 +36,7 @@ struct test_
     char  err[BUF_SIZE];
 };
 
-int read_child_input(const int fd, char *buf) {
+int read_truncated(const int fd, char *buf) {
     int count = read(fd, buf, BUF_SIZE-1);
     buf[count] = '\0';
     return count;
@@ -47,10 +45,18 @@ int read_child_input(const int fd, char *buf) {
 void test_report(const struct test_ test, const int cols) {
     printf("%s ", test.filename);
 
-    const int PAD_MAX = cols / 2;
-    int pad_len = PAD_MAX - (int)strlen(test.filename);
-    char pad[PAD_MAX];
-    snprintf(pad, pad_len, "%s", "................................................................................");
+    const int LINE_SIZE  = 80;
+    const int RESULT_LEN = 24;
+    const char *PAD = "................................................................................";
+    const int pad_len = strlen(PAD);
+    char pad[pad_len];
+    int filename_len = strlen(test.filename);
+    int len = cols - filename_len - RESULT_LEN;
+    if (len < 0)
+        len = 0;
+    else if (len >= pad_len)
+        len = LINE_SIZE - filename_len - RESULT_LEN;
+    snprintf(pad, len, "%s", PAD);
 
     int rv = 0;
     if (WIFEXITED(test.ret)) {
@@ -134,8 +140,10 @@ int main(int argc, char *argv[])
             return PTP_ERUN;
         }
 
-        read_child_input(tests[i].perr[PIPE_READ], tests[i].err);
-        read_child_input(tests[i].pout[PIPE_READ], tests[i].out);
+        /* Here we just read from pipes when children exit. Which is ok as long
+           as BUF_SIZE < PIPE_SIZE. */
+        read_truncated(tests[i].perr[PIPE_READ], tests[i].err);
+        read_truncated(tests[i].pout[PIPE_READ], tests[i].out);
         close(tests[i].pout[PIPE_READ]);
         close(tests[i].perr[PIPE_READ]);
 
