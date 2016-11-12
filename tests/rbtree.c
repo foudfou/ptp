@@ -15,7 +15,7 @@ int my_compare(uint32_t keyA, uint32_t keyB)
 }
 
 #include <stdio.h>
-bool my_tree_insert(struct rbtree_node **tree, struct mytype *data)
+bool my_bstree_insert(struct rbtree_node **tree, struct mytype *data)
 {
     if (rbtree_is_empty(*tree)) {
         *tree = &data->node;
@@ -26,14 +26,14 @@ bool my_tree_insert(struct rbtree_node **tree, struct mytype *data)
     int dir = 0;
 
     while (child) {
-        struct mytype *this = cont(child, struct mytype, node);
-        int cmp = my_compare(data->key, this->key);
+        struct mytype *data_child = cont(child, struct mytype, node);
+        int cmp = my_compare(data->key, data_child->key);
 
         if (cmp == 0)
             return false;       // already there
         else {
             parent = child;
-            dir = cmp > 0;
+            dir = RB_RIGHT_IF(cmp > 0);
             child = (child)->link[dir];
         }
     }
@@ -45,23 +45,23 @@ bool my_tree_insert(struct rbtree_node **tree, struct mytype *data)
 
 bool my_rb_insert(struct rbtree_node **tree, struct mytype *data)
 {
-    if (!my_tree_insert(tree, data))
+    if (!my_bstree_insert(tree, data))
         return false;
 
     struct rbtree_node *node = &data->node;
     while (node->parent) {
         node->color = RB_RED;
 
-        /* Parent black, nothing to do */
+        /* Parent black, nothing to do. */
         if (node->parent->color == RB_BLACK) {
             /* printf("black parent\n"); */
             return true;
         }
 
-        /* Red parent has a parent */
+        /* Red parent => has a grand-parent. */
         struct rbtree_node *parent = node->parent;
-        int dir = (parent == parent->parent->link[RB_RIGHT]);
-        struct rbtree_node *uncle = parent->parent->link[!dir];
+        int par_dir = RB_RIGHT_IF(parent == parent->parent->link[RB_RIGHT]);
+        struct rbtree_node *uncle = parent->parent->link[!par_dir];
 
         /*
          * Red uncle => reverse relatives' color.
@@ -83,8 +83,8 @@ bool my_rb_insert(struct rbtree_node **tree, struct mytype *data)
          * Black or no uncle => rotate and recolor.
          */
         else {
-            /* printf("--black uncle-->%d\n", !dir); */
-            int par_dir = (node == parent->link[RB_RIGHT]);
+            /* printf("--black uncle-->%d\n", !par_dir); */
+            int dir = RB_RIGHT_IF(node == parent->link[RB_RIGHT]);
             struct rbtree_node *top;
             /*
              *       B         (r)B
@@ -93,8 +93,8 @@ bool my_rb_insert(struct rbtree_node **tree, struct mytype *data)
              *    / \              / \
              *   r*  B            B   B
              */
-            if (dir == par_dir)
-                top = rbtree_rotate(parent->parent, !dir);
+            if (par_dir == dir)
+                top = rbtree_rotate(parent->parent, !par_dir);
             /*
              *      B         (r*)B
              *     / \        /   \
@@ -103,12 +103,13 @@ bool my_rb_insert(struct rbtree_node **tree, struct mytype *data)
              *      r*               B
              */
             else
-                top = rbtree_rotate_double(parent->parent, !dir);
+                top = rbtree_rotate_double(parent->parent, !par_dir);
             top->color = RB_BLACK;
-            top->link[!dir]->color = RB_RED;
+            top->link[!par_dir]->color = RB_RED;
 
             if (top->parent) {
-                int orig_dir = (top->parent->link[RB_RIGHT] == parent->parent);
+                int orig_dir = RB_RIGHT_IF(
+                    top->parent->link[RB_RIGHT] == parent->parent);
                 top->parent->link[orig_dir] = top;
             }
             else
@@ -120,6 +121,9 @@ bool my_rb_insert(struct rbtree_node **tree, struct mytype *data)
     return true;
 }
 
+
+#define IS_RED(node) (node != NULL && (node)->color == RB_RED)
+
 /* http://www.eternallyconfuzzled.com/tuts/datastructures/jsw_tut_rbtree.aspx */
 int rbtree_validate(struct rbtree_node *root)
 {
@@ -130,10 +134,10 @@ int rbtree_validate(struct rbtree_node *root)
     struct rbtree_node *rn = root->link[RB_RIGHT];
 
     /* Red violation / Consecutive red links */
-    assert(!(is_red(root) && (is_red(ln) || is_red(rn))));
+    assert(!(IS_RED(root) && (IS_RED(ln) || IS_RED(rn))));
 
     struct mytype *this = cont(root, struct mytype, node); /* DEBUG */
-    printf("{%d:%d", this->key, root->color);             /* DEBUG */
+    printf("{%d(%d)", this->key, root->color);             /* DEBUG */
     int lh = rbtree_validate(ln);
     printf(", ");             /* DEBUG */
     int rh = rbtree_validate(rn);
@@ -149,9 +153,27 @@ int rbtree_validate(struct rbtree_node *root)
 
     /* Only count black links */
     if (lh != 0 && rh != 0)
-        return is_red(root) ? lh : lh + 1; // just count the left-hand side
+        return IS_RED(root) ? lh : lh + 1; // just count the left-hand side
     else
         return 0;
+}
+
+void rbtree_display(struct rbtree_node *root)
+{
+    if (!root) {
+        printf(".");
+        return;
+    }
+
+    struct rbtree_node *ln = root->link[RB_LEFT];
+    struct rbtree_node *rn = root->link[RB_RIGHT];
+
+    struct mytype *this = cont(root, struct mytype, node);
+    printf("{%d(%d)=", this->key, root->color);
+    rbtree_display(ln);
+    printf(",");
+    rbtree_display(rn);
+    printf("} ");
 }
 
 #define LEN(ary)  (sizeof(ary) / sizeof(ary[0]))
@@ -159,16 +181,15 @@ int rbtree_validate(struct rbtree_node *root)
 int main ()
 {
     /* Rotate */
-    struct mytype n3 = {{0, NULL, {NULL}}, 3};
-    struct mytype n5 = {{0, NULL, {&n3.node, NULL}}, 5};
-    n3.node.parent = &n5.node;
-    struct mytype n7 = {{0, NULL, {NULL}}, 7};
-    struct mytype n15 = {{0, NULL, {NULL}}, 15};
-    struct mytype n10 = {{0, &n5.node, {&n7.node, &n15.node}}, 10};
-    n7.node.parent = &n10.node;
-    n15.node.parent = &n10.node;
-    n10.node.parent = &n5.node;
+    struct mytype n5 = {{0, NULL, {NULL}}, 5};
+    struct mytype n3 = {{0, &n5.node, {NULL}}, 3};
+    n5.node.link[RB_LEFT] = &n3.node;
+    struct mytype n10 = {{0, &n5.node, {NULL}}, 10};
     n5.node.link[RB_RIGHT] = &n10.node;
+    struct mytype n7 = {{0, &n10.node, {NULL}}, 7};
+    n10.node.link[RB_LEFT] = &n7.node;
+    struct mytype n15 = {{0, &n10.node, {NULL}}, 15};
+    n10.node.link[RB_RIGHT] = &n15.node;
     /*
      *     5
      *    / \
@@ -176,6 +197,7 @@ int main ()
      *      / \
      *     7   15
      */
+    rbtree_display(&n5.node);
 
     assert(rbtree_rotate(&n5.node, RB_LEFT) == &n10.node);
     /*
@@ -229,17 +251,17 @@ int main ()
      *  / \
      * 3   7
      */
-    assert(my_tree_insert(&tree, &n10));
+    assert(my_bstree_insert(&tree, &n10));
     assert(tree);
     assert(tree == &n10.node);
-    assert(!my_tree_insert(&tree, &n10));
-    assert(my_tree_insert(&tree, &n5));
+    assert(!my_bstree_insert(&tree, &n10));
+    assert(my_bstree_insert(&tree, &n5));
     assert(n10.node.link[RB_LEFT] == &n5.node);
     assert(n5.node.parent == &n10.node);
-    assert(my_tree_insert(&tree, &n15));
+    assert(my_bstree_insert(&tree, &n15));
     assert(n10.node.link[RB_RIGHT] == &n15.node);
     assert(n15.node.parent == &n10.node);
-    assert(my_tree_insert(&tree, &n3));
+    assert(my_bstree_insert(&tree, &n3));
     assert(n5.node.link[RB_LEFT] == &n3.node);
     assert(n3.node.parent == &n5.node);
 
@@ -257,18 +279,19 @@ int main ()
     RBTREE_NODE_INIT(n5.node); RBTREE_NODE_INIT(n10.node);
     RBTREE_NODE_INIT(n3.node); RBTREE_NODE_INIT(n7.node);
     RBTREE_NODE_INIT(n15.node);
-    /*
+
+    /* RB-Tree insertion
+     *
      *      10
      *     / \
      *    5   15
      *   / \
      *  3   7
      */
-
     assert(my_rb_insert(&tree, &n10));
-    assert(!my_rb_insert(&tree, &n10));
     assert(tree == &n10.node);
     assert(n10.node.color == RB_BLACK);
+    assert(!my_rb_insert(&tree, &n10));
 
     assert(my_rb_insert(&tree, &n5));
     assert(n5.node.color == RB_RED);
@@ -289,9 +312,18 @@ int main ()
     RBTREE_DECL(digits);
     uint32_t *digits_ins = NULL; // compound literals instead of malloc and memcpy
     digits_ins = (uint32_t[]) {2,1,4,3,8,5,9,6,7};
+    /*
+     *        __4__
+     *       /     \
+     *      2       8
+     *     / \     / \
+     *    1   3   6   9
+     *           / \
+     *          5  7
+     */
     int digits_ins_len = 9;
     struct mytype digits_ary[digits_ins_len];
-    for (int i=0; i<digits_ins_len; ++i) {
+    for (int i=0; i<digits_ins_len; i++) {
         digits_ary[i] = (struct mytype) { {0, NULL, {NULL}}, digits_ins[i] };
         assert(my_rb_insert(&digits, &digits_ary[i]));
     }

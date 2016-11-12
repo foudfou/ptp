@@ -43,12 +43,14 @@ static inline bool bstree_is_empty(struct bstree_node *tree)
 static inline bool bstree_delete(struct bstree_node **tree,
                                  struct bstree_node *node)
 {
-    if (!*tree)
+    if (!*tree || !node)
         return false;
 
-    struct bstree_node **parent_link = node->parent ?
-        &(node->parent->link[node->parent->link[RIGHT] == node]) :
-        tree;
+    struct bstree_node **parent_link = tree;
+    if (node->parent) {
+        int dir = RIGHT_IF(node->parent->link[RIGHT] == node);
+        parent_link = &(node->parent->link[dir]);
+    }
 
     if (node->link[LEFT] && node->link[RIGHT]) { // delete by copy
         struct bstree_node *succ = node->link[RIGHT];
@@ -57,7 +59,8 @@ static inline bool bstree_delete(struct bstree_node **tree,
         }
 
         struct bstree_node *succ_parent = succ->parent;
-        succ_parent->link[succ_parent->link[RIGHT] == succ] = succ->link[RIGHT];
+        int dir = RIGHT_IF(succ_parent->link[RIGHT] == succ);
+        succ_parent->link[dir] = succ->link[RIGHT];
 
         succ->link[LEFT] = node->link[LEFT];
         succ->link[RIGHT] = node->link[RIGHT];
@@ -85,7 +88,7 @@ static inline bool bstree_delete(struct bstree_node **tree,
           *   *                 *   *
      */
     else {
-        int child_dir = node->link[LEFT] == NULL;
+        int child_dir = RIGHT_IF(node->link[LEFT] == NULL);
         bstree_link_node(node->link[child_dir], node->parent, parent_link);
     }
 
@@ -131,14 +134,14 @@ __bstree_iterate(const struct bstree_node *node, int dir)
     if (!node) return NULL;
 
     struct bstree_node *it = (struct bstree_node *)node;
-    // last opp child after dir child
+    // last opposite child after dir child
     if ((it = node->link[dir])) {
         while (it->link[!dir])
             it = it->link[!dir];
     }
-    // first dir parent after last opp parent, or null
+    // first dir parent after last opposite parent, or null
     else {
-        while ((it = node->parent) && it->link[dir^RIGHT] != node)
+        while ((it = node->parent) && it->link[dir] == node)
             node = it;
     }
     return it;
@@ -206,7 +209,7 @@ BSTREE_FUNCTION(insert)(struct bstree_node **tree, BSTREE_TYPE *data)
             return false;       // already there
         else {
             parent = *it;
-            it = &((*it)->link[result > 0]);
+            it = &((*it)->link[RIGHT_IF(result > 0)]);
         }
     }
 
@@ -232,7 +235,7 @@ BSTREE_FUNCTION(search)(struct bstree_node *tree, BSTREE_KEY_TYPE key)
         if (result == 0)
             return data;
         else
-            it = it->link[result > 0];
+            it = it->link[RIGHT_IF(result > 0)];
     }
     return NULL;
 }

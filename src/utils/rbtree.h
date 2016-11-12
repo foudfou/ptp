@@ -20,10 +20,14 @@
 #include "rbtree_defs.h"
 /* #include "cont.h" */
 
-int is_red(struct rbtree_node *root)
-{
-   return root != NULL && root->color == RB_RED;
-}
+/**
+ * Red-black tree rules:
+ * 1) Every node has a color either red or black.
+ * 2) Root of tree is always black.
+ * 3) There are no two adjacent red nodes (A red node cannot have a red parent
+ *    or red child).
+ * 4) Every path from root to a NULL node has same number of black nodes.
+ */
 
 /**
  * Test wether a tree is empty.
@@ -73,8 +77,8 @@ struct rbtree_node *rbtree_rotate(struct rbtree_node *root, int dir)
 /**
  * Double rotation
  *
- * Rotate at in one direction at child of @root, then in the other direction
- * @dir at @root.
+ * Rotate in one direction at child of @root, then in the other direction @dir
+ * at @root.
  *
  *       z                z             y
  *      / \              / \          /   \

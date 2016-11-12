@@ -14,17 +14,18 @@ struct rbtree_node {
 };
 
 /**
- * Declare a btree.
+ * Declare a rbtree.
  */
 #define RBTREE_DECL(tree) struct rbtree_node *tree = NULL
 
 /**
- * Init a btree node.
+ * Init a to-be-inserted rbtree node.
  *
  * The root node has parent NULL.
  */
 #define RBTREE_NODE_INIT(node) (node).color = RB_RED; (node).parent = NULL; \
     (node).link[RB_LEFT] = NULL; (node).link[RB_RIGHT] = NULL
 
+#define RB_RIGHT_IF(cond) (cond) ? RB_RIGHT : RB_LEFT
 
 #endif /* RBTREE_DEFS_H */

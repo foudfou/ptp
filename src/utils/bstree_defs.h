@@ -23,5 +23,6 @@ struct bstree_node {
 #define BSTREE_NODE_INIT(node) (node).parent = NULL;     \
     (node).link[LEFT] = NULL; (node).link[RIGHT] = NULL
 
+#define RIGHT_IF(cond) (cond) ? RIGHT : LEFT
 
 #endif /* BSTREE_DEFS_H */
