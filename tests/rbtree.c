@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <stdlib.h>
 #include "../src/utils/cont.h"
-#include "../src/utils/rbtree_defs.h"
 #include "../src/utils/rbtree.h"
 
 struct mytype {

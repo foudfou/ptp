@@ -5,8 +5,8 @@
  *
  * Inspired by the Linux kernel and Julienne Walker.
  *
- * This header can be imported multiple times to create different bstree types.
- * Just make sure to use a different BSTREE_NAME.
+ * This header can be imported multiple times with BSTREE_CREATE to create
+ * different bstree types. Just make sure to use a different BSTREE_NAME.
  *
  * Consumer MUST provide a key comparison function:
  *
@@ -14,9 +14,25 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include "base.h"
-#include "bstree_defs.h"
 #include "cont.h"
+
+struct bstree_node {
+    struct bstree_node * parent;
+    struct bstree_node * link[2];
+#define LEFT  0
+#define RIGHT 1
+};
+
+/**
+ * Declare and init a btree.
+ */
+#define BSTREE_DECL(tree) struct bstree_node *tree = NULL
+#define BSTREE_NODE_INIT(node) (node).parent = NULL;     \
+    (node).link[LEFT] = NULL; (node).link[RIGHT] = NULL
+
+#define RIGHT_IF(cond) (cond) ? RIGHT : LEFT
 
 /**
  * Link a node to a parent node.
@@ -165,6 +181,7 @@ static inline struct bstree_node *bstree_prev(const struct bstree_node *node)
 
 #endif /* BSTREE_H */
 
+#ifdef BSTREE_CREATE
 
 #ifndef BSTREE_NAME
     #error must give this map type a name by defining BSTREE_NAME
@@ -247,3 +264,6 @@ BSTREE_FUNCTION(search)(struct bstree_node *tree, BSTREE_KEY_TYPE key)
 #undef BSTREE_KEY_MEMBER
 #undef BSTREE_TYPE
 #undef BSTREE_NAME
+#undef BSTREE_CREATE
+
+#endif // defined BSTREE_CREATE

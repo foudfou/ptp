@@ -2,11 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../src/utils/cont.h"
-#include "../src/utils/bstree_defs.h"
 
 static const unsigned int KEY_MAX_LENGTH = 1024;
 
 /*  Define a bstree type. */
+#include "../src/utils/bstree.h"
 #define BSTREE_NAME my
 #define BSTREE_TYPE struct mytype
 #define BSTREE_NODE_MEMBER node
@@ -22,6 +22,7 @@ static inline int bstree_my_compare(BSTREE_KEY_TYPE keyA, BSTREE_KEY_TYPE keyB)
 {
     return strncmp(keyA, keyB, KEY_MAX_LENGTH);
 }
+#define BSTREE_CREATE
 #include "../src/utils/bstree.h"
 
 

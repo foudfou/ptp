@@ -7,8 +7,8 @@
  * Better than hash if order matters.
  * Inspired by the Linux kernel and Julienne Walker.
  *
- * This header can be imported multiple times to create different bstree types.
- * Just make sure to use a different RBTREE_NAME.
+ * This header can be imported multiple times with RBTREE_CREATE to create
+ * different bstree types. Just make sure to use a different RBTREE_NAME.
  *
  * Consumer MUST provide a key comparison function:
  *
@@ -16,8 +16,8 @@
  */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include "base.h"
-#include "rbtree_defs.h"
 /* #include "cont.h" */
 
 /**
@@ -28,6 +28,30 @@
  *    or red child).
  * 4) Every path from root to a NULL node has same number of black nodes.
  */
+struct rbtree_node {
+    int color;
+#define RB_RED   0
+#define RB_BLACK 1
+    struct rbtree_node * parent;
+    struct rbtree_node * link[2];
+#define RB_LEFT  0
+#define RB_RIGHT 1
+};
+
+/**
+ * Declare a rbtree.
+ */
+#define RBTREE_DECL(tree) struct rbtree_node *tree = NULL
+
+/**
+ * Init a to-be-inserted rbtree node.
+ *
+ * The root node has parent NULL.
+ */
+#define RBTREE_NODE_INIT(node) (node).color = RB_RED; (node).parent = NULL; \
+    (node).link[RB_LEFT] = NULL; (node).link[RB_RIGHT] = NULL
+
+#define RB_RIGHT_IF(cond) (cond) ? RB_RIGHT : RB_LEFT
 
 /**
  * Test wether a tree is empty.
