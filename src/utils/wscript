@@ -1,9 +1,0 @@
-#! /usr/bin/env python
-# Copyright (c) 2014 Foudil Brétel. All rights reserved.
-
-def build(ctx):
-    ctx.stlib(
-        source   = 'string_s.c',
-        target   = 'utils',
-        includes = '.',
-    )

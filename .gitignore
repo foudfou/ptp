@@ -28,8 +28,9 @@
 *.x86_64
 *.hex
 
-build/
-.lock-waf*
-.waf*
+build*/
 TAGS
 data/
+__pycache__/
+meson-logs/
+meson-private/

@@ -1,0 +1,3 @@
+#define APP_NAME      @appname@
+#define APP_VERSION   @appvers@
+#define APP_COPYRIGHT @appcopy@
