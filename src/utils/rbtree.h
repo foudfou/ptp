@@ -8,17 +8,13 @@
  * Inspired by the Linux kernel and Julienne Walker.
  *
  * This header can be imported multiple times with RBTREE_CREATE to create
- * different bstree types. Just make sure to use a different RBTREE_NAME.
+ * different rbtree types. Just make sure to use a different RBTREE_NAME.
  *
  * Consumer MUST provide a key comparison function:
  *
  * int RBTREE_FUNCTION(compare)(RBTREE_KEY_TYPE keyA, RBTREE_KEY_TYPE keyB);
  */
-
-#include <stdbool.h>
-#include <stddef.h>
-#include "base.h"
-/* #include "cont.h" */
+#include "btree_def.h"
 
 /**
  * Red-black tree rules:
@@ -32,46 +28,25 @@ struct rbtree_node {
     int color;
 #define RB_RED   0
 #define RB_BLACK 1
-    struct rbtree_node * parent;
-    struct rbtree_node * link[2];
-#define RB_LEFT  0
-#define RB_RIGHT 1
+    BTREE_MEMBERS(rbtree_node)
 };
 
 /**
  * Declare a rbtree.
  */
-#define RBTREE_DECL(tree) struct rbtree_node *tree = NULL
+#define RBTREE_DECL(tree) BTREE_DECL(rbtree_node, tree)
 
 /**
- * Init a to-be-inserted rbtree node.
+ * Init a to-be-inserted btree node.
  *
  * The root node has parent NULL.
  */
-#define RBTREE_NODE_INIT(node) (node).color = RB_RED; (node).parent = NULL; \
-    (node).link[RB_LEFT] = NULL; (node).link[RB_RIGHT] = NULL
+#define RBTREE_NODE_INIT(node) do {             \
+        (node).color = RB_RED;                  \
+        BTREE_NODE_INIT(node);                  \
+    } while (/*CONSTCOND*/ 0)
 
-#define RB_RIGHT_IF(cond) (cond) ? RB_RIGHT : RB_LEFT
-
-/**
- * Test wether a tree is empty.
- */
-static inline bool rbtree_is_empty(struct rbtree_node *tree)
-{
-    return !tree;
-}
-
-/**
- * Link a node to a parent node.
- *
- * @parent assumed to be non-NULL (is not the tree itself) !
- */
-static inline void rbtree_link_node(struct rbtree_node *parent,
-                                    struct rbtree_node *node, int dir)
-{
-    node->parent = parent;
-    parent->link[dir] = node;
-}
+BTREE_PROTOTYPE(rbtree, rbtree_node)
 
 /**
  * Rotate at @root in direction @dir.
@@ -118,4 +93,41 @@ struct rbtree_node *rbtree_rotate_double(struct rbtree_node *root, int dir)
     return rbtree_rotate(root, dir);
 }
 
+/* DELETE */
+/* If the node to be deleted is red, we're done. */
+/* If node has a child (=> single and red), recolor it to black. */
+/* If node to be deleted is black, we need to correct. */
+/* - if child red: recolor to black */
+/* - if child black: check sibling: */
+/*   - sibling is red */
+/*   - sibling is black and children are: */
+/*     - two black */
+/*     - right red */
+/*     - left red, right black */
+
 #endif /* RBTREE_H */
+
+
+#ifdef RBTREE_CREATE
+
+#define BTREE_NAME RBTREE_NAME
+#define BTREE_TYPE RBTREE_TYPE
+#define BTREE_NODE_TYPE RBTREE_NODE_TYPE
+#define BTREE_NODE_MEMBER RBTREE_NODE_MEMBER
+#define BTREE_KEY_TYPE RBTREE_KEY_TYPE
+#define BTREE_KEY_MEMBER RBTREE_KEY_MEMBER
+
+#define BTREE_NODE_NAME rbtree
+
+#define BTREE_CREATE
+#include "btree_impl.h"
+
+#undef RBTREE_NODE_MEMBER
+#undef RBTREE_KEY_TYPE
+#undef RBTREE_KEY_MEMBER
+#undef RBTREE_NODE_TYPE
+#undef RBTREE_TYPE
+#undef RBTREE_NAME
+#undef RBTREE_CREATE
+
+#endif // defined RBTREE_CREATE

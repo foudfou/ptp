@@ -2,18 +2,20 @@
 #include <stdlib.h>
 #include <string.h>
 #include "../src/utils/cont.h"
+#include "../src/utils/bstree.h"
 
 static const unsigned int KEY_MAX_LENGTH = 1024;
 
 /*  Define a bstree type. */
-#include "../src/utils/bstree.h"
 #define BSTREE_NAME my
 #define BSTREE_TYPE struct mytype
+#define BSTREE_NODE_TYPE struct bstree_node
 #define BSTREE_NODE_MEMBER node
 #define BSTREE_KEY_TYPE const char *
 #define BSTREE_KEY_MEMBER key
+/*  Actual struct defined here. */
 BSTREE_TYPE {
-    struct bstree_node BSTREE_NODE_MEMBER;
+    BSTREE_NODE_TYPE BSTREE_NODE_MEMBER;
     BSTREE_KEY_TYPE BSTREE_KEY_MEMBER;
 };
 
