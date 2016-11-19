@@ -25,6 +25,24 @@ static inline int bstree_my_compare(BSTREE_KEY_TYPE keyA, BSTREE_KEY_TYPE keyB)
 #define BSTREE_CREATE
 #include "../src/utils/bstree.h"
 
+#include <stdio.h>
+void bstree_display(struct bstree_node *root)
+{
+    if (!root) {
+        printf(".");
+        return;
+    }
+
+    struct bstree_node *ln = root->link[LEFT];
+    struct bstree_node *rn = root->link[RIGHT];
+
+    struct mytype *this = cont(root, struct mytype, node);
+    printf("{%s=", this->key);
+    bstree_display(ln);
+    printf(",");
+    bstree_display(rn);
+    printf("} ");
+}
 
 int main ()
 {
@@ -78,11 +96,19 @@ int main ()
     bstree_delete(&tree, &t3.node);
     assert(!bstree_my_search(tree, "mmm"));
     assert(t1.node.link[LEFT] == &(t2.node));
+
     assert(t1.node.link[RIGHT] == &(t4.node));
     assert(bstree_delete(&tree, &t4.node));
     assert(!bstree_my_search(tree, "rrr"));
     assert(t1.node.link[LEFT] == &(t2.node));
     assert(!t1.node.link[RIGHT]);
+
+    BSTREE_DECL(pair);
+    struct mytype p1 = { {NULL, {NULL,}}, "1"};
+    struct mytype p2 = { {NULL, {NULL,}}, "2"};
+    assert(bstree_my_insert(&pair, &p1));
+    assert(bstree_my_insert(&pair, &p2));
+    assert(bstree_delete(&pair, &p2.node));
 
     BSTREE_DECL(numbers);
     struct mytype one    = { {NULL, {NULL,}}, "1"};
@@ -92,23 +118,23 @@ int main ()
     struct mytype seven  = { {NULL, {NULL,}}, "7"};
     struct mytype eight  = { {NULL, {NULL,}}, "8"};
     struct mytype nine   = { {NULL, {NULL,}}, "9"};
-    struct mytype eleven = { {NULL, {NULL,}}, "11"};
+    struct mytype eleven = { {NULL, {NULL,}}, "B"};
     assert(bstree_my_insert(&numbers, &two));
     assert(bstree_my_insert(&numbers, &one));
     assert(bstree_my_insert(&numbers, &five));
     assert(bstree_my_insert(&numbers, &four));
-    assert(bstree_my_insert(&numbers, &seven));
     assert(bstree_my_insert(&numbers, &nine));
+    assert(bstree_my_insert(&numbers, &seven));
     assert(bstree_my_insert(&numbers, &eight));
     assert(bstree_my_insert(&numbers, &eleven));
     /*
-     *    2
-     *   / \
-     *  1   5
-     *     / \
-     *    4   9
-     *       / \
-     *      7   11
+     *    2               2
+     *   / \             / \
+     *  1   5*          1   7
+     *     / \             / \
+     *    4   9           4   9
+     *       / \             / \
+     *     +7   B           8   B
      *       \
      *        8
      */
@@ -116,8 +142,11 @@ int main ()
     assert(!bstree_my_search(tree, "5"));
     assert(numbers == &two.node);
     assert(nine.node.link[LEFT] == &(eight.node));
+    assert(eight.node.parent == &(nine.node));
     assert(seven.node.link[LEFT] == &(four.node));
+    assert(four.node.parent == &(seven.node));
     assert(seven.node.link[RIGHT] == &(nine.node));
+    assert(nine.node.parent == &(seven.node));
     assert(seven.node.parent == &(two.node));
     assert(seven.node.parent->link[RIGHT] == &(seven.node));
 
@@ -125,6 +154,16 @@ int main ()
     assert(numbers == &four.node);
     assert(four.node.link[LEFT] == &(one.node));
     assert(four.node.link[RIGHT] == &(seven.node));
+
+    /*
+     *    2               2
+     *   / \             / \
+     *  1   6*          1   9
+     *     / \             /
+     *    4   9           4
+     *   / \             / \
+     *  3   5           3   5
+     */
 
     /* Bstree navigation/traversal */
     int DIGITS_LEN = 10;

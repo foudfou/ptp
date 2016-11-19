@@ -36,6 +36,9 @@ struct bstree_node {
 
 /**
  * Link a node to a parent node.
+ *
+ * @target can be either a link (address of next node) or the tree (address of
+ * first node).
  */
 static inline void bstree_link_node(struct bstree_node *node,
                                     struct bstree_node *parent,
@@ -68,21 +71,23 @@ static inline bool bstree_delete(struct bstree_node **tree,
         parent_link = &(node->parent->link[dir]);
     }
 
-    if (node->link[LEFT] && node->link[RIGHT]) { // delete by copy
+    if (node->link[LEFT] && node->link[RIGHT]) { // delete by swapping
         struct bstree_node *succ = node->link[RIGHT];
         while (succ->link[LEFT]) {
             succ = succ->link[LEFT];
         }
 
-        struct bstree_node *succ_parent = succ->parent;
-        int dir = RIGHT_IF(succ_parent->link[RIGHT] == succ);
-        succ_parent->link[dir] = succ->link[RIGHT];
+        // link succ's only right child to succ's parent
+        if (succ->link[RIGHT]) {
+            struct bstree_node *succ_parent = succ->parent;
+            int succ_dir = RIGHT_IF(succ_parent->link[RIGHT] == succ);
+            bstree_link_node(succ->link[RIGHT], succ_parent,
+                             &(succ_parent->link[succ_dir]));
+        }
 
-        succ->link[LEFT] = node->link[LEFT];
-        succ->link[RIGHT] = node->link[RIGHT];
-        succ->parent = node->parent;
-
-        *parent_link = succ;
+        bstree_link_node(succ, node->parent, parent_link);
+        bstree_link_node(node->link[LEFT], succ, &(succ->link[LEFT]));
+        bstree_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT]));
     }
     /*
         p          p
@@ -98,10 +103,8 @@ static inline bool bstree_delete(struct bstree_node **tree,
         p           p             p           p
          \           \             \           \
           x     ->    c    OR       x    ->     c
-         / \         / \           / \         / \
-        ~   c       *   *         c   ~       *   *
-           / \                   / \
-          *   *                 *   *
+           \                       /
+            c                     c
      */
     else {
         int child_dir = RIGHT_IF(node->link[LEFT] == NULL);
