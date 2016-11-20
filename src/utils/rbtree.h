@@ -12,9 +12,9 @@
  *
  * Consumer MUST provide a key comparison function:
  *
- * int RBTREE_FUNCTION(compare)(RBTREE_KEY_TYPE keyA, RBTREE_KEY_TYPE keyB);
+ * int name##_compare(RBTREE_KEY_TYPE keyA, RBTREE_KEY_TYPE keyB);
  */
-#include "btree_def.h"
+#include "bstree.h"
 
 /**
  * Red-black tree rules:
@@ -28,13 +28,13 @@ struct rbtree_node {
     int color;
 #define RB_RED   0
 #define RB_BLACK 1
-    BTREE_MEMBERS(rbtree_node)
+    BSTREE_MEMBERS(rbtree_node)
 };
 
 /**
  * Declare a rbtree.
  */
-#define RBTREE_DECL(tree) BTREE_DECL(rbtree_node, tree)
+#define RBTREE_DECL(tree) BSTREE_GENERIC_DECL(rbtree_node, tree)
 
 /**
  * Init a to-be-inserted btree node.
@@ -43,10 +43,13 @@ struct rbtree_node {
  */
 #define RBTREE_NODE_INIT(node) do {             \
         (node).color = RB_RED;                  \
-        BTREE_NODE_INIT(node);                  \
+        BSTREE_NODE_INIT(node);                 \
     } while (/*CONSTCOND*/ 0)
 
-BTREE_PROTOTYPE(rbtree, rbtree_node)
+
+#define BSTREE_KEY_TYPE RBTREE_KEY_TYPE
+#define RBTREE_GENERATE(name, type, field, key) \
+    BSTREE_GENERATE(name, type, field, key)
 
 /**
  * Rotate at @root in direction @dir.
@@ -106,28 +109,3 @@ struct rbtree_node *rbtree_rotate_double(struct rbtree_node *root, int dir)
 /*     - left red, right black */
 
 #endif /* RBTREE_H */
-
-
-#ifdef RBTREE_CREATE
-
-#define BTREE_NAME RBTREE_NAME
-#define BTREE_TYPE RBTREE_TYPE
-#define BTREE_NODE_TYPE RBTREE_NODE_TYPE
-#define BTREE_NODE_MEMBER RBTREE_NODE_MEMBER
-#define BTREE_KEY_TYPE RBTREE_KEY_TYPE
-#define BTREE_KEY_MEMBER RBTREE_KEY_MEMBER
-
-#define BTREE_NODE_NAME rbtree
-
-#define BTREE_CREATE
-#include "btree_impl.h"
-
-#undef RBTREE_NODE_MEMBER
-#undef RBTREE_KEY_TYPE
-#undef RBTREE_KEY_MEMBER
-#undef RBTREE_NODE_TYPE
-#undef RBTREE_TYPE
-#undef RBTREE_NAME
-#undef RBTREE_CREATE
-
-#endif // defined RBTREE_CREATE

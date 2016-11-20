@@ -3,34 +3,26 @@
 #include "utils/cont.h"
 #include "utils/rbtree.h"
 
-#define MYTYPE_INIT(color, parent, left, right, key)    \
-    {{(color), (parent), {(left), (right)}}, (key)};
-
-/*  Define a rbtree type. */
-#define RBTREE_NAME my
-#define RBTREE_TYPE struct mytype
-#define RBTREE_NODE_TYPE struct rbtree_node
-#define RBTREE_NODE_MEMBER node
-#define RBTREE_KEY_TYPE uint32_t
-#define RBTREE_KEY_MEMBER key
-/*  Actual struct defined here. */
-RBTREE_TYPE {
-    RBTREE_NODE_TYPE RBTREE_NODE_MEMBER;
-    RBTREE_KEY_TYPE RBTREE_KEY_MEMBER;
+/* Define a rbtree type. */
+struct foo {
+    struct rbtree_node node;
+    uint32_t key;
 };
-
 /* We MUST provide our own key comparison function. See rbtree.h. */
-static inline int rbtree_my_compare(RBTREE_KEY_TYPE keyA, RBTREE_KEY_TYPE keyB)
+static inline int foo_compare(uint32_t keyA, uint32_t keyB)
 {
     return keyA - keyB;
 }
-#define RBTREE_CREATE
-#include "../src/utils/rbtree.h"
+#define RBTREE_KEY_TYPE uint32_t
+RBTREE_GENERATE(foo, rbtree_node, node, key)
+
+#define FOO_INIT(color, parent, left, right, key)    \
+    {{(color), (parent), {(left), (right)}}, (key)};
 
 
-bool my_rb_insert(struct rbtree_node **tree, struct mytype *data)
+bool my_rb_insert(struct rbtree_node **tree, struct foo *data)
 {
-    if (!rbtree_my_insert(tree, data))
+    if (!foo_insert(tree, data))
         return false;
 
     struct rbtree_node *node = &data->node;
@@ -118,7 +110,7 @@ void rbtree_display(struct rbtree_node *root)
     struct rbtree_node *ln = root->link[LEFT];
     struct rbtree_node *rn = root->link[RIGHT];
 
-    struct mytype *this = cont(root, struct mytype, node);
+    struct foo *this = cont(root, struct foo, node);
     printf("{%d(%d)=", this->key, root->color);
     rbtree_display(ln);
     printf(",");
@@ -140,7 +132,7 @@ int rbtree_validate(struct rbtree_node *root)
     /* Red violation / Consecutive red links */
     assert(!(IS_RED(root) && (IS_RED(ln) || IS_RED(rn))));
 
-    struct mytype *this = cont(root, struct mytype, node); /* DEBUG */
+    struct foo *this = cont(root, struct foo, node); /* DEBUG */
     printf("{%d(%d)", this->key, root->color);             /* DEBUG */
     int lh = rbtree_validate(ln);
     printf(", ");             /* DEBUG */
@@ -148,9 +140,9 @@ int rbtree_validate(struct rbtree_node *root)
     printf("}\n");             /* DEBUG */
 
     /* Binary tree violation / Invalid binary search tree */
-    uint32_t root_key = cont(root, struct mytype, node)->key;
-    assert(!((ln && cont(ln, struct mytype, node)->key >= root_key) ||
-             (rn && cont(rn, struct mytype, node)->key <= root_key)));
+    uint32_t root_key = cont(root, struct foo, node)->key;
+    assert(!((ln && cont(ln, struct foo, node)->key >= root_key) ||
+             (rn && cont(rn, struct foo, node)->key <= root_key)));
 
     /* Black violation / Black height mismatch */
     assert(!(lh != 0 && rh != 0 && lh != rh));
@@ -167,14 +159,14 @@ int rbtree_validate(struct rbtree_node *root)
 int main ()
 {
     /* Rotate */
-    struct mytype n5 = MYTYPE_INIT(RB_RED, NULL, NULL, NULL, 5);
-    struct mytype n3 = MYTYPE_INIT(RB_RED, &n5.node, NULL, NULL, 3)
+    struct foo n5 = FOO_INIT(RB_RED, NULL, NULL, NULL, 5);
+    struct foo n3 = FOO_INIT(RB_RED, &n5.node, NULL, NULL, 3)
     n5.node.link[LEFT] = &n3.node;
-    struct mytype n10 = MYTYPE_INIT(RB_RED, &n5.node, NULL, NULL, 10)
+    struct foo n10 = FOO_INIT(RB_RED, &n5.node, NULL, NULL, 10)
     n5.node.link[RIGHT] = &n10.node;
-    struct mytype n7 = MYTYPE_INIT(RB_RED, &n10.node, NULL, NULL, 7)
+    struct foo n7 = FOO_INIT(RB_RED, &n10.node, NULL, NULL, 7)
     n10.node.link[LEFT] = &n7.node;
-    struct mytype n15 = MYTYPE_INIT(RB_RED, &n10.node, NULL, NULL, 15)
+    struct foo n15 = FOO_INIT(RB_RED, &n10.node, NULL, NULL, 15)
     n10.node.link[RIGHT] = &n15.node;
     /*
      *     5
@@ -224,7 +216,7 @@ int main ()
     /* Btree declaration */
     RBTREE_DECL(tree);
     assert(!tree);
-    assert(rbtree_is_empty(tree));
+    assert(foo_is_empty(tree));
 
     /* Tree insertion */
     RBTREE_NODE_INIT(n5.node); RBTREE_NODE_INIT(n10.node);
@@ -237,17 +229,17 @@ int main ()
      *  / \
      * 3   7
      */
-    assert(rbtree_my_insert(&tree, &n10));
+    assert(foo_insert(&tree, &n10));
     assert(tree);
     assert(tree == &n10.node);
-    assert(!rbtree_my_insert(&tree, &n10));
-    assert(rbtree_my_insert(&tree, &n5));
+    assert(!foo_insert(&tree, &n10));
+    assert(foo_insert(&tree, &n5));
     assert(n10.node.link[LEFT] == &n5.node);
     assert(n5.node.parent == &n10.node);
-    assert(rbtree_my_insert(&tree, &n15));
+    assert(foo_insert(&tree, &n15));
     assert(n10.node.link[RIGHT] == &n15.node);
     assert(n15.node.parent == &n10.node);
-    assert(rbtree_my_insert(&tree, &n3));
+    assert(foo_insert(&tree, &n3));
     assert(n5.node.link[LEFT] == &n3.node);
     assert(n3.node.parent == &n5.node);
 
@@ -308,9 +300,9 @@ int main ()
      *          5  7
      */
     int digits_ins_len = 9;
-    struct mytype digits_ary[digits_ins_len];
+    struct foo digits_ary[digits_ins_len];
     for (int i=0; i<digits_ins_len; i++) {
-        digits_ary[i] = (struct mytype) MYTYPE_INIT(RB_RED, NULL, NULL, NULL,
+        digits_ary[i] = (struct foo) FOO_INIT(RB_RED, NULL, NULL, NULL,
                                                     digits_ins[i])
         assert(my_rb_insert(&digits, &digits_ary[i]));
     }
@@ -320,7 +312,7 @@ int main ()
     digits_ins = (uint32_t[]) {11,7,14,2,1,5,8,4};
     digits_ins_len = 8;
     for (int i=0; i<digits_ins_len; ++i) {
-        digits_ary[i] = (struct mytype) MYTYPE_INIT(RB_RED, NULL, NULL, NULL,
+        digits_ary[i] = (struct foo) FOO_INIT(RB_RED, NULL, NULL, NULL,
                                                     digits_ins[i])
         assert(my_rb_insert(&digits, &digits_ary[i]));
     }
