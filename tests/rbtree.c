@@ -159,6 +159,16 @@ int main ()
     assert(n5.node.link[LEFT] == &n3.node);
     assert(n3.node.parent == &n5.node);
 
+    assert(foo_first(tree) == &n3.node);
+    assert(foo_last(tree) == &n15.node);
+    assert(foo_next(&n5.node) == &n10.node);
+    assert(foo_prev(&n10.node) == &n5.node);
+    assert(!foo_search(tree, 7));
+    assert(foo_bs_insert(&tree, &n7));
+    assert(foo_search(tree, 7) == &n7);
+    assert(foo_bs_delete(&tree, &n7.node));
+    assert(!foo_search(tree, 7));
+
     assert(rbtree_rotate(tree, RIGHT) == &n5.node);
     /*
      *     5
@@ -233,9 +243,6 @@ int main ()
         assert(foo_insert(&digits, &digits_ary[i]));
     }
     assert(rbtree_validate(digits) == 3);
-
-    /* TODO: add tests for foo_delete, foo_first, foo_last, foo_next,
-     * foo_prev, foo_search */
 
 
     return 0;
