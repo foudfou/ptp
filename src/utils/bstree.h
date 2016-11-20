@@ -37,7 +37,12 @@ struct bstree_node {
         (node).link[LEFT] = NULL; (node).link[RIGHT] = NULL;    \
     } while (/*CONSTCOND*/ 0)
 
-#define BSTREE_GENERATE(name, type, field, key)                         \
+#define BSTREE_GENERATE(name, type, field, key)     \
+    BSTREE_GENERATE_BASE(name, type, field, key)    \
+    BSTREE_GENERATE_INSERT(name, type, field, key,) \
+    BSTREE_GENERATE_SEARCH(name, type, field, key)
+
+#define BSTREE_GENERATE_BASE(name, type, field, key)                    \
     /**                                                                 \
      * Test wether a tree is empty.                                     \
      */                                                                 \
@@ -184,16 +189,13 @@ struct bstree_node {
     {                                                                   \
         return __##name##_iterate(node, LEFT);                          \
     }                                                                   \
-                                                                        \
-    __BSTREE_GENERATE_INSERT(name, type, field, key)                    \
-    __BSTREE_GENERATE_SEARCH(name, type, field, key)
 
-#define __BSTREE_GENERATE_INSERT(name, type, field, key)                \
+#define BSTREE_GENERATE_INSERT(name, type, field, key, opt)             \
     /**                                                                 \
      * Insert a node into a tree.                                       \
      */                                                                 \
     static inline bool                                                  \
-    name##_insert(struct type **tree, struct name *data)                \
+    name##opt##_insert(struct type **tree, struct name *data)           \
     {                                                                   \
         /* We'll iterate on the *link* fields, which enables us to look \
            for the next node while keeping a hold on the current node.
@@ -217,7 +219,7 @@ struct bstree_node {
         return true;                                                    \
     }
 
-#define __BSTREE_GENERATE_SEARCH(name, type, field, key)                \
+#define BSTREE_GENERATE_SEARCH(name, type, field, key)                  \
     /**                                                                 \
      * Gets an entry by its key.                                        \
      *                                                                  \

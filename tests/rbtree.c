@@ -14,7 +14,7 @@ static inline int foo_compare(uint32_t keyA, uint32_t keyB)
     return keyA - keyB;
 }
 #define RBTREE_KEY_TYPE uint32_t
-RBTREE_GENERATE(foo, rbtree_node, node, key)
+RBTREE_GENERATE(foo, rbtree_node, node, key, _bs)
 
 #define FOO_INIT(color, parent, left, right, key)    \
     {{(color), (parent), {(left), (right)}}, (key)};
@@ -22,7 +22,7 @@ RBTREE_GENERATE(foo, rbtree_node, node, key)
 
 bool my_rb_insert(struct rbtree_node **tree, struct foo *data)
 {
-    if (!foo_insert(tree, data))
+    if (!foo_bs_insert(tree, data))
         return false;
 
     struct rbtree_node *node = &data->node;
@@ -229,17 +229,17 @@ int main ()
      *  / \
      * 3   7
      */
-    assert(foo_insert(&tree, &n10));
+    assert(foo_bs_insert(&tree, &n10));
     assert(tree);
     assert(tree == &n10.node);
-    assert(!foo_insert(&tree, &n10));
-    assert(foo_insert(&tree, &n5));
+    assert(!foo_bs_insert(&tree, &n10));
+    assert(foo_bs_insert(&tree, &n5));
     assert(n10.node.link[LEFT] == &n5.node);
     assert(n5.node.parent == &n10.node);
-    assert(foo_insert(&tree, &n15));
+    assert(foo_bs_insert(&tree, &n15));
     assert(n10.node.link[RIGHT] == &n15.node);
     assert(n15.node.parent == &n10.node);
-    assert(foo_insert(&tree, &n3));
+    assert(foo_bs_insert(&tree, &n3));
     assert(n5.node.link[LEFT] == &n3.node);
     assert(n3.node.parent == &n5.node);
 
