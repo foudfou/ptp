@@ -53,7 +53,7 @@ struct rbtree_node {
     BSTREE_GENERATE_DELETE(name, type, opt)             \
     BSTREE_GENERATE_INSERT(name, type, field, key, opt) \
     BSTREE_GENERATE_SEARCH(name, type, field, key)      \
-    RBTREE_GENERATE_INSERT(name, field)
+    RBTREE_GENERATE_INSERT(name, field, opt)
 
 /**
  * Rotate at @root in direction @dir.
@@ -100,10 +100,10 @@ struct rbtree_node *rbtree_rotate_double(struct rbtree_node *root, int dir)
     return rbtree_rotate(root, dir);
 }
 
-#define RBTREE_GENERATE_INSERT(name, field)                             \
+#define RBTREE_GENERATE_INSERT(name, field, opt)                        \
     bool name##_insert(struct rbtree_node **tree, struct name *data)    \
     {                                                                   \
-        if (!name##_bs_insert(tree, data))                              \
+        if (!name##opt##_insert(tree, data))                            \
             return false;                                               \
                                                                         \
         struct rbtree_node *node = &data->field;                        \
