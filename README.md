@@ -6,7 +6,7 @@ You need `ninja` installed first.
 
     mkdir build
     cd build
-    ../_meson/meson.py ..
+    ../tools/meson.py ..
     ninja
 
 ## Acknowledgements

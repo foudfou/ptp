@@ -100,7 +100,7 @@ struct rbtree_node *rbtree_rotate_double(struct rbtree_node *root, int dir)
 }
 
 #define RBTREE_GENERATE_INSERT(name, field)                             \
-    bool name##_insert(struct rbtree_node **tree, struct name *data) \
+    bool name##_insert(struct rbtree_node **tree, struct name *data)    \
     {                                                                   \
         if (!name##_bs_insert(tree, data))                              \
             return false;                                               \
