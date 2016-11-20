@@ -234,6 +234,9 @@ int main ()
     }
     assert(rbtree_validate(digits) == 3);
 
+    /* TODO: add tests for foo_delete, foo_first, foo_last, foo_next,
+     * foo_prev, foo_search */
+
 
     return 0;
 }

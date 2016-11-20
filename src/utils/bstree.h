@@ -38,11 +38,12 @@ struct bstree_node {
     } while (/*CONSTCOND*/ 0)
 
 #define BSTREE_GENERATE(name, type, field, key)     \
-    BSTREE_GENERATE_BASE(name, type, field, key)    \
+    BSTREE_GENERATE_BASE(name, type)                \
+    BSTREE_GENERATE_DELETE(name, type,)             \
     BSTREE_GENERATE_INSERT(name, type, field, key,) \
     BSTREE_GENERATE_SEARCH(name, type, field, key)
 
-#define BSTREE_GENERATE_BASE(name, type, field, key)                    \
+#define BSTREE_GENERATE_BASE(name, type)                                \
     /**                                                                 \
      * Test wether a tree is empty.                                     \
      */                                                                 \
@@ -63,64 +64,6 @@ struct bstree_node {
     {                                                                   \
         node->parent = parent;                                          \
         *target = node;                                                 \
-    }                                                                   \
-                                                                        \
-    /**                                                                 \
-     * Delete a node.                                                   \
-     */                                                                 \
-    static inline bool name##_delete(struct type **tree,                \
-                                     struct type *node)                 \
-    {                                                                   \
-        if (!*tree || !node)                                            \
-            return false;                                               \
-                                                                        \
-        struct type **parent_link = tree;                               \
-        if (node->parent) {                                             \
-            int dir = RIGHT_IF(node->parent->link[RIGHT] == node);      \
-            parent_link = &(node->parent->link[dir]);                   \
-        }                                                               \
-                                                                        \
-        if (node->link[LEFT] && node->link[RIGHT]) { /* delete by swapping */ \
-            struct type *succ = node->link[RIGHT];                      \
-            while (succ->link[LEFT]) {                                  \
-                succ = succ->link[LEFT];                                \
-            }                                                           \
-                                                                        \
-            /* link succ's only right child to succ's parent */         \
-            if (succ->link[RIGHT]) {                                    \
-                struct type *succ_parent = succ->parent;                \
-                int succ_dir = RIGHT_IF(succ_parent->link[RIGHT] == succ); \
-                name##_link_node(succ->link[RIGHT], succ_parent,        \
-                                 &(succ_parent->link[succ_dir]));       \
-            }                                                           \
-                                                                        \
-            name##_link_node(succ, node->parent, parent_link);          \
-            name##_link_node(node->link[LEFT], succ, &(succ->link[LEFT])); \
-            name##_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT])); \
-        }                                                               \
-        /*                                                              \
-         *        p          p                                          \
-         *         \          \                                         \
-         *          x    ->    ~                                        \
-         *         /                                                    \
-         *        ~   ~                                                 \
-         */                                                             \
-        else if (!node->link[LEFT] && !node->link[RIGHT]) {             \
-            *parent_link = NULL;                                        \
-        }                                                               \
-        /*                                                              \
-         *        p           p             p           p               \
-         *         \           \             \           \              \
-         *          x     ->    c    OR       x    ->     c             \
-         *           \                       /                          \
-         *            c                     c                           \
-         */                                                             \
-        else {                                                          \
-            int child_dir = RIGHT_IF(node->link[LEFT] == NULL);         \
-            name##_link_node(node->link[child_dir], node->parent, parent_link); \
-        }                                                               \
-                                                                        \
-        return true;                                                    \
     }                                                                   \
                                                                         \
     static inline struct type *__##name##_end(struct type *tree, int dir) \
@@ -188,6 +131,65 @@ struct bstree_node {
     static inline struct type *name##_prev(const struct type *node)     \
     {                                                                   \
         return __##name##_iterate(node, LEFT);                          \
+    }                                                                   \
+
+#define BSTREE_GENERATE_DELETE(name, type, opt)                         \
+    /**                                                                 \
+     * Delete a node.                                                   \
+     */                                                                 \
+    static inline bool name##opt##_delete(struct type **tree,           \
+                                          struct type *node)            \
+    {                                                                   \
+        if (!*tree || !node)                                            \
+            return false;                                               \
+                                                                        \
+        struct type **parent_link = tree;                               \
+        if (node->parent) {                                             \
+            int dir = RIGHT_IF(node->parent->link[RIGHT] == node);      \
+            parent_link = &(node->parent->link[dir]);                   \
+        }                                                               \
+                                                                        \
+        if (node->link[LEFT] && node->link[RIGHT]) { /* delete by swapping */ \
+            struct type *succ = node->link[RIGHT];                      \
+            while (succ->link[LEFT]) {                                  \
+                succ = succ->link[LEFT];                                \
+            }                                                           \
+                                                                        \
+            /* link succ's only right child to succ's parent */         \
+            if (succ->link[RIGHT]) {                                    \
+                struct type *succ_parent = succ->parent;                \
+                int succ_dir = RIGHT_IF(succ_parent->link[RIGHT] == succ); \
+                name##_link_node(succ->link[RIGHT], succ_parent,        \
+                                 &(succ_parent->link[succ_dir]));       \
+            }                                                           \
+                                                                        \
+            name##_link_node(succ, node->parent, parent_link);          \
+            name##_link_node(node->link[LEFT], succ, &(succ->link[LEFT])); \
+            name##_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT])); \
+        }                                                               \
+        /*                                                              \
+         *        p          p                                          \
+         *         \          \                                         \
+         *          x    ->    ~                                        \
+         *         /                                                    \
+         *        ~   ~                                                 \
+         */                                                             \
+        else if (!node->link[LEFT] && !node->link[RIGHT]) {             \
+            *parent_link = NULL;                                        \
+        }                                                               \
+        /*                                                              \
+         *        p           p             p           p               \
+         *         \           \             \           \              \
+         *          x     ->    c    OR       x    ->     c             \
+         *           \                       /                          \
+         *            c                     c                           \
+         */                                                             \
+        else {                                                          \
+            int child_dir = RIGHT_IF(node->link[LEFT] == NULL);         \
+            name##_link_node(node->link[child_dir], node->parent, parent_link); \
+        }                                                               \
+                                                                        \
+        return true;                                                    \
     }                                                                   \
 
 #define BSTREE_GENERATE_INSERT(name, type, field, key, opt)             \
