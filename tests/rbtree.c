@@ -16,87 +16,6 @@ static inline int foo_compare(uint32_t keyA, uint32_t keyB)
 #define RBTREE_KEY_TYPE uint32_t
 RBTREE_GENERATE(foo, rbtree_node, node, key, _bs)
 
-#define FOO_INIT(color, parent, left, right, key)    \
-    {{(color), (parent), {(left), (right)}}, (key)};
-
-
-bool foo_rb_insert(struct rbtree_node **tree, struct foo *data)
-{
-    if (!foo_bs_insert(tree, data))
-        return false;
-
-    struct rbtree_node *node = &data->node;
-    while (node->parent) {
-        node->color = RB_RED;
-
-        /* Parent black, nothing to do. */
-        if (node->parent->color == RB_BLACK)
-            return true;
-
-        /* Red parent => has a grand-parent. */
-        struct rbtree_node *parent = node->parent;
-        int par_dir = RIGHT_IF(parent == parent->parent->link[RIGHT]);
-        struct rbtree_node *uncle = parent->parent->link[!par_dir];
-
-        /*
-         * Red uncle => reverse relatives' color.
-         *
-         *    B        r
-         *   / \      / \
-         *  r   r -> B   B
-         *   \        \
-         *    r        r
-         */
-        if (uncle && uncle->color == RB_RED) {
-            /* printf("red uncle\n"); */
-            parent->color = RB_BLACK;
-            uncle->color = RB_BLACK;
-            parent->parent->color = RB_RED;
-            node = parent->parent;
-        }
-        /*
-         * Black or no uncle => rotate and recolor.
-         */
-        else {
-            /* printf("--black uncle-->%d\n", !par_dir); */
-            int dir = RIGHT_IF(node == parent->link[RIGHT]);
-            struct rbtree_node *top;
-            /*
-             *       B         (r)B
-             *      / \        /   \
-             *     r   B  ->  r*   (B)r
-             *    / \              / \
-             *   r*  B            B   B
-             */
-            if (par_dir == dir)
-                top = rbtree_rotate(parent->parent, !par_dir);
-            /*
-             *      B         (r*)B
-             *     / \        /   \
-             *    r   B  ->  r    (B)r
-             *     \                \
-             *      r*               B
-             */
-            else
-                top = rbtree_rotate_double(parent->parent, !par_dir);
-            top->color = RB_BLACK;
-            top->link[!par_dir]->color = RB_RED;
-
-            if (top->parent) {
-                int orig_dir = RIGHT_IF(
-                    top->parent->link[RIGHT] == parent->parent);
-                top->parent->link[orig_dir] = top;
-            }
-            else
-                *tree = top;
-        }
-    }
-
-    node->color = RB_BLACK;
-    return true;
-}
-
-
 #include <stdio.h>
 void rbtree_display(struct rbtree_node *root)
 {
@@ -149,6 +68,9 @@ int rbtree_validate(struct rbtree_node *root)
 }
 
 #define LEN(ary)  (sizeof(ary) / sizeof(ary[0]))
+
+#define FOO_INIT(color, parent, left, right, key)    \
+    {{(color), (parent), {(left), (right)}}, (key)};
 
 int main ()
 {
@@ -260,18 +182,18 @@ int main ()
      *   / \
      *  3   7
      */
-    assert(foo_rb_insert(&tree, &n10));
+    assert(foo_insert(&tree, &n10));
     assert(tree == &n10.node);
     assert(n10.node.color == RB_BLACK);
-    assert(!foo_rb_insert(&tree, &n10));
+    assert(!foo_insert(&tree, &n10));
 
-    assert(foo_rb_insert(&tree, &n5));
+    assert(foo_insert(&tree, &n5));
     assert(n5.node.color == RB_RED);
 
-    assert(foo_rb_insert(&tree, &n15));
+    assert(foo_insert(&tree, &n15));
     assert(n15.node.color == RB_RED);
 
-    assert(foo_rb_insert(&tree, &n7)); // red uncle
+    assert(foo_insert(&tree, &n7)); // red uncle
     assert(rbtree_validate(tree) == 3);
     assert(tree == &n10.node);
     assert(n10.node.color == RB_BLACK);
@@ -279,7 +201,7 @@ int main ()
     assert(n15.node.color == RB_BLACK);
     assert(n7.node.color == RB_RED);
 
-    assert(foo_rb_insert(&tree, &n3));
+    assert(foo_insert(&tree, &n3));
 
     RBTREE_DECL(digits);
     uint32_t *digits_ins = NULL; // compound literals instead of malloc and memcpy
@@ -298,7 +220,7 @@ int main ()
     for (int i=0; i<digits_ins_len; i++) {
         digits_ary[i] = (struct foo) FOO_INIT(RB_RED, NULL, NULL, NULL,
                                               digits_ins[i])
-        assert(foo_rb_insert(&digits, &digits_ary[i]));
+        assert(foo_insert(&digits, &digits_ary[i]));
     }
     assert(rbtree_validate(digits) == 3);
 
@@ -308,7 +230,7 @@ int main ()
     for (int i=0; i<digits_ins_len; ++i) {
         digits_ary[i] = (struct foo) FOO_INIT(RB_RED, NULL, NULL, NULL,
                                               digits_ins[i])
-        assert(foo_rb_insert(&digits, &digits_ary[i]));
+        assert(foo_insert(&digits, &digits_ary[i]));
     }
     assert(rbtree_validate(digits) == 3);
 

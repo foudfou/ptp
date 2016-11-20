@@ -51,7 +51,8 @@ struct rbtree_node {
 #define RBTREE_GENERATE(name, type, field, key, opt)    \
     BSTREE_GENERATE_BASE(name, type, field, key)        \
     BSTREE_GENERATE_INSERT(name, type, field, key, opt) \
-    BSTREE_GENERATE_SEARCH(name, type, field, key)
+    BSTREE_GENERATE_SEARCH(name, type, field, key)      \
+    RBTREE_GENERATE_INSERT(name, field)
 
 /**
  * Rotate at @root in direction @dir.
@@ -97,6 +98,83 @@ struct rbtree_node *rbtree_rotate_double(struct rbtree_node *root, int dir)
     root->link[!dir] = rbtree_rotate(root->link[!dir], !dir);
     return rbtree_rotate(root, dir);
 }
+
+#define RBTREE_GENERATE_INSERT(name, field)                             \
+    bool name##_insert(struct rbtree_node **tree, struct name *data) \
+    {                                                                   \
+        if (!name##_bs_insert(tree, data))                              \
+            return false;                                               \
+                                                                        \
+        struct rbtree_node *node = &data->field;                        \
+        while (node->parent) {                                          \
+            node->color = RB_RED;                                       \
+                                                                        \
+            /* Parent black, nothing to do. */                          \
+            if (node->parent->color == RB_BLACK)                        \
+                return true;                                            \
+                                                                        \
+            /* Red parent => has a grand-parent. */                     \
+            struct rbtree_node *parent = node->parent;                  \
+            int par_dir = RIGHT_IF(parent == parent->parent->link[RIGHT]); \
+            struct rbtree_node *uncle = parent->parent->link[!par_dir]; \
+                                                                        \
+            /*                                                          \
+             * Red uncle => reverse relatives' color.                   \
+             *                                                          \
+             *    B        r                                            \
+             *   / \      / \                                           \
+             *  r   r -> B   B                                          \
+             *   \        \                                             \
+             *    r        r                                            \
+             */                                                         \
+            if (uncle && uncle->color == RB_RED) {                      \
+                /* printf("red uncle\n"); */                            \
+                parent->color = RB_BLACK;                               \
+                uncle->color = RB_BLACK;                                \
+                parent->parent->color = RB_RED;                         \
+                node = parent->parent;                                  \
+            }                                                           \
+            /*                                                          \
+             * Black or no uncle => rotate and recolor.                 \
+             */                                                         \
+            else {                                                      \
+                /* printf("--black uncle-->%d\n", !par_dir); */         \
+                int dir = RIGHT_IF(node == parent->link[RIGHT]);        \
+                struct rbtree_node *top;                                \
+                /*                                                      \
+                 *       B         (r)B                                 \
+                 *      / \        /   \                                \
+                 *     r   B  ->  r*   (B)r                             \
+                 *    / \              / \                              \
+                 *   r*  B            B   B                             \
+                 */                                                     \
+                if (par_dir == dir)                                     \
+                    top = rbtree_rotate(parent->parent, !par_dir);      \
+                /*                                                      \
+                 *      B         (r*)B                                 \
+                 *     / \        /   \                                 \
+                 *    r   B  ->  r    (B)r                              \
+                 *     \                \                               \
+                 *      r*               B                              \
+                 */                                                     \
+                else                                                    \
+                    top = rbtree_rotate_double(parent->parent, !par_dir); \
+                top->color = RB_BLACK;                                  \
+                top->link[!par_dir]->color = RB_RED;                    \
+                                                                        \
+                if (top->parent) {                                      \
+                    int orig_dir = RIGHT_IF(                            \
+                        top->parent->link[RIGHT] == parent->parent);    \
+                    top->parent->link[orig_dir] = top;                  \
+                }                                                       \
+                else                                                    \
+                    *tree = top;                                        \
+            }                                                           \
+        }                                                               \
+                                                                        \
+        node->color = RB_BLACK;                                         \
+        return true;                                                    \
+    }
 
 /* DELETE */
 /* If the node to be deleted is red, we're done. */
