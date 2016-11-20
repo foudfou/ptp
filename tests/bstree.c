@@ -1,8 +1,8 @@
 #include <assert.h>
 #include <stdlib.h>
 #include <string.h>
-#include "../src/utils/cont.h"
-#include "../src/utils/bstree.h"
+#include "utils/cont.h"
+#include "utils/bstree.h"
 
 static const unsigned int KEY_MAX_LENGTH = 1024;
 

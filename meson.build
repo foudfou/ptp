@@ -11,7 +11,7 @@ conf.set_quoted('appcopy',
 
 add_global_arguments('-Wfatal-errors', '-pedantic', '-Wextra', language : 'c')
 
-inc = include_directories(['.', 'src', 'src/utils'])
+inc = include_directories(['src'])
 
 # subdir('include')
 subdir('src')

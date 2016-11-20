@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <string.h>
-#include "../src/utils/list.h"
+#include "utils/list.h"
 
 static const unsigned char HASH_SIZE     = 0xff;
 static const unsigned int KEY_MAX_LENGTH = 1024;

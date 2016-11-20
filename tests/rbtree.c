@@ -1,7 +1,7 @@
 #include <assert.h>
 #include <stdlib.h>
-#include "../src/utils/cont.h"
-#include "../src/utils/rbtree.h"
+#include "utils/cont.h"
+#include "utils/rbtree.h"
 
 #define MYTYPE_INIT(color, parent, left, right, key)    \
     {{(color), (parent), {(left), (right)}}, (key)};

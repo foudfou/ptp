@@ -1,6 +1,6 @@
 #include <assert.h>
-#include "../src/utils/cont.h"
-#include "../src/utils/list.h"
+#include "utils/cont.h"
+#include "utils/list.h"
 
 /*  Typical object that can be added to a list. */
 struct something {
