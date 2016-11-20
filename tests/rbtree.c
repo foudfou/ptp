@@ -20,7 +20,7 @@ RBTREE_GENERATE(foo, rbtree_node, node, key, _bs)
     {{(color), (parent), {(left), (right)}}, (key)};
 
 
-bool my_rb_insert(struct rbtree_node **tree, struct foo *data)
+bool foo_rb_insert(struct rbtree_node **tree, struct foo *data)
 {
     if (!foo_bs_insert(tree, data))
         return false;
@@ -30,10 +30,8 @@ bool my_rb_insert(struct rbtree_node **tree, struct foo *data)
         node->color = RB_RED;
 
         /* Parent black, nothing to do. */
-        if (node->parent->color == RB_BLACK) {
-            /* printf("black parent\n"); */
+        if (node->parent->color == RB_BLACK)
             return true;
-        }
 
         /* Red parent => has a grand-parent. */
         struct rbtree_node *parent = node->parent;
@@ -132,12 +130,8 @@ int rbtree_validate(struct rbtree_node *root)
     /* Red violation / Consecutive red links */
     assert(!(IS_RED(root) && (IS_RED(ln) || IS_RED(rn))));
 
-    struct foo *this = cont(root, struct foo, node); /* DEBUG */
-    printf("{%d(%d)", this->key, root->color);             /* DEBUG */
     int lh = rbtree_validate(ln);
-    printf(", ");             /* DEBUG */
     int rh = rbtree_validate(rn);
-    printf("}\n");             /* DEBUG */
 
     /* Binary tree violation / Invalid binary search tree */
     uint32_t root_key = cont(root, struct foo, node)->key;
@@ -266,18 +260,18 @@ int main ()
      *   / \
      *  3   7
      */
-    assert(my_rb_insert(&tree, &n10));
+    assert(foo_rb_insert(&tree, &n10));
     assert(tree == &n10.node);
     assert(n10.node.color == RB_BLACK);
-    assert(!my_rb_insert(&tree, &n10));
+    assert(!foo_rb_insert(&tree, &n10));
 
-    assert(my_rb_insert(&tree, &n5));
+    assert(foo_rb_insert(&tree, &n5));
     assert(n5.node.color == RB_RED);
 
-    assert(my_rb_insert(&tree, &n15));
+    assert(foo_rb_insert(&tree, &n15));
     assert(n15.node.color == RB_RED);
 
-    assert(my_rb_insert(&tree, &n7)); // red uncle
+    assert(foo_rb_insert(&tree, &n7)); // red uncle
     assert(rbtree_validate(tree) == 3);
     assert(tree == &n10.node);
     assert(n10.node.color == RB_BLACK);
@@ -285,7 +279,7 @@ int main ()
     assert(n15.node.color == RB_BLACK);
     assert(n7.node.color == RB_RED);
 
-    assert(my_rb_insert(&tree, &n3));
+    assert(foo_rb_insert(&tree, &n3));
 
     RBTREE_DECL(digits);
     uint32_t *digits_ins = NULL; // compound literals instead of malloc and memcpy
@@ -303,8 +297,8 @@ int main ()
     struct foo digits_ary[digits_ins_len];
     for (int i=0; i<digits_ins_len; i++) {
         digits_ary[i] = (struct foo) FOO_INIT(RB_RED, NULL, NULL, NULL,
-                                                    digits_ins[i])
-        assert(my_rb_insert(&digits, &digits_ary[i]));
+                                              digits_ins[i])
+        assert(foo_rb_insert(&digits, &digits_ary[i]));
     }
     assert(rbtree_validate(digits) == 3);
 
@@ -313,8 +307,8 @@ int main ()
     digits_ins_len = 8;
     for (int i=0; i<digits_ins_len; ++i) {
         digits_ary[i] = (struct foo) FOO_INIT(RB_RED, NULL, NULL, NULL,
-                                                    digits_ins[i])
-        assert(my_rb_insert(&digits, &digits_ary[i]));
+                                              digits_ins[i])
+        assert(foo_rb_insert(&digits, &digits_ary[i]));
     }
     assert(rbtree_validate(digits) == 3);
 
