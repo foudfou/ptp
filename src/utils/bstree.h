@@ -133,7 +133,7 @@ static inline struct type *name##_prev(const struct type *node)     \
     return __##name##_iterate(node, LEFT);                          \
 }                                                                   \
 
-#define BSTREE_GENERATE_DELETE(name, type, opt) \
+#define BSTREE_GENERATE_DELETE(name, type, opt)   \
 /**
  * Delete a node.
  */                                                                     \
@@ -163,6 +163,8 @@ static inline bool name##opt##_delete(struct type **tree,               \
                              &(succ_parent->link[succ_dir]));           \
         }                                                               \
                                                                         \
+        /* transplant succ to node's place, which is equivalent to: swapping
+           the surrounding structs' nodes + updating succ's new parent link. */ \
         name##_link_node(succ, node->parent, parent_link);              \
         name##_link_node(node->link[LEFT], succ, &(succ->link[LEFT]));  \
         name##_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT])); \
