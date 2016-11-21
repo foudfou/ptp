@@ -133,7 +133,7 @@ int main ()
      *        8
      */
     assert(foo_delete(&numbers, &five.node));
-    assert(!foo_search(tree, "5"));
+    assert(!foo_search(numbers, "5"));
     assert(numbers == &two.node);
     assert(nine.node.link[LEFT] == &(eight.node));
     assert(eight.node.parent == &(nine.node));
