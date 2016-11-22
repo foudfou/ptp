@@ -25,6 +25,8 @@ struct bstree_node {
     BSTREE_MEMBERS(bstree_node)
 };
 
+/* LEFT and RIGHT are arbitrary opposite values, in the boolean termm, in order
+   to use the (!direction) property. */
 #define LEFT  0
 #define RIGHT 1
 
@@ -136,6 +138,8 @@ static inline struct type *name##_prev(const struct type *node)     \
 #define BSTREE_GENERATE_DELETE(name, type, opt)   \
 /**
  * Delete a node.
+ *
+ * @node may be modified to point to the actually deleted node !
  */                                                                     \
 static inline bool name##opt##_delete(struct type **tree,               \
                                       struct type *node)                \
@@ -150,6 +154,7 @@ static inline bool name##opt##_delete(struct type **tree,               \
     }                                                                   \
                                                                         \
     if (node->link[LEFT] && node->link[RIGHT]) { /* delete by swapping */ \
+        /* we could also take the predecessor */                        \
         struct type *succ = node->link[RIGHT];                          \
         while (succ->link[LEFT]) {                                      \
             succ = succ->link[LEFT];                                    \
@@ -163,17 +168,20 @@ static inline bool name##opt##_delete(struct type **tree,               \
                              &(succ_parent->link[succ_dir]));           \
         }                                                               \
                                                                         \
-        /* transplant succ to node's place, which is equivalent to: swapping
-           the surrounding structs' nodes + updating succ's new parent link. */ \
+        /* Transplant succ to node's place, which is equivalent to: swapping
+           the surrounding structs' nodes + updating succ's new parent link.
+           We need to update the actually deleted node.  */             \
+        struct type tmp = *succ;                                         \
         name##_link_node(succ, node->parent, parent_link);              \
         name##_link_node(node->link[LEFT], succ, &(succ->link[LEFT]));  \
         name##_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT])); \
+        *node = tmp;                                                    \
     }                                                                   \
     /*
      *        p          p
      *         \          \
      *          x    ->    ~
-     *         /
+     *         / \
      *        ~   ~
      */                                                             \
     else if (!node->link[LEFT] && !node->link[RIGHT]) {             \

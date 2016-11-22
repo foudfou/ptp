@@ -143,6 +143,10 @@ int main ()
     assert(nine.node.parent == &(seven.node));
     assert(seven.node.parent == &(two.node));
     assert(seven.node.parent->link[RIGHT] == &(seven.node));
+    /* deleted node is the actually deleted node */
+    assert(five.node.parent == &nine.node);
+    assert(!five.node.link[LEFT]);
+    assert(five.node.link[RIGHT] == &eight.node);
 
     assert(foo_delete(&numbers, &two.node));
     assert(numbers == &four.node);
