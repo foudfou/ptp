@@ -88,7 +88,7 @@ struct rbtree_node *rbtree_rotate(struct rbtree_node *root, int dir)
  *
  *       z                z             y
  *      / \              / \          /   \
- *     x   d            y   d        x     z
+ *     x*  d            y   d        x     z
  *    / \       ->     / \     ->   / \   / \
  *   a   y            x   c        a   b c   d
  *      / \          / \
@@ -129,7 +129,6 @@ bool name##_insert(struct rbtree_node **tree, struct name *data)        \
          *    r        r
          */                                                             \
         if (uncle && uncle->color == RB_RED) {                          \
-            /* printf("red uncle\n"); */                                \
             parent->color = RB_BLACK;                                   \
             uncle->color = RB_BLACK;                                    \
             parent->parent->color = RB_RED;                             \
@@ -139,7 +138,6 @@ bool name##_insert(struct rbtree_node **tree, struct name *data)        \
          * Black or no uncle => rotate and recolor.
          */                                                             \
         else {                                                          \
-            /* printf("--black uncle-->%d\n", !par_dir); */             \
             int dir = RIGHT_IF(node == parent->link[RIGHT]);            \
             struct rbtree_node *top;                                    \
             /*
@@ -176,17 +174,5 @@ bool name##_insert(struct rbtree_node **tree, struct name *data)        \
     node->color = RB_BLACK;                                             \
     return true;                                                        \
 }
-
-/* DELETE */
-/* If the node to be deleted is red, we're done. */
-/* If node has a child (=> single and red), recolor it to black. */
-/* If node to be deleted is black, we need to correct. */
-/* - if child red: recolor to black */
-/* - if child black: check sibling: */
-/*   - sibling is red */
-/*   - sibling is black and children are: */
-/*     - two black */
-/*     - right red */
-/*     - left red, right black */
 
 #endif /* RBTREE_H */

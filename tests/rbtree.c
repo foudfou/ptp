@@ -16,6 +16,94 @@ static inline int foo_compare(uint32_t keyA, uint32_t keyB)
 #define RBTREE_KEY_TYPE uint32_t
 RBTREE_GENERATE(foo, rbtree_node, node, key, _bs)
 
+
+/* http://horstmann.com/unblog/2011-05-12/blog.html
+   http://www.geeksforgeeks.org/red-black-tree-set-3-delete-2/ */
+static inline bool foo_delete(struct rbtree_node **tree,
+                              struct rbtree_node *node)
+{
+    /* first perfom a bstree delete. Note that, because of delete-by-swap, we
+       end up deleting a node with at most 1 child. */
+    if (!foo_bs_delete(tree, node))
+        return false;
+
+    /* If the deleted node is red, we're done. */
+    if (node->color == RB_RED)
+        return true;
+
+    struct rbtree_node * child = node->link[LEFT] ? node->link[LEFT] :
+        node->link[RIGHT];
+
+    /* If deleted node is black, we need to correct. */
+    /* - if child red: recolor to black */
+    if (child && child->color == RB_RED) {
+        child->color = RB_BLACK;
+        return true;
+    }
+
+    /*
+     * At this stage, both node and child (if any) are black. Now, having
+     * removed a black node, we virtually color the child as double-black. If
+     * node has no child, then the trick is to consider its NULL children a new
+     * double-black NULL child.
+     *
+     *       30b         30b            30b            30b
+     *      /  \   →    /   \    OR    /  \   →       /   \
+     *    20b* 40b    10bb  40b      20b* 40b   (NULL)bb  40b
+     *    /
+     *  10b
+     */
+
+    /* Starting from the new child, we'll consider his sibling. */
+    while (child->color == RB_BLACK && child != *tree) {
+        struct rbtree_node * parent = node->parent;
+        /* We know there is a sibling otherwise the tree would be
+           unbalanced. */
+        int child_dir = RIGHT_IF(parent->link[RIGHT] == child);
+        struct rbtree_node * sibling = parent->link[!child_dir];
+
+        /* - if child black: check sibling: */
+        /*   - sibling is red: */
+        if (sibling->color == RB_RED) {
+            /* rotate to move sibling up */
+            rbtree_rotate(parent, child_dir);
+            /* recolor the old sibling and parent */
+            sibling->color = RB_BLACK;
+            parent->color = RB_RED;
+            continue;
+        }
+
+        struct rbtree_node * nephew_aligned = sibling->link[!child_dir];
+        struct rbtree_node * nephew_unaligned = sibling->link[child_dir];
+        int neph_a_color = nephew_aligned ? nephew_aligned->color : RB_BLACK;
+        int neph_u_color = nephew_unaligned ? nephew_unaligned->color : RB_BLACK;
+
+        /*   - sibling is black and children are: */
+        /*     - two black */
+        if (neph_a_color == RB_BLACK && neph_u_color == RB_BLACK) {
+            sibling->color = RB_RED;
+            child = parent;
+            continue;
+        }
+
+        /*     - right red */
+        /*     - left red, right black */
+        if (neph_a_color == RB_RED) {
+            rbtree_rotate(sibling, child_dir);
+            nephew_aligned->color = RB_BLACK;
+        }
+        else {
+            rbtree_rotate_double(parent, !child_dir);
+            nephew_unaligned->color = RB_BLACK;
+
+        }
+    }
+
+    // color root to black
+
+    return true;
+}
+
 #include <stdio.h>
 void rbtree_display(struct rbtree_node *root)
 {
