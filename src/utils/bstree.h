@@ -209,7 +209,7 @@ static inline bool name##opt##_delete(struct type **tree,               \
 static inline bool                                                  \
 name##opt##_insert(struct type **tree, struct name *data)           \
 {                                                                   \
-    /* We'll iterate on the *link* fields, which enables us to look for the
+    /* We'll iterate on the *link* fields, which enables us to look up the
        next node while keeping a hold on the current node. Hence the double
        pointer. */                                                  \
     struct type **it = tree, *parent = NULL;                        \

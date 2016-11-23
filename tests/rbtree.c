@@ -55,8 +55,8 @@ static inline bool foo_delete(struct rbtree_node **tree,
      */
 
     /* Starting from the new child, we'll consider his sibling. */
-    while (child->color == RB_BLACK && child != *tree) {
-        struct rbtree_node * parent = node->parent;
+    struct rbtree_node *parent = node->parent;
+    do {
         /* We know there is a sibling otherwise the tree would be
            unbalanced. */
         int child_dir = RIGHT_IF(parent->link[RIGHT] == child);
@@ -82,6 +82,7 @@ static inline bool foo_delete(struct rbtree_node **tree,
         /*     - two black */
         if (neph_a_color == RB_BLACK && neph_u_color == RB_BLACK) {
             sibling->color = RB_RED;
+            parent = parent->parent;
             child = parent;
             continue;
         }
@@ -97,9 +98,9 @@ static inline bool foo_delete(struct rbtree_node **tree,
             nephew_unaligned->color = RB_BLACK;
 
         }
-    }
+    } while (child->color == RB_BLACK && parent);
 
-    // color root to black
+    child->color = RB_BLACK;
 
     return true;
 }
