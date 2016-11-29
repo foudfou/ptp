@@ -64,7 +64,8 @@ static inline void name##_link_node(struct type *node,                  \
                                     struct type *parent,                \
                                     struct type **target)               \
 {                                                                       \
-    node->parent = parent;                                              \
+    if (node)                                                           \
+        node->parent = parent;                                          \
     *target = node;                                                     \
 }                                                                       \
                                                                         \
@@ -159,23 +160,22 @@ static inline bool name##opt##_delete(struct type **tree,               \
         while (succ->link[LEFT]) {                                      \
             succ = succ->link[LEFT];                                    \
         }                                                               \
+        struct type deleted = *succ;                                    \
                                                                         \
-        /* link succ's only right child to succ's parent */             \
-        if (succ->link[RIGHT]) {                                        \
+        if (succ != node->link[RIGHT]) {                                \
+            /* link succ's only right child to succ's parent */         \
             struct type *succ_parent = succ->parent;                    \
-            int succ_dir = RIGHT_IF(succ_parent->link[RIGHT] == succ);  \
             name##_link_node(succ->link[RIGHT], succ_parent,            \
-                             &(succ_parent->link[succ_dir]));           \
+                             &(succ_parent->link[LEFT]));               \
+            name##_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT])); \
         }                                                               \
                                                                         \
         /* Transplant succ to node's place, which is equivalent to: swapping
-           the surrounding structs' nodes + updating succ's new parent link.
-           We need to update the actually deleted node.  */             \
-        struct type tmp = *succ;                                         \
+           the surrounding structs' nodes + updating succ's new parent link. */ \
         name##_link_node(succ, node->parent, parent_link);              \
         name##_link_node(node->link[LEFT], succ, &(succ->link[LEFT]));  \
-        name##_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT])); \
-        *node = tmp;                                                    \
+                                                                        \
+        *node = deleted;                                                \
     }                                                                   \
     /*
      *        p          p

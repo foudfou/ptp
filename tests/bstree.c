@@ -121,6 +121,7 @@ int main ()
     assert(foo_insert(&numbers, &seven));
     assert(foo_insert(&numbers, &eight));
     assert(foo_insert(&numbers, &eleven));
+
     /*
      *    2               2
      *   / \             / \
@@ -148,10 +149,44 @@ int main ()
     assert(!five.node.link[LEFT]);
     assert(five.node.link[RIGHT] == &eight.node);
 
+    /*
+     *    2*
+     *   / \
+     *  1   7
+     *     / \
+     *    4   9
+     *       / \
+     *      8   B
+     */
     assert(foo_delete(&numbers, &two.node));
     assert(numbers == &four.node);
     assert(four.node.link[LEFT] == &(one.node));
     assert(four.node.link[RIGHT] == &(seven.node));
+    assert(!seven.node.link[LEFT]);
+    /* the actual deleted node is preserved */
+    assert(two.node.parent == &seven.node);
+    assert(!two.node.link[LEFT]);
+    assert(!two.node.link[RIGHT]);
+
+    /*
+     *    4          4
+     *   / \        / \
+     *  1   7      1   7
+     *       \          \
+     *        9          B
+     *       / \        /
+     *      8   B      8
+     */
+    /* successor is to-be-deleted node's right child */
+    bstree_display(numbers);
+    assert(foo_delete(&numbers, &nine.node));
+    bstree_display(numbers);
+    assert(eleven.node.parent == &seven.node);
+    assert(eleven.node.link[LEFT] == &eight.node);
+    assert(!eleven.node.link[RIGHT]);
+    assert(nine.node.parent == &eleven.node);
+    assert(!nine.node.link[LEFT]);
+    assert(!nine.node.link[RIGHT]);
 
     /*
      *    2               2

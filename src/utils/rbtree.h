@@ -83,12 +83,12 @@ struct rbtree_node *rbtree_rotate(struct rbtree_node *root, int dir)
 /**
  * Double rotation
  *
- * Rotate in one direction at child of @root, then in the other direction @dir
+ * Rotate in opposite direction at child of @root, then in the @dir direction
  * at @root.
  *
- *       z                z             y
+ *       z*               z             y
  *      / \              / \          /   \
- *     x*  d            y   d        x     z
+ *     x   d            y   d        x     z
  *    / \       ->     / \     ->   / \   / \
  *   a   y            x   c        a   b c   d
  *      / \          / \
