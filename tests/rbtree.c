@@ -14,7 +14,7 @@ static inline int foo_compare(uint32_t keyA, uint32_t keyB)
     return keyA - keyB;
 }
 #define RBTREE_KEY_TYPE uint32_t
-RBTREE_GENERATE(foo, rbtree_node, node, key, _bs)
+RBTREE_GENERATE(foo, rbtree, node, key, _bs)
 
 
 #include <stdio.h>
@@ -233,7 +233,7 @@ int main ()
     /* Btree declaration */
     RBTREE_DECL(tree);
     assert(!tree);
-    assert(foo_is_empty(tree));
+    assert(rbtree_is_empty(tree));
 
     /* Tree insertion */
     RBTREE_NODE_INIT(n5.node); RBTREE_NODE_INIT(n10.node);
@@ -260,10 +260,10 @@ int main ()
     assert(n5.node.link[LEFT] == &n3.node);
     assert(n3.node.parent == &n5.node);
 
-    assert(foo_first(tree) == &n3.node);
-    assert(foo_last(tree) == &n15.node);
-    assert(foo_next(&n5.node) == &n10.node);
-    assert(foo_prev(&n10.node) == &n5.node);
+    assert(rbtree_first(tree) == &n3.node);
+    assert(rbtree_last(tree) == &n15.node);
+    assert(rbtree_next(&n5.node) == &n10.node);
+    assert(rbtree_prev(&n10.node) == &n5.node);
     assert(!foo_search(tree, 7));
     assert(foo_bs_insert(&tree, &n7));
     assert(foo_search(tree, 7) == &n7);

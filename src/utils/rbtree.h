@@ -46,11 +46,12 @@ struct rbtree_node {
 
 #define BSTREE_KEY_TYPE RBTREE_KEY_TYPE
 #define RBTREE_GENERATE(name, type, field, key, opt)    \
-    BSTREE_GENERATE_BASE(name, type)                    \
     BSTREE_GENERATE_DELETE(name, type, opt)             \
     BSTREE_GENERATE_INSERT(name, type, field, key, opt) \
     BSTREE_GENERATE_SEARCH(name, type, field, key)      \
     RBTREE_GENERATE_INSERT(name, field, opt)
+
+BSTREE_GENERATE_BASE(rbtree)
 
 /**
  * Rotate at @root in direction @dir.
