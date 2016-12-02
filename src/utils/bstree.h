@@ -22,8 +22,6 @@ struct bstree_node {
     BSTREE_MEMBERS(bstree_node)
 };
 
-#define BSTREE_NODE(type) struct type##_node
-
 /* LEFT and RIGHT are arbitrary opposite values, in the boolean termm, in order
    to use the (!direction) property. */
 #define LEFT  0
@@ -42,6 +40,8 @@ struct bstree_node {
     BSTREE_GENERATE_DELETE(name, type,)             \
     BSTREE_GENERATE_INSERT(name, type, field, key,) \
     BSTREE_GENERATE_SEARCH(name, type, field, key)
+
+#define BSTREE_NODE(type) struct type##_node
 
 #define BSTREE_GENERATE_BASE(type)              \
 /**
@@ -67,7 +67,8 @@ static inline void type##_link_node(BSTREE_NODE(type) *node,            \
     *target = node;                                                     \
 }                                                                       \
                                                                         \
-static inline BSTREE_NODE(type) *__##type##_end(BSTREE_NODE(type) *tree, int dir)   \
+static inline BSTREE_NODE(type)*                                        \
+__##type##_end(BSTREE_NODE(type) *tree, int dir)                        \
 {                                                                       \
     if (!tree) return NULL;                                             \
                                                                         \
@@ -100,7 +101,7 @@ static inline BSTREE_NODE(type) *type##_last(BSTREE_NODE(type) *tree)   \
  * Find the next/previous inorder node.
  */                                                                     \
 static inline BSTREE_NODE(type)*                                        \
-__##type##_iterate(const BSTREE_NODE(type) *node, int dir)          \
+__##type##_iterate(const BSTREE_NODE(type) *node, int dir)              \
 {                                                                       \
     if (!node) return NULL;                                             \
                                                                         \
@@ -121,7 +122,7 @@ __##type##_iterate(const BSTREE_NODE(type) *node, int dir)          \
 /**
  * Find the next inorder node.
  */                                                                     \
-static inline BSTREE_NODE(type) *type##_next(const BSTREE_NODE(type) *node) \
+static inline BSTREE_NODE(type)* type##_next(const BSTREE_NODE(type) *node) \
 {                                                                       \
     return __##type##_iterate(node, RIGHT);                             \
 }                                                                       \
