@@ -166,6 +166,11 @@ static inline bool name##opt##_delete(struct type **tree,               \
                              &(succ_parent->link[LEFT]));               \
             name##_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT])); \
         }                                                               \
+        else {                                                          \
+            /* Set parent to the future parent. This trick enables us to find
+               the sibling afterwards. */                               \
+            deleted.parent = succ;                                      \
+        }                                                               \
                                                                         \
         /* Transplant succ to node's place, which is equivalent to: swapping
            the surrounding structs' nodes + updating succ's new parent link. */ \

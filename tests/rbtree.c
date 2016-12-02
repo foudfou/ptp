@@ -17,25 +17,55 @@ static inline int foo_compare(uint32_t keyA, uint32_t keyB)
 RBTREE_GENERATE(foo, rbtree_node, node, key, _bs)
 
 
+#include <stdio.h>
+void rbtree_display(struct rbtree_node *root)
+{
+    if (!root) {
+        printf(".");
+        return;
+    }
+
+    struct rbtree_node *ln = root->link[LEFT];
+    struct rbtree_node *rn = root->link[RIGHT];
+
+    struct foo *this = cont(root, struct foo, node);
+    printf("{%d(%d)=", this->key, root->color);
+    rbtree_display(ln);
+    printf(",");
+    rbtree_display(rn);
+    printf("} ");
+}
+
 /* http://horstmann.com/unblog/2011-05-12/blog.html
    http://www.geeksforgeeks.org/red-black-tree-set-3-delete-2/ */
 static inline bool foo_delete(struct rbtree_node **tree,
                               struct rbtree_node *node)
 {
+    struct rbtree_node **parent_link_orig = tree;
+    int dir_orig = 0;
+    if (node->parent) {
+        dir_orig = RIGHT_IF(node->parent->link[RIGHT] == node);
+        parent_link_orig = &(node->parent->link[dir_orig]);
+    }
+    int color_orig = node->color;
+
     /* first perfom a bstree delete. Note that, because of delete-by-swap, we
        end up deleting a node with at most 1 child. */
     if (!foo_bs_delete(tree, node))
         return false;
+    rbtree_display(*tree); fflush(stdout);
+
+    if (*parent_link_orig && node != *parent_link_orig) /* delete-by-swap */
+        (*parent_link_orig)->color = color_orig;
 
     /* If the deleted node is red, we're done. */
     if (node->color == RB_RED)
         return true;
 
-    struct rbtree_node * child = node->link[LEFT] ? node->link[LEFT] :
-        node->link[RIGHT];
-
     /* If deleted node is black, we need to correct. */
     /* - if child red: recolor to black */
+    struct rbtree_node * child = node->link[LEFT] ? node->link[LEFT] :
+        node->link[RIGHT];
     if (child && child->color == RB_RED) {
         child->color = RB_BLACK;
         return true;
@@ -60,6 +90,7 @@ static inline bool foo_delete(struct rbtree_node **tree,
         /* We know there is a sibling otherwise the tree would be
            unbalanced. */
         int child_dir = RIGHT_IF(parent->link[RIGHT] == child);
+// FIXME: whatif node->parent == NULL ?
         struct rbtree_node * sibling = parent->link[!child_dir];
 
         /* - if child black: check sibling: */
@@ -82,8 +113,8 @@ static inline bool foo_delete(struct rbtree_node **tree,
         /*     - two black */
         if (neph_a_color == RB_BLACK && neph_u_color == RB_BLACK) {
             sibling->color = RB_RED;
-            parent = parent->parent;
             child = parent;
+            parent = parent->parent;
             continue;
         }
 
@@ -94,34 +125,16 @@ static inline bool foo_delete(struct rbtree_node **tree,
             nephew_aligned->color = RB_BLACK;
         }
         else {
-            rbtree_rotate_double(parent, !child_dir);
+            rbtree_rotate_double(parent, child_dir);
             nephew_unaligned->color = RB_BLACK;
-
         }
+        break;
     } while (child->color == RB_BLACK && parent);
 
+    rbtree_display(*tree); fflush(stdout);
     child->color = RB_BLACK;
 
     return true;
-}
-
-#include <stdio.h>
-void rbtree_display(struct rbtree_node *root)
-{
-    if (!root) {
-        printf(".");
-        return;
-    }
-
-    struct rbtree_node *ln = root->link[LEFT];
-    struct rbtree_node *rn = root->link[RIGHT];
-
-    struct foo *this = cont(root, struct foo, node);
-    printf("{%d(%d)=", this->key, root->color);
-    rbtree_display(ln);
-    printf(",");
-    rbtree_display(rn);
-    printf("} ");
 }
 
 #define IS_RED(node) (node != NULL && (node)->color == RB_RED)
@@ -180,7 +193,6 @@ int main ()
      *      / \
      *     7   15
      */
-    rbtree_display(&n5.node);
 
     assert(rbtree_rotate(&n5.node, LEFT) == &n10.node);
     /*
@@ -323,6 +335,15 @@ int main ()
     }
     assert(rbtree_validate(digits) == 3);
 
+    /*
+     *     __7b__                      __7b__
+     *    /      \                    /      \
+     *   2r      11r*     bs_del     2r      14b(r)
+     *  /  \     / \     ------->   /  \     /
+     * 1b   5b  8b  14b+           1b   5b  8b
+     *     /                           /
+     *    4r                          4r
+     */
     digits = NULL;
     digits_ins = (uint32_t[]) {11,7,14,2,1,5,8,4};
     digits_ins_len = 8;
@@ -333,6 +354,17 @@ int main ()
     }
     assert(rbtree_validate(digits) == 3);
 
+    assert(foo_delete(&digits, &digits_ary[0].node)); // 11
+    rbtree_display(digits); fflush(stdout);
+    assert(rbtree_validate(digits) == 3);
+
+    assert(foo_delete(&digits, &digits_ary[4].node)); // 1
+    rbtree_display(digits); fflush(stdout);
+    assert(rbtree_validate(digits) == 3);
+
+    /* assert(foo_delete(&digits, &digits_ary[1].node)); // 7 */
+    /* rbtree_display(digits); fflush(stdout); */
+    /* assert(rbtree_validate(digits) == 3); */
 
     return 0;
 }
