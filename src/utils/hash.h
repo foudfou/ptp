@@ -56,6 +56,7 @@ static inline void hash_delete(struct list_item* item)
 
 #endif  /* HASH_H */
 
+// FIXME: turn to a full-macro header (see bstree)
 
 #ifndef HASH_NAME
     #error must give this map type a name by defining HASH_NAME

@@ -154,7 +154,7 @@ int main ()
      *   / \
      *  1   7
      *     / \
-     *    4   9
+     *    4+  9
      *       / \
      *      8   B
      */
@@ -169,18 +169,16 @@ int main ()
     assert(!two.node.link[RIGHT]);
 
     /*
-     *    4          4
-     *   / \        / \
-     *  1   7      1   7
-     *       \          \
-     *        9          B
-     *       / \        /
-     *      8   B      8
+     *    4           4
+     *   / \         / \
+     *  1   7       1   7
+     *       \           \
+     *        9*          B
+     *       / \         /
+     *      8   B+      8
      */
     /* successor is to-be-deleted node's right child */
-    bstree_display(numbers);
     assert(foo_delete(&numbers, &nine.node));
-    bstree_display(numbers);
     assert(eleven.node.parent == &seven.node);
     assert(eleven.node.link[LEFT] == &eight.node);
     assert(!eleven.node.link[RIGHT]);

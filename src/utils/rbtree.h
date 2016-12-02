@@ -7,12 +7,9 @@
  * Better than hash if order matters.
  * Inspired by the Linux kernel and Julienne Walker.
  *
- * This header can be imported multiple times with RBTREE_CREATE to create
- * different rbtree types. Just make sure to use a different RBTREE_NAME.
- *
  * Consumer MUST provide a key comparison function:
  *
- * int name##_compare(RBTREE_KEY_TYPE keyA, RBTREE_KEY_TYPE keyB);
+ *   int name##_compare(RBTREE_KEY_TYPE keyA, RBTREE_KEY_TYPE keyB);
  */
 #include "bstree.h"
 
@@ -68,12 +65,17 @@ struct rbtree_node *rbtree_rotate(struct rbtree_node *root, int dir)
 {
     struct rbtree_node *new = root->link[!dir];
 
+// FIXME: name##_link_node(new->link[dir], root, &(root->link[!dir]));
     if (new->link[dir])
         new->link[dir]->parent = root;
     root->link[!dir] = new->link[dir];
 
+// FIXME: should we preserve link to (new) root ? or is this the responsability
+// of the caller ?
+// name##_link_node(new, root->parent, parent_link);
     new->parent = root->parent;
 
+// FIXME: name##_link_node(root, new, &(new->link[dir]);
     root->parent = new;
     new->link[dir] = root;
 
@@ -97,6 +99,7 @@ struct rbtree_node *rbtree_rotate(struct rbtree_node *root, int dir)
 struct rbtree_node *rbtree_rotate_double(struct rbtree_node *root, int dir)
 {
     root->link[!dir] = rbtree_rotate(root->link[!dir], !dir);
+// FIXME: missing link from new_root to its new parent
     return rbtree_rotate(root, dir);
 }
 

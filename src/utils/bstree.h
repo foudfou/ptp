@@ -5,12 +5,9 @@
  *
  * Inspired by the Linux kernel and Julienne Walker.
  *
- * This header can be imported multiple times with BSTREE_CREATE to create
- * different bstree types. Just make sure to use a different BSTREE_NAME.
- *
  * Consumer MUST provide a key comparison function:
  *
- * int name##_compare(BSTREE_KEY_TYPE keyA, BSTREE_KEY_TYPE keyB);
+ *   int name##_compare(BSTREE_KEY_TYPE keyA, BSTREE_KEY_TYPE keyB);
  */
 #include <stdbool.h>
 #include <stddef.h>
@@ -134,7 +131,7 @@ static inline struct type *name##_next(const struct type *node)     \
 static inline struct type *name##_prev(const struct type *node)     \
 {                                                                   \
     return __##name##_iterate(node, LEFT);                          \
-}                                                                   \
+}
 
 #define BSTREE_GENERATE_DELETE(name, type, opt)   \
 /**
@@ -200,7 +197,7 @@ static inline bool name##opt##_delete(struct type **tree,               \
     }                                                                   \
                                                                         \
     return true;                                                        \
-}                                                                       \
+}
 
 #define BSTREE_GENERATE_INSERT(name, type, field, key, opt) \
 /**
@@ -231,27 +228,27 @@ name##opt##_insert(struct type **tree, struct name *data)           \
     return true;                                                    \
 }
 
-#define BSTREE_GENERATE_SEARCH(name, type, field, key)                  \
-    /**
-     * Gets an entry by its key.
-     *
-     * Returns NULL when not found.
-     */                                                                 \
-    static inline struct name*                                          \
-    name##_search(struct type *tree, BSTREE_KEY_TYPE val)               \
-    {                                                                   \
-        struct type *it = tree;                                         \
-                                                                        \
-        while (it) {                                                    \
-            struct name *this = cont(it, struct name, field);           \
-            int result = name##_compare(val, this->key);                \
-                                                                        \
-            if (result == 0)                                            \
-                return this;                                            \
-            else                                                        \
-                it = it->link[RIGHT_IF(result > 0)];                    \
-        }                                                               \
-        return NULL;                                                    \
-    }
+#define BSTREE_GENERATE_SEARCH(name, type, field, key)  \
+/**
+ * Gets an entry by its key.
+ *
+ * Returns NULL when not found.
+ */                                                          \
+static inline struct name*                                   \
+name##_search(struct type *tree, BSTREE_KEY_TYPE val)        \
+{                                                            \
+    struct type *it = tree;                                  \
+                                                             \
+    while (it) {                                             \
+        struct name *this = cont(it, struct name, field);    \
+        int result = name##_compare(val, this->key);         \
+                                                             \
+        if (result == 0)                                     \
+            return this;                                     \
+        else                                                 \
+            it = it->link[RIGHT_IF(result > 0)];             \
+    }                                                        \
+    return NULL;                                             \
+}
 
 #endif /* BSTREE_H */
