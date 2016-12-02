@@ -17,7 +17,7 @@ static inline int foo_compare(const char * keyA, const char * keyB)
     return strncmp(keyA, keyB, KEY_MAX_LENGTH);
 }
 #define BSTREE_KEY_TYPE const char *
-BSTREE_GENERATE(foo, bstree_node, node, key)
+BSTREE_GENERATE(foo, bstree, node, key)
 
 #include <stdio.h>
 void bstree_display(struct bstree_node *root)
@@ -43,7 +43,7 @@ int main ()
     /* Btree declaration */
     BSTREE_DECL(tree);
     assert(!tree);
-    assert(foo_is_empty(tree));
+    assert(bstree_is_empty(tree));
     assert(!foo_search(tree, "hello"));
 
     /* artificial tree */
@@ -59,7 +59,7 @@ int main ()
 
     /* start over */
     tree = NULL;
-    assert(foo_is_empty(tree));
+    assert(bstree_is_empty(tree));
     BSTREE_NODE_INIT(t1.node);
     BSTREE_NODE_INIT(t2.node);
     BSTREE_NODE_INIT(t3.node);
@@ -225,20 +225,20 @@ int main ()
      */
 
     /* First/Last */
-    assert(foo_first(digits) == &(digits_ary[1].node));
-    assert(!foo_first(NULL));
-    assert(foo_first(&(digits_ary[8].node)) == &(digits_ary[1].node));
-    assert(foo_first(&(digits_ary[3].node)) == &(digits_ary[1].node));
-    assert(foo_first(&(digits_ary[1].node)) == &(digits_ary[1].node));
-    assert(foo_last(digits) == &(digits_ary[9].node));
-    assert(!foo_last(NULL));
-    assert(foo_last(&(digits_ary[8].node)) == &(digits_ary[9].node));
-    assert(foo_last(&(digits_ary[3].node)) == &(digits_ary[9].node));
-    assert(foo_last(&(digits_ary[9].node)) == &(digits_ary[9].node));
+    assert(bstree_first(digits) == &(digits_ary[1].node));
+    assert(!bstree_first(NULL));
+    assert(bstree_first(&(digits_ary[8].node)) == &(digits_ary[1].node));
+    assert(bstree_first(&(digits_ary[3].node)) == &(digits_ary[1].node));
+    assert(bstree_first(&(digits_ary[1].node)) == &(digits_ary[1].node));
+    assert(bstree_last(digits) == &(digits_ary[9].node));
+    assert(!bstree_last(NULL));
+    assert(bstree_last(&(digits_ary[8].node)) == &(digits_ary[9].node));
+    assert(bstree_last(&(digits_ary[3].node)) == &(digits_ary[9].node));
+    assert(bstree_last(&(digits_ary[9].node)) == &(digits_ary[9].node));
 
     /* Next */
     for (int i=digits_ins_start; i<(digits_ins_len-1); ++i)
-        assert(foo_next(&(digits_ary[i].node)) == &(digits_ary[i+1].node));
+        assert(bstree_next(&(digits_ary[i].node)) == &(digits_ary[i+1].node));
 
     /* reset */
     digits = NULL;
@@ -264,20 +264,20 @@ int main ()
 
     /* Next */
     for (int i=digits_ins_start; i<(digits_ins_len-1); ++i)
-        assert(foo_next(&(digits_ary[i].node)) == &(digits_ary[i+1].node));
-    assert(!foo_next(&(digits_ary[9].node)));
+        assert(bstree_next(&(digits_ary[i].node)) == &(digits_ary[i+1].node));
+    assert(!bstree_next(&(digits_ary[9].node)));
 
     /* Previous */
     for (int i=(digits_ins_len - 1); i>digits_ins_start; --i)
-        assert(foo_prev(&(digits_ary[i].node)) == &(digits_ary[i-1].node));
-    assert(!foo_prev(&(digits_ary[0].node)));
+        assert(bstree_prev(&(digits_ary[i].node)) == &(digits_ary[i-1].node));
+    assert(!bstree_prev(&(digits_ary[0].node)));
 
     /* Traversal */
-    struct bstree_node *it = foo_first(digits);
+    struct bstree_node *it = bstree_first(digits);
     char *expected = "0123456789"; int i = 0;
     while (it) {
         assert((cont(it, struct foo, node)->key)[0] == expected[i]);
-        it = foo_next(it); i++;
+        it = bstree_next(it); i++;
     }
 
 

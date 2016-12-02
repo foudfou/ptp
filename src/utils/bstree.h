@@ -14,13 +14,15 @@
 #include "base.h"
 #include "cont.h"
 
-#define BSTREE_MEMBERS(type)                    \
-    struct type * parent;                       \
-    struct type * link[2];
+#define BSTREE_MEMBERS(node_t)     \
+    struct node_t * parent;        \
+    struct node_t * link[2];
 
 struct bstree_node {
     BSTREE_MEMBERS(bstree_node)
 };
+
+#define BSTREE_NODE(type) struct type##_node
 
 /* LEFT and RIGHT are arbitrary opposite values, in the boolean termm, in order
    to use the (!direction) property. */
@@ -37,16 +39,15 @@ struct bstree_node {
     } while (/*CONSTCOND*/ 0)
 
 #define BSTREE_GENERATE(name, type, field, key)     \
-    BSTREE_GENERATE_BASE(name, type)                \
     BSTREE_GENERATE_DELETE(name, type,)             \
     BSTREE_GENERATE_INSERT(name, type, field, key,) \
     BSTREE_GENERATE_SEARCH(name, type, field, key)
 
-#define BSTREE_GENERATE_BASE(name, type)        \
+#define BSTREE_GENERATE_BASE(type)              \
 /**
  * Test wether a tree is empty.
  */                                                                 \
-static inline bool name##_is_empty(struct type *tree)               \
+static inline bool type##_is_empty(BSTREE_NODE(type) *tree)         \
 {                                                                   \
     return !tree;                                                   \
 }                                                                   \
@@ -57,16 +58,16 @@ static inline bool name##_is_empty(struct type *tree)               \
  * @target can be either a link (address of next node) or
  * the tree (address of first node).
  */                                                                     \
-static inline void name##_link_node(struct type *node,                  \
-                                    struct type *parent,                \
-                                    struct type **target)               \
+static inline void type##_link_node(BSTREE_NODE(type) *node,            \
+                                    BSTREE_NODE(type) *parent,          \
+                                    BSTREE_NODE(type) **target)         \
 {                                                                       \
     if (node)                                                           \
         node->parent = parent;                                          \
     *target = node;                                                     \
 }                                                                       \
                                                                         \
-static inline struct type *__##name##_end(struct type *tree, int dir)   \
+static inline BSTREE_NODE(type) *__##type##_end(BSTREE_NODE(type) *tree, int dir)   \
 {                                                                       \
     if (!tree) return NULL;                                             \
                                                                         \
@@ -81,57 +82,58 @@ static inline struct type *__##name##_end(struct type *tree, int dir)   \
                                                                         \
 /**
  * Find the first, lowest node.
- */                                                                 \
-static inline struct type *name##_first(struct type *tree)          \
-{                                                                   \
-    return __##name##_end(tree, LEFT);                              \
-}                                                                   \
-                                                                    \
+ */                                                                     \
+static inline BSTREE_NODE(type) *type##_first(BSTREE_NODE(type) *tree)  \
+{                                                                       \
+    return __##type##_end(tree, LEFT);                                  \
+}                                                                       \
+                                                                        \
 /**
  * Find the last, highest node.
- */                                                                 \
-static inline struct type *name##_last(struct type *tree)           \
-{                                                                   \
-    return __##name##_end(tree, RIGHT);                             \
-}                                                                   \
-                                                                    \
+ */                                                                     \
+static inline BSTREE_NODE(type) *type##_last(BSTREE_NODE(type) *tree)   \
+{                                                                       \
+    return __##type##_end(tree, RIGHT);                                 \
+}                                                                       \
+                                                                        \
 /**
  * Find the next/previous inorder node.
- */                                                                 \
-static inline struct type*                                          \
-__##name##_iterate(const struct type *node, int dir)                \
-{                                                                   \
-    if (!node) return NULL;                                         \
-                                                                    \
-    struct type *it = (struct type *)node;                          \
-    /* last opposite child after dir child */                       \
-    if ((it = node->link[dir])) {                                   \
-        while (it->link[!dir])                                      \
-            it = it->link[!dir];                                    \
-    }                                                               \
-    /* first dir parent after last opposite parent, or null */      \
-    else {                                                          \
-        while ((it = node->parent) && it->link[dir] == node)        \
-            node = it;                                              \
-    }                                                               \
-    return it;                                                      \
-}                                                                   \
-                                                                    \
+ */                                                                     \
+static inline BSTREE_NODE(type)*                                        \
+__##type##_iterate(const BSTREE_NODE(type) *node, int dir)          \
+{                                                                       \
+    if (!node) return NULL;                                             \
+                                                                        \
+    BSTREE_NODE(type) *it = (BSTREE_NODE(type) *)node;                  \
+    /* last opposite child after dir child */                           \
+    if ((it = node->link[dir])) {                                       \
+        while (it->link[!dir])                                          \
+            it = it->link[!dir];                                        \
+    }                                                                   \
+    /* first dir parent after last opposite parent, or null */          \
+    else {                                                              \
+        while ((it = node->parent) && it->link[dir] == node)            \
+            node = it;                                                  \
+    }                                                                   \
+    return it;                                                          \
+}                                                                       \
+                                                                        \
 /**
  * Find the next inorder node.
- */                                                                 \
-static inline struct type *name##_next(const struct type *node)     \
-{                                                                   \
-    return __##name##_iterate(node, RIGHT);                         \
-}                                                                   \
-                                                                    \
+ */                                                                     \
+static inline BSTREE_NODE(type) *type##_next(const BSTREE_NODE(type) *node) \
+{                                                                       \
+    return __##type##_iterate(node, RIGHT);                             \
+}                                                                       \
+                                                                        \
 /**
  * Find the previous inorder node.
- */                                                                 \
-static inline struct type *name##_prev(const struct type *node)     \
-{                                                                   \
-    return __##name##_iterate(node, LEFT);                          \
+ */                                                                     \
+static inline BSTREE_NODE(type) *type##_prev(const BSTREE_NODE(type) *node) \
+{                                                                       \
+    return __##type##_iterate(node, LEFT);                              \
 }
+BSTREE_GENERATE_BASE(bstree)
 
 #define BSTREE_GENERATE_DELETE(name, type, opt)   \
 /**
@@ -139,13 +141,13 @@ static inline struct type *name##_prev(const struct type *node)     \
  *
  * @node may be modified to point to the actually deleted node !
  */                                                                     \
-static inline bool name##opt##_delete(struct type **tree,               \
-                                      struct type *node)                \
+static inline bool name##opt##_delete(BSTREE_NODE(type) **tree,         \
+                                      BSTREE_NODE(type) *node)          \
 {                                                                       \
     if (!*tree || !node)                                                \
         return false;                                                   \
                                                                         \
-    struct type **parent_link = tree;                                   \
+    BSTREE_NODE(type) **parent_link = tree;                             \
     if (node->parent) {                                                 \
         int dir = RIGHT_IF(node->parent->link[RIGHT] == node);          \
         parent_link = &(node->parent->link[dir]);                       \
@@ -153,18 +155,18 @@ static inline bool name##opt##_delete(struct type **tree,               \
                                                                         \
     if (node->link[LEFT] && node->link[RIGHT]) { /* delete by swapping */ \
         /* we could also take the predecessor */                        \
-        struct type *succ = node->link[RIGHT];                          \
+        BSTREE_NODE(type) *succ = node->link[RIGHT];                    \
         while (succ->link[LEFT]) {                                      \
             succ = succ->link[LEFT];                                    \
         }                                                               \
-        struct type deleted = *succ;                                    \
+        BSTREE_NODE(type) deleted = *succ;                              \
                                                                         \
         if (succ != node->link[RIGHT]) {                                \
             /* link succ's only right child to succ's parent */         \
-            struct type *succ_parent = succ->parent;                    \
-            name##_link_node(succ->link[RIGHT], succ_parent,            \
+            BSTREE_NODE(type) *succ_parent = succ->parent;              \
+            type##_link_node(succ->link[RIGHT], succ_parent,            \
                              &(succ_parent->link[LEFT]));               \
-            name##_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT])); \
+            type##_link_node(node->link[RIGHT], succ, &(succ->link[RIGHT])); \
         }                                                               \
         else {                                                          \
             /* Set parent to the future parent. This trick enables us to find
@@ -174,8 +176,8 @@ static inline bool name##opt##_delete(struct type **tree,               \
                                                                         \
         /* Transplant succ to node's place, which is equivalent to: swapping
            the surrounding structs' nodes + updating succ's new parent link. */ \
-        name##_link_node(succ, node->parent, parent_link);              \
-        name##_link_node(node->link[LEFT], succ, &(succ->link[LEFT]));  \
+        type##_link_node(succ, node->parent, parent_link);              \
+        type##_link_node(node->link[LEFT], succ, &(succ->link[LEFT]));  \
                                                                         \
         *node = deleted;                                                \
     }                                                                   \
@@ -198,7 +200,7 @@ static inline bool name##opt##_delete(struct type **tree,               \
      */                                                                 \
     else {                                                              \
         int child_dir = RIGHT_IF(node->link[LEFT] == NULL);             \
-        name##_link_node(node->link[child_dir], node->parent, parent_link); \
+        type##_link_node(node->link[child_dir], node->parent, parent_link); \
     }                                                                   \
                                                                         \
     return true;                                                        \
@@ -209,12 +211,12 @@ static inline bool name##opt##_delete(struct type **tree,               \
  * Insert a node into a tree.
  */                                                                 \
 static inline bool                                                  \
-name##opt##_insert(struct type **tree, struct name *data)           \
+name##opt##_insert(BSTREE_NODE(type) **tree, struct name *data)     \
 {                                                                   \
     /* We'll iterate on the *link* fields, which enables us to look up the
        next node while keeping a hold on the current node. Hence the double
        pointer. */                                                  \
-    struct type **it = tree, *parent = NULL;                        \
+    BSTREE_NODE(type) **it = tree, *parent = NULL;                  \
                                                                     \
     while (*it) {                                                   \
         struct name *this = cont(*it, struct name, field);          \
@@ -228,7 +230,7 @@ name##opt##_insert(struct type **tree, struct name *data)           \
         }                                                           \
     }                                                               \
                                                                     \
-    name##_link_node(&data->field, parent, it);                     \
+    type##_link_node(&data->field, parent, it);                     \
                                                                     \
     return true;                                                    \
 }
@@ -240,9 +242,9 @@ name##opt##_insert(struct type **tree, struct name *data)           \
  * Returns NULL when not found.
  */                                                          \
 static inline struct name*                                   \
-name##_search(struct type *tree, BSTREE_KEY_TYPE val)        \
+name##_search(BSTREE_NODE(type) *tree, BSTREE_KEY_TYPE val)  \
 {                                                            \
-    struct type *it = tree;                                  \
+    BSTREE_NODE(type) *it = tree;                            \
                                                              \
     while (it) {                                             \
         struct name *this = cont(it, struct name, field);    \
