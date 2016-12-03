@@ -41,12 +41,7 @@ void rbtree_display(struct rbtree_node *root)
 static inline bool foo_delete(struct rbtree_node **tree,
                               struct rbtree_node *node)
 {
-    struct rbtree_node **parent_link_orig = tree;
-    int dir_orig = 0;
-    if (node->parent) {
-        dir_orig = RIGHT_IF(node->parent->link[RIGHT] == node);
-        parent_link_orig = &(node->parent->link[dir_orig]);
-    }
+    struct rbtree_node **parent_link_orig = rbtree_parent_link(tree, node);
     int color_orig = node->color;
 
     /* first perfom a bstree delete. Note that, because of delete-by-swap, we
@@ -65,7 +60,7 @@ static inline bool foo_delete(struct rbtree_node **tree,
 
     /* If deleted node is black, we need to correct. */
     /* - if child red: recolor to black */
-    struct rbtree_node * child = node->link[LEFT] ? node->link[LEFT] :
+    struct rbtree_node *child = node->link[LEFT] ? node->link[LEFT] :
         node->link[RIGHT];
     if (child && child->color == RB_RED) {
         child->color = RB_BLACK;

@@ -130,9 +130,19 @@ static inline BSTREE_NODE(type)* type##_next(const BSTREE_NODE(type) *node) \
 /**
  * Find the previous inorder node.
  */                                                                     \
-static inline BSTREE_NODE(type) *type##_prev(const BSTREE_NODE(type) *node) \
+static inline BSTREE_NODE(type)* type##_prev(const BSTREE_NODE(type) *node) \
 {                                                                       \
     return __##type##_iterate(node, LEFT);                              \
+}                                                                       \
+/**
+ * Get the parent link to a given node, which may be the tree itself.
+ */                                                                     \
+static inline BSTREE_NODE(type)**                                       \
+type##_parent_link(BSTREE_NODE(type) **tree, BSTREE_NODE(type) *node)   \
+{                                                                       \
+    return node->parent ?                                               \
+        &(node->parent->link[RIGHT_IF(node->parent->link[RIGHT] == node)]) : \
+        tree;                                                           \
 }
 BSTREE_GENERATE_BASE(bstree)
 
@@ -148,11 +158,7 @@ static inline bool name##opt##_delete(BSTREE_NODE(type) **tree,         \
     if (!*tree || !node)                                                \
         return false;                                                   \
                                                                         \
-    BSTREE_NODE(type) **parent_link = tree;                             \
-    if (node->parent) {                                                 \
-        int dir = RIGHT_IF(node->parent->link[RIGHT] == node);          \
-        parent_link = &(node->parent->link[dir]);                       \
-    }                                                                   \
+    BSTREE_NODE(type) **parent_link = type##_parent_link(tree, node);   \
                                                                         \
     if (node->link[LEFT] && node->link[RIGHT]) { /* delete by swapping */ \
         /* we could also take the predecessor */                        \
