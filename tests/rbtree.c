@@ -55,6 +55,7 @@ static inline bool foo_delete(struct rbtree_node **tree,
         return false;
     rbtree_display(*tree); fflush(stdout);
 
+// FIXME: is the (*parent_link_orig) test sufficient ?
     if (*parent_link_orig && node != *parent_link_orig) /* delete-by-swap */
         (*parent_link_orig)->color = color_orig;
 
@@ -97,6 +98,7 @@ static inline bool foo_delete(struct rbtree_node **tree,
         /*   - sibling is red: */
         if (sibling->color == RB_RED) {
             /* rotate to move sibling up */
+// FIXME: link new root.
             rbtree_rotate(parent, child_dir);
             /* recolor the old sibling and parent */
             sibling->color = RB_BLACK;

@@ -66,19 +66,14 @@ struct rbtree_node *rbtree_rotate(struct rbtree_node *root, int dir)
 {
     struct rbtree_node *new = root->link[!dir];
 
-// FIXME: name##_link_node(new->link[dir], root, &(root->link[!dir]));
-    if (new->link[dir])
-        new->link[dir]->parent = root;
-    root->link[!dir] = new->link[dir];
+    rbtree_link_node(new->link[dir], root, &(root->link[!dir]));
 
 // FIXME: should we preserve link to (new) root ? or is this the responsability
 // of the caller ?
 // name##_link_node(new, root->parent, parent_link);
     new->parent = root->parent;
 
-// FIXME: name##_link_node(root, new, &(new->link[dir]);
-    root->parent = new;
-    new->link[dir] = root;
+    rbtree_link_node(root, new, &(new->link[dir]));
 
     return new;
 }
