@@ -62,20 +62,14 @@ BSTREE_GENERATE_BASE(rbtree)
  *      / \       / \
  *     b   c     a   b
  */
-struct rbtree_node *rbtree_rotate(struct rbtree_node *root, int dir)
+void rbtree_rotate(struct rbtree_node *root, int dir,
+                   struct rbtree_node **parent_link)
 {
     struct rbtree_node *new = root->link[!dir];
 
     rbtree_link_node(new->link[dir], root, &(root->link[!dir]));
-
-// FIXME: should we preserve link to (new) root ? or is this the responsability
-// of the caller ?
-// name##_link_node(new, root->parent, parent_link);
-    new->parent = root->parent;
-
+    rbtree_link_node(new, root->parent, parent_link);
     rbtree_link_node(root, new, &(new->link[dir]));
-
-    return new;
 }
 
 /**
@@ -92,11 +86,11 @@ struct rbtree_node *rbtree_rotate(struct rbtree_node *root, int dir)
  *      / \          / \
  *     b   c        a   b
  */
-struct rbtree_node *rbtree_rotate_double(struct rbtree_node *root, int dir)
+void rbtree_rotate_double(struct rbtree_node *root, int dir,
+                          struct rbtree_node **parent_link)
 {
-    root->link[!dir] = rbtree_rotate(root->link[!dir], !dir);
-// FIXME: missing link from new_root to its new parent
-    return rbtree_rotate(root, dir);
+    rbtree_rotate(root->link[!dir], !dir, &(root->link[!dir]));
+    rbtree_rotate(root, dir, parent_link);
 }
 
 #define RBTREE_GENERATE_INSERT(name, field, opt)                        \
@@ -138,7 +132,8 @@ bool name##_insert(struct rbtree_node **tree, struct name *data)        \
          */                                                             \
         else {                                                          \
             int dir = RIGHT_IF(node == parent->link[RIGHT]);            \
-            struct rbtree_node *top;                                    \
+            struct rbtree_node **top =                                  \
+                rbtree_parent_link(tree, parent->parent);               \
             /*
              *       B         (r)B
              *      / \        /   \
@@ -147,7 +142,7 @@ bool name##_insert(struct rbtree_node **tree, struct name *data)        \
              *   r*  B            B   B
              */                                                         \
             if (par_dir == dir)                                         \
-                top = rbtree_rotate(parent->parent, !par_dir);          \
+                rbtree_rotate(parent->parent, !par_dir, top);           \
             /*
              *      B         (r*)B
              *     / \        /   \
@@ -156,17 +151,9 @@ bool name##_insert(struct rbtree_node **tree, struct name *data)        \
              *      r*               B
              */                                                         \
             else                                                        \
-                top = rbtree_rotate_double(parent->parent, !par_dir);   \
-            top->color = RB_BLACK;                                      \
-            top->link[!par_dir]->color = RB_RED;                        \
-                                                                        \
-            if (top->parent) {                                          \
-                int orig_dir = RIGHT_IF(                                \
-                    top->parent->link[RIGHT] == parent->parent);        \
-                top->parent->link[orig_dir] = top;                      \
-            }                                                           \
-            else                                                        \
-                *tree = top;                                            \
+                rbtree_rotate_double(parent->parent, !par_dir, top);    \
+            (*top)->color = RB_BLACK;                                   \
+            (*top)->link[!par_dir]->color = RB_RED;                     \
         }                                                               \
     }                                                                   \
                                                                         \

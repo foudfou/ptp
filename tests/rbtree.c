@@ -87,14 +87,14 @@ static inline bool foo_delete(struct rbtree_node **tree,
            unbalanced. */
         int child_dir = RIGHT_IF(parent->link[RIGHT] == child);
 // FIXME: whatif node->parent == NULL ?
-        struct rbtree_node * sibling = parent->link[!child_dir];
+        struct rbtree_node *sibling = parent->link[!child_dir];
 
         /* - if child black: check sibling: */
         /*   - sibling is red: */
+        struct rbtree_node **parent_link = rbtree_parent_link(tree, parent);
         if (sibling->color == RB_RED) {
             /* rotate to move sibling up */
-// FIXME: link new root.
-            rbtree_rotate(parent, child_dir);
+            rbtree_rotate(parent, child_dir, parent_link);
             /* recolor the old sibling and parent */
             sibling->color = RB_BLACK;
             parent->color = RB_RED;
@@ -118,11 +118,11 @@ static inline bool foo_delete(struct rbtree_node **tree,
         /*     - right red */
         /*     - left red, right black */
         if (neph_a_color == RB_RED) {
-            rbtree_rotate(sibling, child_dir);
+            rbtree_rotate(sibling, child_dir, &(parent->link[!child_dir]));
             nephew_aligned->color = RB_BLACK;
         }
         else {
-            rbtree_rotate_double(parent, child_dir);
+            rbtree_rotate_double(parent, child_dir, parent_link);
             nephew_unaligned->color = RB_BLACK;
         }
         break;
@@ -183,6 +183,7 @@ int main ()
     n10.node.link[LEFT] = &n7.node;
     struct foo n15 = FOO_INIT(RB_RED, &n10.node, NULL, NULL, 15)
     n10.node.link[RIGHT] = &n15.node;
+    struct rbtree_node *tr0 = &n5.node;
     /*
      *     5
      *    / \
@@ -191,7 +192,8 @@ int main ()
      *     7   15
      */
 
-    assert(rbtree_rotate(&n5.node, LEFT) == &n10.node);
+    rbtree_rotate(&n5.node, LEFT, &tr0);
+    assert(tr0 == &n10.node);
     /*
      *    10
      *    / \
@@ -209,7 +211,8 @@ int main ()
     assert(n5.node.link[RIGHT] == &n7.node);
     assert(n7.node.parent == &n5.node);
 
-    assert(rbtree_rotate(&n10.node, RIGHT) == &n5.node);
+    rbtree_rotate(&n10.node, RIGHT, &tr0);
+    assert(tr0 == &n5.node);
     /*
      *     5
      *    / \
@@ -267,7 +270,8 @@ int main ()
     assert(foo_bs_delete(&tree, &n7.node));
     assert(!foo_search(tree, 7));
 
-    assert(rbtree_rotate(tree, RIGHT) == &n5.node);
+    rbtree_rotate(tree, RIGHT, &tree);
+    assert(tree == &n5.node);
     /*
      *     5
      *    / \
