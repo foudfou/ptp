@@ -17,15 +17,12 @@
 #define BSTREE_MEMBERS(node_t)     \
     struct node_t * parent;        \
     struct node_t * link[2];
+#define LEFT  0
+#define RIGHT 1
 
 struct bstree_node {
     BSTREE_MEMBERS(bstree_node)
 };
-
-/* LEFT and RIGHT are arbitrary opposite values, in the boolean termm, in order
-   to use the (!direction) property. */
-#define LEFT  0
-#define RIGHT 1
 
 #define RIGHT_IF(cond) (cond) ? RIGHT : LEFT
 
