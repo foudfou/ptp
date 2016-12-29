@@ -16,25 +16,8 @@ static inline int foo_compare(uint32_t keyA, uint32_t keyB)
 #define RBTREE_KEY_TYPE uint32_t
 RBTREE_GENERATE(foo, rbtree, node, key, _bs)
 
-
-#include <stdio.h>
-void rbtree_display(struct rbtree_node *root)
-{
-    if (!root) {
-        printf(".");
-        return;
-    }
-
-    struct rbtree_node *ln = root->link[LEFT];
-    struct rbtree_node *rn = root->link[RIGHT];
-
-    struct foo *this = cont(root, struct foo, node);
-    printf("{%d(%d)=", this->key, root->color);
-    rbtree_display(ln);
-    printf(",");
-    rbtree_display(rn);
-    printf("} ");
-}
+/* For debugging, recover the definition from the SCM. */
+extern void rbtree_display(struct rbtree_node *root);
 
 /* http://horstmann.com/unblog/2011-05-12/blog.html
    http://www.geeksforgeeks.org/red-black-tree-set-3-delete-2/

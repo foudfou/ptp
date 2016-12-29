@@ -19,24 +19,8 @@ static inline int foo_compare(const char * keyA, const char * keyB)
 #define BSTREE_KEY_TYPE const char *
 BSTREE_GENERATE(foo, bstree, node, key)
 
-#include <stdio.h>
-void bstree_display(struct bstree_node *root)
-{
-    if (!root) {
-        printf(".");
-        return;
-    }
-
-    struct bstree_node *ln = root->link[LEFT];
-    struct bstree_node *rn = root->link[RIGHT];
-
-    struct foo *this = cont(root, struct foo, node);
-    printf("{%s=", this->key);
-    bstree_display(ln);
-    printf(",");
-    bstree_display(rn);
-    printf("} ");
-}
+/* For debugging, recover the definition from the SCM. */
+void bstree_display(struct bstree_node *root);
 
 int main ()
 {
