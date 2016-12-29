@@ -60,12 +60,9 @@ static inline bool foo_delete(struct rbtree_node **tree,
     if (*parent_link_orig && node->parent != parent_orig)
         (*parent_link_orig)->color = color_orig;
 
-    /* If the deleted node is red, we're done. */
     if (node->color == RB_RED)
         return true;
 
-    /* If deleted node is black, we need to correct. */
-    /* - if child red: recolor to black */
     struct rbtree_node *child = node->link[LEFT] ? node->link[LEFT] :
         node->link[RIGHT];
     if (child && child->color == RB_RED) {
@@ -94,14 +91,10 @@ static inline bool foo_delete(struct rbtree_node **tree,
         int child_dir = RIGHT_IF(parent->link[RIGHT] == child);
         struct rbtree_node *sibling = parent->link[!child_dir];
 
-        /* - if child black: check sibling: */
-        /*   - sibling is red: */
         struct rbtree_node **parent_link = rbtree_parent_link(tree, parent);
         if (sibling->color == RB_RED) {
-            /* recolor the old sibling and parent */
             sibling->color = RB_BLACK;
             parent->color = RB_RED;
-            /* rotate to move sibling up */
             rbtree_rotate(parent, child_dir, parent_link);
             sibling = parent->link[!child_dir];
             continue;
@@ -112,8 +105,6 @@ static inline bool foo_delete(struct rbtree_node **tree,
         int neph_a_color = nephew_aligned ? nephew_aligned->color : RB_BLACK;
         int neph_u_color = nephew_unaligned ? nephew_unaligned->color : RB_BLACK;
 
-        /*   - sibling is black and children are: */
-        /*     - two black */
         if (neph_a_color == RB_BLACK && neph_u_color == RB_BLACK) {
             sibling->color = RB_RED;
             child = parent;
@@ -121,14 +112,12 @@ static inline bool foo_delete(struct rbtree_node **tree,
             continue;
         }
 
-        /*     - right red */
         if (neph_a_color == RB_RED) {
             sibling->color = parent->color;
             parent->color = RB_BLACK;
             nephew_aligned->color = RB_BLACK;
             rbtree_rotate(parent, child_dir, parent_link);
         }
-        /*     - left red, right black */
         else {
             nephew_unaligned->color = parent->color;
             parent->color = RB_BLACK;
