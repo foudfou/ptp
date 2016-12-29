@@ -37,7 +37,10 @@ void rbtree_display(struct rbtree_node *root)
 }
 
 /* http://horstmann.com/unblog/2011-05-12/blog.html
-   http://www.geeksforgeeks.org/red-black-tree-set-3-delete-2/ */
+   http://www.geeksforgeeks.org/red-black-tree-set-3-delete-2/
+   https://www.cs.purdue.edu/homes/ayg/CS251/slides/chap13c.pdf for an
+   overview, but the most reliable is definitely "Introduction to Algorithms",
+   MIT Press. */
 static inline bool foo_delete(struct rbtree_node **tree,
                               struct rbtree_node *node)
 {
@@ -85,11 +88,10 @@ static inline bool foo_delete(struct rbtree_node **tree,
 
     /* Starting from the new child, we'll consider his sibling. */
     struct rbtree_node *parent = node->parent;
-    do {
+    while (parent && !(child && child->color == RB_RED)) {
         /* We know there is a sibling otherwise the tree would be
            unbalanced. */
         int child_dir = RIGHT_IF(parent->link[RIGHT] == child);
-// FIXME: whatif node->parent == NULL ?
         struct rbtree_node *sibling = parent->link[!child_dir];
 
         /* - if child black: check sibling: */
@@ -119,22 +121,21 @@ static inline bool foo_delete(struct rbtree_node **tree,
             continue;
         }
 
-        /*     - left red, right black */
-        if (neph_a_color == RB_BLACK) {
-            nephew_unaligned->color = RB_BLACK;
-            sibling->color = RB_RED;
-            rbtree_rotate(sibling, !child_dir, &(parent->link[!child_dir]));
-
-            sibling = parent->link[!child_dir];
-            nephew_aligned = sibling->link[!child_dir];
+        /*     - right red */
+        if (neph_a_color == RB_RED) {
+            sibling->color = parent->color;
+            parent->color = RB_BLACK;
+            nephew_aligned->color = RB_BLACK;
+            rbtree_rotate(parent, child_dir, parent_link);
         }
-        /*     - right also red */
-        sibling->color = parent->color;
-        parent->color = RB_BLACK;
-        nephew_aligned->color = RB_BLACK;
-        rbtree_rotate(parent, child_dir, parent_link);
+        /*     - left red, right black */
+        else {
+            nephew_unaligned->color = parent->color;
+            parent->color = RB_BLACK;
+            rbtree_rotate_double(parent, child_dir, parent_link);
+        }
         break;
-    } while ((!child || child->color == RB_BLACK) && parent);
+    }
 
     if (child)
         child->color = RB_BLACK;
@@ -405,6 +406,11 @@ int main ()
      */
     assert(foo_delete(&digits, &digits_ary[2].node)); // 14
     assert(rbtree_validate(digits) == 3);
+
+    assert(foo_delete(&digits, &digits_ary[3].node)); // 2
+    assert(foo_delete(&digits, &digits_ary[5].node)); // 5
+    assert(foo_delete(&digits, &digits_ary[7].node)); // 4
+    assert(rbtree_is_empty(digits));
 
 
     digits = NULL;
