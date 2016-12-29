@@ -42,21 +42,26 @@ static inline bool foo_delete(struct rbtree_node **tree,
                               struct rbtree_node *node)
 {
     struct rbtree_node **parent_link_orig = rbtree_parent_link(tree, node);
+    struct rbtree_node *parent_orig = node->parent;
     int color_orig = node->color;
 
-    /* first perfom a bstree delete. Note that, because of delete-by-swap, we
+    /* First perfom a bstree delete. Note that, because of delete-by-swap, we
        end up deleting a node with at most 1 child. */
     if (!foo_bs_delete(tree, node))
         return false;
+    printf("BEGIN: ");
     rbtree_display(*tree); fflush(stdout);
 
-// FIXME: is the (*parent_link_orig) test sufficient ?
-    if (*parent_link_orig && node != *parent_link_orig) /* delete-by-swap */
+    /* Test if delete-by-swap occured. We could also test if node had 2
+       children bferohand. Now node still points to the same struct but its
+       bstree values are now those of the deepest actually deleted node.
+       *parent_link_orig however points to the replacing node. */
+    if (*parent_link_orig && node->parent != parent_orig)
         (*parent_link_orig)->color = color_orig;
 
     /* If the deleted node is red, we're done. */
     if (node->color == RB_RED)
-        return true;
+        goto end;
 
     /* If deleted node is black, we need to correct. */
     /* - if child red: recolor to black */
@@ -64,7 +69,7 @@ static inline bool foo_delete(struct rbtree_node **tree,
         node->link[RIGHT];
     if (child && child->color == RB_RED) {
         child->color = RB_BLACK;
-        return true;
+        goto end;
     }
 
     /*
@@ -93,11 +98,12 @@ static inline bool foo_delete(struct rbtree_node **tree,
         /*   - sibling is red: */
         struct rbtree_node **parent_link = rbtree_parent_link(tree, parent);
         if (sibling->color == RB_RED) {
-            /* rotate to move sibling up */
-            rbtree_rotate(parent, child_dir, parent_link);
             /* recolor the old sibling and parent */
             sibling->color = RB_BLACK;
             parent->color = RB_RED;
+            /* rotate to move sibling up */
+            rbtree_rotate(parent, child_dir, parent_link);
+            sibling = parent->link[!child_dir];
             continue;
         }
 
@@ -115,21 +121,30 @@ static inline bool foo_delete(struct rbtree_node **tree,
             continue;
         }
 
-        /*     - right red */
         /*     - left red, right black */
-        if (neph_a_color == RB_RED) {
-            rbtree_rotate(sibling, child_dir, &(parent->link[!child_dir]));
-            nephew_aligned->color = RB_BLACK;
-        }
-        else {
-            rbtree_rotate_double(parent, child_dir, parent_link);
+        if (neph_a_color == RB_BLACK) {
             nephew_unaligned->color = RB_BLACK;
-        }
-        break;
-    } while (child->color == RB_BLACK && parent);
+            sibling->color = RB_RED;
+            rbtree_rotate(sibling, !child_dir, &(parent->link[!child_dir]));
 
+            sibling = parent->link[!child_dir];
+            nephew_aligned = sibling->link[!child_dir];
+        }
+        /*     - right also red */
+        sibling->color = parent->color;
+        parent->color = RB_BLACK;
+        nephew_aligned->color = RB_BLACK;
+        rbtree_rotate(parent, child_dir, parent_link);
+        break;
+    } while ((!child || child->color == RB_BLACK) && parent);
+
+    if (child)
+        child->color = RB_BLACK;
+
+  end:
+    printf("\n  END: ");
     rbtree_display(*tree); fflush(stdout);
-    child->color = RB_BLACK;
+    printf("\n");
 
     return true;
 }
@@ -356,16 +371,69 @@ int main ()
     assert(rbtree_validate(digits) == 3);
 
     assert(foo_delete(&digits, &digits_ary[0].node)); // 11
-    rbtree_display(digits); fflush(stdout);
     assert(rbtree_validate(digits) == 3);
 
+    /*
+     *      __7b__
+     *     /      \
+     *    4r      14b
+     *   /  \     /
+     *  2b   5b  8r
+     */
     assert(foo_delete(&digits, &digits_ary[4].node)); // 1
-    rbtree_display(digits); fflush(stdout);
     assert(rbtree_validate(digits) == 3);
 
-    /* assert(foo_delete(&digits, &digits_ary[1].node)); // 7 */
-    /* rbtree_display(digits); fflush(stdout); */
-    /* assert(rbtree_validate(digits) == 3); */
+    /*
+     *      __8b__
+     *     /      \
+     *    4r      14b
+     *   /  \
+     *  2b   5b
+     */
+    assert(foo_delete(&digits, &digits_ary[1].node)); // 7
+    assert(rbtree_validate(digits) == 3);
+    assert(digits == &digits_ary[6].node); // 8
+
+    /*
+     *      __4b__
+     *     /      \
+     *    2b      14(r)b [parent]
+     *           /
+     *          5(b)r [sibling]
+     */
+    assert(foo_delete(&digits, &digits_ary[6].node)); // 8
+    assert(digits == &digits_ary[7].node); // 4
+    assert(rbtree_validate(digits) == 3);
+
+    /*
+     *      4b
+     *     /  \
+     *    2b   5b
+     */
+    assert(foo_delete(&digits, &digits_ary[2].node)); // 14
+    assert(rbtree_validate(digits) == 3);
+
+
+    digits = NULL;
+    digits_ins = (uint32_t[]) {11,7,14,2,1,5,8,4,6};
+    digits_ins_len = 9;
+    for (int i=0; i<digits_ins_len; ++i) {
+        digits_ary[i] = (struct foo) FOO_INIT(RB_RED, NULL, NULL, NULL,
+                                              digits_ins[i])
+        assert(foo_insert(&digits, &digits_ary[i]));
+    }
+
+    /*
+     *     ___7b___            ___7b___              ___7b___
+     *    /        \          /        \            /        \
+     *   2r        11r       2r        11r         5r        11r
+     *  /  \       / \         \       / \        /  \       / \
+     * 1b*  5b    8b  14b+      5b    8b  14b+   2b   6b    8b  14b+
+     *     /  \                /  \               \
+     *    4r  6r              4r  6r              4r
+     */
+    assert(foo_delete(&digits, &digits_ary[4].node)); // 1
+    assert(rbtree_validate(digits) == 3);
 
     return 0;
 }
