@@ -132,8 +132,7 @@ bool name##_insert(struct rbtree_node **tree, struct name *data)        \
          */                                                             \
         else {                                                          \
             int dir = RIGHT_IF(node == parent->link[RIGHT]);            \
-            struct rbtree_node **top =                                  \
-                rbtree_parent_link(tree, parent->parent);               \
+            struct rbtree_node **top = rbtree_parent_link(tree, parent->parent); \
             /*
              *       B         (r)B
              *      / \        /   \

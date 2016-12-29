@@ -49,8 +49,6 @@ static inline bool foo_delete(struct rbtree_node **tree,
        end up deleting a node with at most 1 child. */
     if (!foo_bs_delete(tree, node))
         return false;
-    printf("BEGIN: ");
-    rbtree_display(*tree); fflush(stdout);
 
     /* Test if delete-by-swap occured. We could also test if node had 2
        children bferohand. Now node still points to the same struct but its
@@ -61,7 +59,7 @@ static inline bool foo_delete(struct rbtree_node **tree,
 
     /* If the deleted node is red, we're done. */
     if (node->color == RB_RED)
-        goto end;
+        return true;
 
     /* If deleted node is black, we need to correct. */
     /* - if child red: recolor to black */
@@ -69,7 +67,7 @@ static inline bool foo_delete(struct rbtree_node **tree,
         node->link[RIGHT];
     if (child && child->color == RB_RED) {
         child->color = RB_BLACK;
-        goto end;
+        return true;
     }
 
     /*
@@ -140,11 +138,6 @@ static inline bool foo_delete(struct rbtree_node **tree,
 
     if (child)
         child->color = RB_BLACK;
-
-  end:
-    printf("\n  END: ");
-    rbtree_display(*tree); fflush(stdout);
-    printf("\n");
 
     return true;
 }
