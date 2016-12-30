@@ -34,7 +34,7 @@ struct rbtree_node {
 #define RBTREE_DECL(tree) BSTREE_GENERIC_DECL(rbtree_node, tree)
 
 /**
- * Init a to-be-inserted btree node.
+ * Init a to-be-inserted rbtree node.
  *
  * The root node has parent NULL.
  */
@@ -45,11 +45,14 @@ struct rbtree_node {
 
 
 #define BSTREE_KEY_TYPE RBTREE_KEY_TYPE
-#define RBTREE_GENERATE(name, type, field, key, opt)    \
-    BSTREE_GENERATE_DELETE(name, type, opt)             \
-    BSTREE_GENERATE_INSERT(name, type, field, key, opt) \
-    BSTREE_GENERATE_SEARCH(name, type, field, key)      \
-    RBTREE_GENERATE_INSERT(name, field, opt)            \
+#define RBTREE_GENERATE(name, type, field, key) \
+    RBTREE_GENERATE_INTERNAL(name, type, field, key, _bs)
+
+#define RBTREE_GENERATE_INTERNAL(name, type, field, key, opt)          \
+    BSTREE_GENERATE_DELETE(name, type, opt)                            \
+    BSTREE_GENERATE_INSERT(name, type, field, key, opt)                \
+    BSTREE_GENERATE_SEARCH(name, type, field, key)                     \
+    RBTREE_GENERATE_INSERT(name, field, opt)                           \
     RBTREE_GENERATE_DELETE(name, opt)
 
 BSTREE_GENERATE_BASE(rbtree)
@@ -63,11 +66,10 @@ BSTREE_GENERATE_BASE(rbtree)
  *      / \       / \
  *     b   c     a   b
  */
-void rbtree_rotate(struct rbtree_node *root, int dir,
-                   struct rbtree_node **parent_link)
+static inline void rbtree_rotate(struct rbtree_node *root, int dir,
+                                 struct rbtree_node **parent_link)
 {
     struct rbtree_node *new = root->link[!dir];
-
     rbtree_link_node(new->link[dir], root, &(root->link[!dir]));
     rbtree_link_node(new, root->parent, parent_link);
     rbtree_link_node(root, new, &(new->link[dir]));
@@ -87,8 +89,8 @@ void rbtree_rotate(struct rbtree_node *root, int dir,
  *      / \          / \
  *     b   c        a   b
  */
-void rbtree_rotate_double(struct rbtree_node *root, int dir,
-                          struct rbtree_node **parent_link)
+static inline void rbtree_rotate_double(struct rbtree_node *root, int dir,
+                                        struct rbtree_node **parent_link)
 {
     rbtree_rotate(root->link[!dir], !dir, &(root->link[!dir]));
     rbtree_rotate(root, dir, parent_link);

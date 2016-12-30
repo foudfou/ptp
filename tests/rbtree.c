@@ -14,7 +14,7 @@ static inline int foo_compare(uint32_t keyA, uint32_t keyB)
     return keyA - keyB;
 }
 #define RBTREE_KEY_TYPE uint32_t
-RBTREE_GENERATE(foo, rbtree, node, key, _bs)
+RBTREE_GENERATE(foo, rbtree, node, key)
 
 /* For debugging, recover the definition from the SCM. */
 extern void rbtree_display(struct rbtree_node *root);
@@ -309,6 +309,7 @@ int main ()
      */
     assert(foo_delete(&digits, &digits_ary[4].node)); // 1
     assert(rbtree_validate(digits) == 3);
+
 
     return 0;
 }

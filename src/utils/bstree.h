@@ -1,5 +1,6 @@
 #ifndef BSTREE_H
 #define BSTREE_H
+
 /**
  * A basic, non-balanced, binary search tree.
  *
