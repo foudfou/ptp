@@ -41,11 +41,15 @@ add_builtin_argument('prefix')
 add_builtin_argument('libdir')
 add_builtin_argument('libexecdir')
 add_builtin_argument('bindir')
+add_builtin_argument('sbindir')
 add_builtin_argument('includedir')
 add_builtin_argument('datadir')
 add_builtin_argument('mandir')
+add_builtin_argument('infodir')
 add_builtin_argument('localedir')
 add_builtin_argument('sysconfdir')
+add_builtin_argument('localstatedir')
+add_builtin_argument('sharedstatedir')
 add_builtin_argument('backend')
 add_builtin_argument('buildtype')
 add_builtin_argument('strip', action='store_true')
@@ -115,7 +119,9 @@ class MesonApp():
                 msg = '''Trying to run Meson on a build directory that has already been configured.
 If you want to build it, just run your build command (e.g. ninja) inside the
 build directory. Meson will autodetect any changes in your setup and regenerate
-itself as required.'''
+itself as required.
+
+If you want to change option values, use the mesonconf tool instead.'''
                 raise RuntimeError(msg)
         else:
             if handshake:
@@ -192,11 +198,8 @@ def run_script_command(args):
     if cmdname == 'exe':
         import mesonbuild.scripts.meson_exe as abc
         cmdfunc = abc.run
-    elif cmdname == 'test':
-        import mesonbuild.scripts.meson_test as abc
-        cmdfunc = abc.run
-    elif cmdname == 'benchmark':
-        import mesonbuild.scripts.meson_benchmark as abc
+    elif cmdname == 'cleantrees':
+        import mesonbuild.scripts.cleantrees as abc
         cmdfunc = abc.run
     elif cmdname == 'install':
         import mesonbuild.scripts.meson_install as abc
@@ -246,7 +249,13 @@ def run(mainfile, args):
         return 1
     if len(args) >= 2 and args[0] == '--internal':
         if args[1] != 'regenerate':
-            sys.exit(run_script_command(args[1:]))
+            script = args[1]
+            try:
+                sys.exit(run_script_command(args[1:]))
+            except MesonException as e:
+                mlog.log(mlog.red('\nError in {} helper script:'.format(script)))
+                mlog.log(e)
+                sys.exit(1)
         args = args[2:]
         handshake = True
     else:

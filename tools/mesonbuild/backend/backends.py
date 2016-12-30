@@ -16,10 +16,20 @@ import os, pickle, re
 from .. import build
 from .. import dependencies
 from .. import mesonlib
+from .. import mlog
 from .. import compilers
 import json
 import subprocess
 from ..mesonlib import MesonException, get_compiler_for_source, classify_unity_sources
+
+class CleanTrees():
+    '''
+    Directories outputted by custom targets that have to be manually cleaned
+    because on Linux `ninja clean` only deletes empty directories.
+    '''
+    def __init__(self, build_dir, trees):
+        self.build_dir = build_dir
+        self.trees = trees
 
 class InstallData():
     def __init__(self, source_dir, build_dir, prefix):
@@ -50,7 +60,7 @@ class ExecutableSerialisation():
 
 class TestSerialisation:
     def __init__(self, name, suite, fname, is_cross, exe_wrapper, is_parallel, cmd_args, env,
-                 should_fail, valgrind_args, timeout, workdir, extra_paths):
+                 should_fail, timeout, workdir, extra_paths):
         self.name = name
         self.suite = suite
         self.fname = fname
@@ -60,7 +70,6 @@ class TestSerialisation:
         self.cmd_args = cmd_args
         self.env = env
         self.should_fail = should_fail
-        self.valgrind_args = valgrind_args
         self.timeout = timeout
         self.workdir = workdir
         self.extra_paths = extra_paths
@@ -161,7 +170,6 @@ class Backend():
 
         # For each language, generate a unity source file and return the list
         for comp, srcs in compsrcs.items():
-            lang = comp.get_language()
             with init_language_file(comp.get_default_suffix()) as ofile:
                 for src in srcs:
                     ofile.write('#include<%s>\n' % src)
@@ -179,6 +187,8 @@ class Backend():
                 o = os.path.join(proj_dir_to_build_root,
                                  self.build_to_src, target.get_subdir(), obj)
                 obj_list.append(o)
+            elif isinstance(obj, mesonlib.File):
+                obj_list.append(obj.rel_to_builddir(self.build_to_src))
             elif isinstance(obj, build.ExtractedObjects):
                 obj_list += self.determine_ext_objs(obj, proj_dir_to_build_root)
             else:
@@ -234,39 +244,21 @@ class Backend():
             self.write_benchmark_file(datafile)
         return (test_data, benchmark_data)
 
-    def determine_linker(self, target, src):
+    def determine_linker(self, target):
+        '''
+        If we're building a static library, there is only one static linker.
+        Otherwise, we query the target for the dynamic linker.
+        '''
         if isinstance(target, build.StaticLibrary):
             if target.is_cross:
                 return self.build.static_cross_linker
             else:
                 return self.build.static_linker
-        if target.is_cross:
-            compilers = self.build.cross_compilers
-        else:
-            compilers = self.build.compilers
-        if len(compilers) == 1:
-            return compilers[0]
-        # Currently a bit naive. C++ must
-        # be linked with a C++ compiler, but
-        # otherwise we don't care. This will
-        # become trickier if and when Fortran
-        # and the like become supported.
-        cpp = None
-        for c in compilers:
-            if c.get_language() == 'cpp':
-                cpp = c
-                break
-        if cpp is not None:
-            for s in src:
-                if c.can_compile(s):
-                    return cpp
-        for c in compilers:
-            if c.get_language() == 'vala':
-                continue
-            for s in src:
-                if c.can_compile(s):
-                    return c
-        raise AssertionError("BUG: Couldn't determine linker for sources {!r}".format(src))
+        l = target.get_clike_dynamic_linker()
+        if not l:
+            m = "Couldn't determine linker for target {!r}"
+            raise MesonException(m.format(target.name))
+        return l
 
     def object_filename_from_source(self, target, source):
         if isinstance(source, mesonlib.File):
@@ -280,13 +272,9 @@ class Backend():
         result = []
         targetdir = self.get_target_private_dir(extobj.target)
         # With unity builds, there's just one object that contains all the
-        # sources, so if we want all the objects, just return that.
+        # sources, and we only support extracting all the objects in this mode,
+        # so just return that.
         if self.environment.coredata.get_builtin_option('unity'):
-            if not extobj.unity_compatible:
-                # This should never happen
-                msg = 'BUG: Meson must not allow extracting single objects ' \
-                      'in Unity builds'
-                raise AssertionError(msg)
             comp = get_compiler_for_source(extobj.target.compilers.values(),
                                            extobj.srclist[0])
             # The unity object name uses the full absolute path of the source file
@@ -350,7 +338,7 @@ class Backend():
         commands += compiler.get_always_args()
         if no_warn_args:
             commands += compiler.get_no_warn_args()
-        else:
+        elif self.environment.coredata.get_builtin_option('buildtype') != 'plain':
             commands += compiler.get_warn_args(self.environment.coredata.get_builtin_option('warning_level'))
         commands += compiler.get_option_compile_args(self.environment.coredata.compiler_options)
         commands += self.build.get_global_args(compiler)
@@ -385,7 +373,7 @@ class Backend():
             if not isinstance(d, (build.StaticLibrary, build.SharedLibrary)):
                 raise RuntimeError('Tried to link with a non-library target "%s".' % d.get_basename())
             if isinstance(compiler, compilers.LLVMDCompiler):
-                args.extend(['-L', self.get_target_filename_for_linking(d)])
+                args += ['-L' + self.get_target_filename_for_linking(d)]
             else:
                 args.append(self.get_target_filename_for_linking(d))
             # If you have executable e that links to shared lib s1 that links to shared library s2
@@ -443,7 +431,7 @@ class Backend():
                     a = os.path.join(self.environment.get_build_dir(), a.rel_to_builddir(self.build_to_src))
                 cmd_args.append(a)
             ts = TestSerialisation(t.get_name(), t.suite, fname, is_cross, exe_wrapper,
-                                   t.is_parallel, cmd_args, t.env, t.should_fail, t.valgrind_args,
+                                   t.is_parallel, cmd_args, t.env, t.should_fail,
                                    t.timeout, t.workdir, extra_paths)
             arr.append(ts)
         pickle.dump(arr, datafile)
@@ -525,19 +513,13 @@ class Backend():
                     libs.append(os.path.join(self.get_target_dir(t), f))
         return libs
 
-    def eval_custom_target_command(self, target, absolute_paths=False):
-        if not absolute_paths:
-            ofilenames = [os.path.join(self.get_target_dir(target), i) for i in target.output]
-        else:
-            ofilenames = [os.path.join(self.environment.get_build_dir(), self.get_target_dir(target), i) \
-                          for i in target.output]
+    def get_custom_target_sources(self, target):
+        '''
+        Custom target sources can be of various object types; strings, File,
+        BuildTarget, even other CustomTargets.
+        Returns the path to them relative to the build root directory.
+        '''
         srcs = []
-        outdir = self.get_target_dir(target)
-        # Many external programs fail on empty arguments.
-        if outdir == '':
-            outdir = '.'
-        if absolute_paths:
-            outdir = os.path.join(self.environment.get_build_dir(), outdir)
         for i in target.get_sources():
             if hasattr(i, 'held_object'):
                 i = i.held_object
@@ -551,9 +533,25 @@ class Backend():
                 fname = [os.path.join(self.get_target_private_dir(target), p) for p in i.get_outputs()]
             else:
                 fname = [i.rel_to_builddir(self.build_to_src)]
-            if absolute_paths:
-                fname =[os.path.join(self.environment.get_build_dir(), f) for f in fname]
+            if target.absolute_paths:
+                fname = [os.path.join(self.environment.get_build_dir(), f) for f in fname]
             srcs += fname
+        return srcs
+
+    def eval_custom_target_command(self, target, absolute_outputs=False):
+        # We only want the outputs to be absolute when using the VS backend
+        if not absolute_outputs:
+            ofilenames = [os.path.join(self.get_target_dir(target), i) for i in target.output]
+        else:
+            ofilenames = [os.path.join(self.environment.get_build_dir(), self.get_target_dir(target), i) \
+                          for i in target.output]
+        srcs = self.get_custom_target_sources(target)
+        outdir = self.get_target_dir(target)
+        # Many external programs fail on empty arguments.
+        if outdir == '':
+            outdir = '.'
+        if target.absolute_paths:
+            outdir = os.path.join(self.environment.get_build_dir(), outdir)
         cmd = []
         for i in target.command:
             if isinstance(i, build.Executable):
@@ -566,9 +564,9 @@ class Backend():
                 i = os.path.join(self.get_target_dir(i), tmp)
             elif isinstance(i, mesonlib.File):
                 i = i.rel_to_builddir(self.build_to_src)
-                if absolute_paths:
+                if target.absolute_paths:
                     i = os.path.join(self.environment.get_build_dir(), i)
-            # FIXME: str types are blindly added and ignore the 'absolute_paths' argument
+            # FIXME: str types are blindly added ignoring 'target.absolute_paths'
             elif not isinstance(i, str):
                 err_msg = 'Argument {0} is of unknown type {1}'
                 raise RuntimeError(err_msg.format(str(i), str(type(i))))
@@ -614,7 +612,7 @@ class Backend():
                           ''.format(target.name, i)
                     raise MesonException(msg)
                 source = match.group(0)
-                if match.group(1) is None and not absolute_paths:
+                if match.group(1) is None and not target.absolute_paths:
                     lead_dir = ''
                 else:
                     lead_dir = self.environment.get_build_dir()
@@ -651,12 +649,12 @@ class Backend():
         child_env.update(env)
 
         for s in self.build.postconf_scripts:
-            cmd = s['exe'].get_command() + s['args']
+            cmd = s['exe'] + s['args']
             subprocess.check_call(cmd, env=child_env)
 
     # Subprojects of subprojects may cause the same dep args to be used
     # multiple times. Remove duplicates here. Note that we can't dedup
-    # libraries based on name alone, because "-lfoo -lbar -lfoo" is 
+    # libraries based on name alone, because "-lfoo -lbar -lfoo" is
     # a completely valid (though pathological) sequence and removing the
     # latter may fail. Usually only applies to static libs, though.
     def dedup_arguments(self, commands):
@@ -673,4 +671,3 @@ class Backend():
             previous = c
             final_commands.append(c)
         return final_commands
-                                                  

@@ -73,13 +73,16 @@ class OptionInterpreter:
         self.subproject = subproject
         self.cmd_line_options = {}
         for o in command_line_options:
-            (key, value) = o.split('=', 1)
+            try:
+                (key, value) = o.split('=', 1)
+            except ValueError:
+                raise OptionException('Option {!r} must have a value separated by equals sign.'.format(o))
             self.cmd_line_options[key] = value
 
     def process(self, option_file):
         try:
             with open(option_file, 'r', encoding='utf8') as f:
-                ast = mparser.Parser(f.read()).parse()
+                ast = mparser.Parser(f.read(), '').parse()
         except mesonlib.MesonException as me:
             me.file = option_file
             raise me
@@ -130,7 +133,7 @@ class OptionInterpreter:
         if 'type' not in kwargs:
             raise OptionException('Option call missing mandatory "type" keyword argument')
         opt_type = kwargs['type']
-        if not opt_type in option_types:
+        if opt_type not in option_types:
             raise OptionException('Unknown type %s.' % opt_type)
         if len(posargs) != 1:
             raise OptionException('Option() must have one (and only one) positional argument')

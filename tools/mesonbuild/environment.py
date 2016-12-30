@@ -17,14 +17,11 @@ from . import coredata
 from . import mesonlib
 from . import mlog
 from .compilers import *
+from .mesonlib import EnvironmentException, Popen_safe
 import configparser
 import shutil
 
 build_filename = 'meson.build'
-
-class EnvironmentException(mesonlib.MesonException):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
 
 def find_coverage_tools():
     gcovr_exe = 'gcovr'
@@ -39,19 +36,13 @@ def find_coverage_tools():
         genhtml_exe = None
     return (gcovr_exe, lcov_exe, genhtml_exe)
 
-def find_valgrind():
-    valgrind_exe = 'valgrind'
-    if not mesonlib.exe_exists([valgrind_exe, '--version']):
-        valgrind_exe = None
-    return valgrind_exe
-
 def detect_ninja():
     for n in ['ninja', 'ninja-build']:
         try:
-            p = subprocess.Popen([n, '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        except FileNotFoundError:
+            p, version = Popen_safe([n, '--version'])[0:2]
+        except (FileNotFoundError, PermissionError):
+            # Doesn't exist in PATH or isn't executable
             continue
-        version = p.communicate()[0].decode(errors='ignore')
         # Perhaps we should add a way for the caller to know the failure mode
         # (not found or too old)
         if p.returncode == 0 and mesonlib.version_compare(version, ">=1.6"):
@@ -70,7 +61,7 @@ def detect_native_windows_arch():
             # If this doesn't exist, something is messing with the environment
             arch = os.environ['PROCESSOR_ARCHITECTURE'].lower()
         except KeyError:
-            raise InterpreterException('Unable to detect native OS architecture')
+            raise EnvironmentException('Unable to detect native OS architecture')
     return arch
 
 def detect_windows_arch(compilers):
@@ -276,6 +267,12 @@ class Environment():
     def is_source(self, fname):
         return is_source(fname)
 
+    def is_assembly(self, fname):
+        return is_assembly(fname)
+
+    def is_llvm_ir(self, fname):
+        return is_llvm_ir(fname)
+
     def is_object(self, fname):
         return is_object(fname)
 
@@ -311,9 +308,7 @@ class Environment():
         # Arguments to output compiler pre-processor defines to stdout
         # gcc, g++, and gfortran all support these arguments
         args = compiler + ['-E', '-dM', '-']
-        p = subprocess.Popen(args, universal_newlines=True,
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        output = p.communicate('')[0]
+        p, output = Popen_safe(args, write='', stdin=subprocess.PIPE)[0:2]
         if p.returncode != 0:
             raise EnvironmentException('Unable to detect GNU compiler type:\n' + output)
         # Parse several lines of the type:
@@ -377,14 +372,10 @@ class Environment():
                     arg = '/?'
                 else:
                     arg = '--version'
-                p = subprocess.Popen([compiler, arg], stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE)
+                p, out, err = Popen_safe([compiler, arg])
             except OSError as e:
                 popen_exceptions[' '.join([compiler, arg])] = e
                 continue
-            (out, err) = p.communicate()
-            out = out.decode(errors='ignore')
-            err = err.decode(errors='ignore')
             version = search_version(out)
             if 'Free Software Foundation' in out:
                 defines = self.get_gnu_compiler_defines([compiler])
@@ -433,15 +424,10 @@ class Environment():
         for compiler in compilers:
             for arg in ['--version', '-V']:
                 try:
-                    p = subprocess.Popen([compiler, arg],
-                                         stdout=subprocess.PIPE,
-                                         stderr=subprocess.PIPE)
+                    p, out, err = Popen_safe([compiler, arg])
                 except OSError as e:
                     popen_exceptions[' '.join([compiler, arg])] = e
                     continue
-                (out, err) = p.communicate()
-                out = out.decode(errors='ignore')
-                err = err.decode(errors='ignore')
 
                 version = search_version(out)
 
@@ -467,7 +453,7 @@ class Environment():
                 if 'PathScale EKOPath(tm)' in err:
                     return PathScaleFortranCompiler([compiler], version, is_cross, exe_wrap)
 
-                if 'pgf90' in out:
+                if 'PGI Compilers' in out:
                     return PGIFortranCompiler([compiler], version, is_cross, exe_wrap)
 
                 if 'Open64 Compiler Suite' in err:
@@ -517,15 +503,10 @@ class Environment():
             else:
                 arg = '--version'
             try:
-                p = subprocess.Popen([compiler, arg],
-                                     stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE)
+                p, out, err = Popen_safe([compiler, arg])
             except OSError as e:
                 popen_exceptions[' '.join([compiler, arg])] = e
                 continue
-            (out, err) = p.communicate()
-            out = out.decode(errors='ignore')
-            err = err.decode(errors='ignore')
             version = search_version(out)
             if 'Free Software Foundation' in out:
                 defines = self.get_gnu_compiler_defines([compiler])
@@ -564,12 +545,9 @@ class Environment():
             is_cross = False
             exe_wrap = None
         try:
-            p = subprocess.Popen(exelist + ['--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p, out, err = Popen_safe(exelist + ['--version'])
         except OSError:
             raise EnvironmentException('Could not execute ObjC compiler "%s"' % ' '.join(exelist))
-        (out, err) = p.communicate()
-        out = out.decode(errors='ignore')
-        err = err.decode(errors='ignore')
         version = search_version(out)
         if 'Free Software Foundation' in out:
             defines = self.get_gnu_compiler_defines(exelist)
@@ -592,12 +570,9 @@ class Environment():
             is_cross = False
             exe_wrap = None
         try:
-            p = subprocess.Popen(exelist + ['--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p, out, err = Popen_safe(exelist + ['--version'])
         except OSError:
             raise EnvironmentException('Could not execute ObjC++ compiler "%s"' % ' '.join(exelist))
-        (out, err) = p.communicate()
-        out = out.decode(errors='ignore')
-        err = err.decode(errors='ignore')
         version = search_version(out)
         if 'Free Software Foundation' in out:
             defines = self.get_gnu_compiler_defines(exelist)
@@ -609,12 +584,9 @@ class Environment():
     def detect_java_compiler(self):
         exelist = ['javac']
         try:
-            p = subprocess.Popen(exelist + ['-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p, out, err = Popen_safe(exelist + ['-version'])
         except OSError:
             raise EnvironmentException('Could not execute Java compiler "%s"' % ' '.join(exelist))
-        (out, err) = p.communicate()
-        out = out.decode(errors='ignore')
-        err = err.decode(errors='ignore')
         version = search_version(err)
         if 'javac' in err:
             return JavaCompiler(exelist, version)
@@ -623,12 +595,9 @@ class Environment():
     def detect_cs_compiler(self):
         exelist = ['mcs']
         try:
-            p = subprocess.Popen(exelist + ['--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p, out, err = Popen_safe(exelist + ['--version'])
         except OSError:
             raise EnvironmentException('Could not execute C# compiler "%s"' % ' '.join(exelist))
-        (out, err) = p.communicate()
-        out = out.decode(errors='ignore')
-        err = err.decode(errors='ignore')
         version = search_version(out)
         if 'Mono' in out:
             return MonoCompiler(exelist, version)
@@ -637,11 +606,9 @@ class Environment():
     def detect_vala_compiler(self):
         exelist = ['valac']
         try:
-            p = subprocess.Popen(exelist + ['--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p, out = Popen_safe(exelist + ['--version'])[0:2]
         except OSError:
             raise EnvironmentException('Could not execute Vala compiler "%s"' % ' '.join(exelist))
-        (out, _) = p.communicate()
-        out = out.decode(errors='ignore')
         version = search_version(out)
         if 'Vala' in out:
             return ValaCompiler(exelist, version)
@@ -650,17 +617,15 @@ class Environment():
     def detect_rust_compiler(self):
         exelist = ['rustc']
         try:
-            p = subprocess.Popen(exelist + ['--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p, out = Popen_safe(exelist + ['--version'])[0:2]
         except OSError:
             raise EnvironmentException('Could not execute Rust compiler "%s"' % ' '.join(exelist))
-        (out, _) = p.communicate()
-        out = out.decode(errors='ignore')
         version = search_version(out)
         if 'rustc' in out:
             return RustCompiler(exelist, version)
         raise EnvironmentException('Unknown compiler "' + ' '.join(exelist) + '"')
 
-    def detect_d_compiler(self):
+    def detect_d_compiler(self, want_cross):
         exelist = None
         is_cross = False
         # Search for a D compiler.
@@ -684,11 +649,9 @@ class Environment():
             raise EnvironmentException('Could not find any supported D compiler.')
 
         try:
-            p = subprocess.Popen(exelist + ['--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p, out = Popen_safe(exelist + ['--version'])[0:2]
         except OSError:
             raise EnvironmentException('Could not execute D compiler "%s"' % ' '.join(exelist))
-        (out, _) = p.communicate()
-        out = out.decode(errors='ignore')
         version = search_version(out)
         if 'LLVM D compiler' in out:
             return LLVMDCompiler(exelist, version, is_cross)
@@ -701,11 +664,9 @@ class Environment():
     def detect_swift_compiler(self):
         exelist = ['swiftc']
         try:
-            p = subprocess.Popen(exelist + ['-v'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p, _, err = Popen_safe(exelist + ['-v'])
         except OSError:
             raise EnvironmentException('Could not execute Swift compiler "%s"' % ' '.join(exelist))
-        (_, err) = p.communicate()
-        err = err.decode(errors='ignore')
         version = search_version(err)
         if 'Swift' in err:
             return SwiftCompiler(exelist, version)
@@ -728,12 +689,9 @@ class Environment():
         else:
             arg = '--version'
         try:
-            p = subprocess.Popen([linker, arg], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p, out, err = Popen_safe([linker, arg])
         except OSError:
             raise EnvironmentException('Could not execute static linker "%s".' % linker)
-        (out, err) = p.communicate()
-        out = out.decode(errors='ignore')
-        err = err.decode(errors='ignore')
         if '/OUT:' in out or '/OUT:' in err:
             return VisualStudioLinker([linker])
         if p.returncode == 0:
@@ -868,9 +826,9 @@ class CrossBuildInfo():
         self.parse_datafile(filename)
         if 'target_machine' in self.config:
             return
-        if not 'host_machine' in self.config:
+        if 'host_machine' not in self.config:
             raise mesonlib.MesonException('Cross info file must have either host or a target machine.')
-        if not 'binaries' in self.config:
+        if 'binaries' not in self.config:
             raise mesonlib.MesonException('Cross file is missing "binaries".')
 
     def ok_type(self, i):
@@ -885,20 +843,20 @@ class CrossBuildInfo():
             for entry in config[s]:
                 value = config[s][entry]
                 if ' ' in entry or '\t' in entry or "'" in entry or '"' in entry:
-                    raise EnvironmentException('Malformed variable name %s in cross file..' % varname)
+                    raise EnvironmentException('Malformed variable name %s in cross file..' % entry)
                 try:
                     res = eval(value, {'true' : True, 'false' : False})
                 except Exception:
-                    raise EnvironmentException('Malformed value in cross file variable %s.' % varname)
+                    raise EnvironmentException('Malformed value in cross file variable %s.' % entry)
                 if self.ok_type(res):
                     self.config[s][entry] = res
                 elif isinstance(res, list):
                     for i in res:
                         if not self.ok_type(i):
-                            raise EnvironmentException('Malformed value in cross file variable %s.' % varname)
+                            raise EnvironmentException('Malformed value in cross file variable %s.' % entry)
                     self.config[s][entry] = res
                 else:
-                    raise EnvironmentException('Malformed value in cross file variable %s.' % varname)
+                    raise EnvironmentException('Malformed value in cross file variable %s.' % entry)
 
     def has_host(self):
         return 'host_machine' in self.config

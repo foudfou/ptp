@@ -14,18 +14,16 @@
 
 import os, sys
 import pickle
-import re
+import xml.dom.minidom
+import xml.etree.ElementTree as ET
 
-from mesonbuild import compilers
-from mesonbuild.build import BuildTarget
-from mesonbuild.mesonlib import File
 from . import backends
 from .. import build
 from .. import dependencies
 from .. import mlog
-import xml.etree.ElementTree as ET
-import xml.dom.minidom
-from ..mesonlib import MesonException
+from .. import compilers
+from ..build import BuildTarget
+from ..mesonlib import MesonException, File
 from ..environment import Environment
 
 def split_o_flags_args(args):
@@ -58,6 +56,7 @@ class RegenInfo():
 class Vs2010Backend(backends.Backend):
     def __init__(self, build):
         super().__init__(build)
+        self.name = 'vs2010'
         self.project_file_version = '10.0.30319.1'
         self.sources_conflicts = {}
         self.platform_toolset = None
@@ -259,7 +258,7 @@ class Vs2010Backend(backends.Backend):
             ofile.write('\tEndGlobalSection\n')
             ofile.write('\tGlobalSection(ProjectConfigurationPlatforms) = '
                         'postSolution\n')
-            ofile.write('\t\t{%s}.%s|%s.ActiveCfg = %s|%s\n' % 
+            ofile.write('\t\t{%s}.%s|%s.ActiveCfg = %s|%s\n' %
                         (self.environment.coredata.regen_guid, self.buildtype,
                          self.platform, self.buildtype, self.platform))
             ofile.write('\t\t{%s}.%s|%s.Build.0 = %s|%s\n' %
@@ -392,6 +391,9 @@ class Vs2010Backend(backends.Backend):
         root = self.create_basic_crap(target)
         action = ET.SubElement(root, 'ItemDefinitionGroup')
         customstep = ET.SubElement(action, 'CustomBuildStep')
+        # We need to always use absolute paths because our invocation is always
+        # from the target dir, not the build root.
+        target.absolute_paths = True
         (srcs, ofilenames, cmd) = self.eval_custom_target_command(target, True)
         cmd_templ = '''"%s" '''*len(cmd)
         ET.SubElement(customstep, 'Command').text = cmd_templ % tuple(cmd)
@@ -731,7 +733,6 @@ class Vs2010Backend(backends.Backend):
         if len(target_args) > 0:
             target_args.append('%(AdditionalOptions)')
             ET.SubElement(clconf, "AdditionalOptions").text = ' '.join(target_args)
-        additional_options_set = True
 
         for d in target.include_dirs:
             for i in d.incdirs:
@@ -783,6 +784,8 @@ class Vs2010Backend(backends.Backend):
             extra_link_args += l
         if not isinstance(target, build.StaticLibrary):
             extra_link_args += target.link_args
+            if isinstance(target, build.SharedModule):
+                extra_link_args += compiler.get_std_shared_module_link_args()
             # External deps must be last because target link libraries may depend on them.
             for dep in target.get_external_deps():
                 extra_link_args += dep.get_link_args()
@@ -925,7 +928,7 @@ class Vs2010Backend(backends.Backend):
                                       'ToolsVersion' : '4.0',
                                       'xmlns' : 'http://schemas.microsoft.com/developer/msbuild/2003'})
         confitems = ET.SubElement(root, 'ItemGroup', {'Label' : 'ProjectConfigurations'})
-        prjconf = ET.SubElement(confitems, 'ProjectConfiguration', 
+        prjconf = ET.SubElement(confitems, 'ProjectConfiguration',
                                 {'Include' : self.buildtype + '|' + self.platform})
         p = ET.SubElement(prjconf, 'Configuration')
         p.text= self.buildtype

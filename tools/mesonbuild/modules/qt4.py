@@ -12,10 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os, subprocess
+import os
 from .. import mlog
 from .. import build
-from ..mesonlib import MesonException
+from ..mesonlib import MesonException, Popen_safe
 from ..dependencies import Qt4Dependency
 import xml.etree.ElementTree as ET
 
@@ -37,11 +37,9 @@ class Qt4Module():
         # Moc and rcc return a non-zero result when doing so.
         # What kind of an idiot thought that was a good idea?
         if self.moc.found():
-            mp = subprocess.Popen(self.moc.get_command() + ['-v'],
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (stdout, stderr) = mp.communicate()
-            stdout = stdout.decode().strip()
-            stderr = stderr.decode().strip()
+            stdout, stderr = Popen_safe(self.moc.get_command() + ['-v'])[1:3]
+            stdout = stdout.strip()
+            stderr = stderr.strip()
             if 'Qt Meta' in stderr:
                 moc_ver = stderr
             else:
@@ -52,11 +50,9 @@ class Qt4Module():
         else:
             mlog.log(' moc:', mlog.red('NO'))
         if self.uic.found():
-            up = subprocess.Popen(self.uic.get_command() + ['-v'],
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (stdout, stderr) = up.communicate()
-            stdout = stdout.decode().strip()
-            stderr = stderr.decode().strip()
+            stdout, stderr = Popen_safe(self.uic.get_command() + ['-v'])[1:3]
+            stdout = stdout.strip()
+            stderr = stderr.strip()
             if 'version 4.' in stderr:
                 uic_ver = stderr
             else:
@@ -67,11 +63,9 @@ class Qt4Module():
         else:
             mlog.log(' uic:', mlog.red('NO'))
         if self.rcc.found():
-            rp = subprocess.Popen(self.rcc.get_command() + ['-v'],
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            (stdout, stderr) = rp.communicate()
-            stdout = stdout.decode().strip()
-            stderr = stderr.decode().strip()
+            stdout, stderr = Popen_safe(self.rcc.get_command() + ['-v'])[1:3]
+            stdout = stdout.strip()
+            stderr = stderr.strip()
             if 'version 4.' in stderr:
                 rcc_ver = stderr
             else:
@@ -113,10 +107,10 @@ class Qt4Module():
         moc_sources = kwargs.pop('moc_sources', [])
         if not isinstance(moc_sources, list):
             moc_sources = [moc_sources]
-        srctmp = kwargs.pop('sources', [])
-        if not isinstance(srctmp, list):
-            srctmp = [srctmp]
-        sources = args[1:] + srctmp
+        sources = kwargs.pop('sources', [])
+        if not isinstance(sources, list):
+            sources = [sources]
+        sources += args[1:]
         self._detect_tools(state.environment)
         err_msg = "{0} sources specified and couldn't find {1}, " \
                   "please check your qt4 installation"
@@ -128,8 +122,11 @@ class Qt4Module():
             qrc_deps = []
             for i in rcc_files:
                 qrc_deps += self.parse_qrc(state, i)
-            basename = os.path.split(rcc_files[0])[1]
-            name = 'qt4-' + basename.replace('.', '_')
+            if len(args) > 0:
+                name = args[0]
+            else:
+                basename = os.path.split(rcc_files[0])[1]
+                name = 'qt4-' + basename.replace('.', '_')
             rcc_kwargs = {'input' : rcc_files,
                     'output' : name + '.cpp',
                     'command' : [self.rcc, '-o', '@OUTPUT@', '@INPUT@'],
@@ -143,22 +140,19 @@ class Qt4Module():
             ui_kwargs = {'output' : 'ui_@BASENAME@.h',
                          'arguments' : ['-o', '@OUTPUT@', '@INPUT@']}
             ui_gen = build.Generator([self.uic], ui_kwargs)
-            ui_output = build.GeneratedList(ui_gen)
-            [ui_output.add_file(os.path.join(state.subdir, a)) for a in ui_files]
+            ui_output = ui_gen.process_files('Qt4 ui', ui_files, state)
             sources.append(ui_output)
         if len(moc_headers) > 0:
             moc_kwargs = {'output' : 'moc_@BASENAME@.cpp',
                           'arguments' : ['@INPUT@', '-o', '@OUTPUT@']}
             moc_gen = build.Generator([self.moc], moc_kwargs)
-            moc_output = build.GeneratedList(moc_gen)
-            [moc_output.add_file(os.path.join(state.subdir, a)) for a in moc_headers]
+            moc_output = moc_gen.process_files('Qt4 moc header', moc_headers, state)
             sources.append(moc_output)
         if len(moc_sources) > 0:
             moc_kwargs = {'output' : '@BASENAME@.moc',
                           'arguments' : ['@INPUT@', '-o', '@OUTPUT@']}
             moc_gen = build.Generator([self.moc], moc_kwargs)
-            moc_output = build.GeneratedList(moc_gen)
-            [moc_output.add_file(os.path.join(state.subdir, a)) for a in moc_sources]
+            moc_output = moc_gen.process_files('Qt4 moc source', moc_sources, state)
             sources.append(moc_output)
         return sources
 

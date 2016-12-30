@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2015-2016 The Meson development team
 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -29,12 +27,11 @@ def need_regen(regeninfo, regen_timestamp):
     # We must make sure to recreate it, even if we do not regenerate the solution.
     # Otherwise, Visual Studio will always consider the REGEN project out of date.
     print("Everything is up-to-date, regeneration of build files is not needed.")
-    from mesonbuild.backend.vs2010backend import Vs2010Backend
+    from ..backend.vs2010backend import Vs2010Backend
     Vs2010Backend.touch_regen_timestamp(regeninfo.build_dir)
     return False
 
 def regen(regeninfo, mesonscript, backend):
-    scriptdir = os.path.split(__file__)[0]
     cmd = [sys.executable,
            mesonscript,
            '--internal',

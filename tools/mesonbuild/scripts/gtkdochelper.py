@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # Copyright 2015-2016 The Meson development team
 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,15 +16,15 @@ import sys, os
 import subprocess
 import shutil
 import argparse
-from mesonbuild.mesonlib import MesonException
-from mesonbuild.scripts import destdir_join
+from ..mesonlib import MesonException, Popen_safe
+from . import destdir_join
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument('--sourcedir', dest='sourcedir')
 parser.add_argument('--builddir', dest='builddir')
 parser.add_argument('--subdir', dest='subdir')
-parser.add_argument('--headerdir', dest='headerdir')
+parser.add_argument('--headerdirs', dest='headerdirs')
 parser.add_argument('--mainfile', dest='mainfile')
 parser.add_argument('--modulename', dest='modulename')
 parser.add_argument('--htmlargs', dest='htmlargs', default='')
@@ -38,29 +37,39 @@ parser.add_argument('--cc', dest='cc', default='')
 parser.add_argument('--ldflags', dest='ldflags', default='')
 parser.add_argument('--cflags', dest='cflags', default='')
 parser.add_argument('--content-files', dest='content_files', default='')
+parser.add_argument('--expand-content-files', dest='expand_content_files', default='')
 parser.add_argument('--html-assets', dest='html_assets', default='')
 parser.add_argument('--ignore-headers', dest='ignore_headers', default='')
+parser.add_argument('--namespace', dest='namespace', default='')
+parser.add_argument('--mode', dest='mode', default='')
 parser.add_argument('--installdir', dest='install_dir')
 
 def gtkdoc_run_check(cmd, cwd):
-    p = subprocess.Popen(cmd, cwd=cwd,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    (stde, stdo) = p.communicate()
+    # Put stderr into stdout since we want to print it out anyway.
+    # This preserves the order of messages.
+    p, out = Popen_safe(cmd, cwd=cwd, stderr=subprocess.STDOUT)[0:2]
     if p.returncode != 0:
         err_msg = ["{!r} failed with status {:d}".format(cmd[0], p.returncode)]
-        if stde:
-            err_msg.append(stde.decode(errors='ignore'))
-        if stdo:
-            err_msg.append(stdo.decode(errors='ignore'))
+        if out:
+            err_msg.append(out)
         raise MesonException('\n'.join(err_msg))
 
-def build_gtkdoc(source_root, build_root, doc_subdir, src_subdir,
+def build_gtkdoc(source_root, build_root, doc_subdir, src_subdirs,
                  main_file, module, html_args, scan_args, fixxref_args,
                  gobject_typesfile, scanobjs_args, ld, cc, ldflags, cflags,
-                 html_assets, content_files, ignore_headers):
+                 html_assets, content_files, ignore_headers, namespace,
+                 expand_content_files, mode):
     print("Building documentation for %s" % module)
 
-    abs_src = os.path.join(source_root, src_subdir)
+    src_dir_args = []
+    for src_dir in src_subdirs:
+        if not os.path.isabs(src_dir):
+            dirs = [os.path.join(source_root, src_dir),
+                    os.path.join(build_root, src_dir)]
+        else:
+            dirs = [src_dir]
+        src_dir_args += ['--source-dir=' + d for d in dirs]
+
     doc_src = os.path.join(source_root, doc_subdir)
     abs_out = os.path.join(build_root, doc_subdir)
     htmldir = os.path.join(abs_out, 'html')
@@ -90,7 +99,7 @@ def build_gtkdoc(source_root, build_root, doc_subdir, src_subdir,
         f_abs = os.path.join(doc_src, f)
         shutil.copyfile(f_abs, os.path.join(htmldir, os.path.basename(f_abs)))
 
-    scan_cmd = ['gtkdoc-scan', '--module=' + module, '--source-dir=' + abs_src]
+    scan_cmd = ['gtkdoc-scan', '--module=' + module] + src_dir_args
     if ignore_headers:
         scan_cmd.append('--ignore-headers=' + ' '.join(ignore_headers))
     # Add user-specified arguments
@@ -105,16 +114,29 @@ def build_gtkdoc(source_root, build_root, doc_subdir, src_subdir,
 
 
     # Make docbook files
-    if main_file.endswith('sgml'):
-        modeflag = '--sgml-mode'
-    else:
+    if mode == 'auto':
+        # Guessing is probably a poor idea but these keeps compat
+        # with previous behavior
+        if main_file.endswith('sgml'):
+            modeflag = '--sgml-mode'
+        else:
+            modeflag = '--xml-mode'
+    elif mode == 'xml':
         modeflag = '--xml-mode'
+    elif mode == 'sgml':
+        modeflag = '--sgml-mode'
+    else: # none
+        modeflag = None
+
     mkdb_cmd = ['gtkdoc-mkdb',
                 '--module=' + module,
                 '--output-format=xml',
-                '--expand-content-files=',
-                modeflag,
-                '--source-dir=' + abs_src]
+                '--expand-content-files=' + ' '.join(expand_content_files),
+                ] + src_dir_args
+    if namespace:
+        mkdb_cmd.append('--name-space=' + namespace)
+    if modeflag:
+        mkdb_cmd.append(modeflag)
     if len(main_file) > 0:
         # Yes, this is the flag even if the file is in xml.
         mkdb_cmd.append('--main-sgml-file=' + main_file)
@@ -122,7 +144,7 @@ def build_gtkdoc(source_root, build_root, doc_subdir, src_subdir,
 
     # Make HTML documentation
     mkhtml_cmd = ['gtkdoc-mkhtml',
-                  '--path=' + ':'.join((abs_src, abs_out)),
+                  '--path=' + ':'.join((doc_src, abs_out)),
                   module,
                   ] + html_args
     if len(main_file) > 0:
@@ -166,7 +188,7 @@ def run(args):
         options.sourcedir,
         options.builddir,
         options.subdir,
-        options.headerdir,
+        options.headerdirs.split('@@'),
         options.mainfile,
         options.modulename,
         htmlargs,
@@ -180,7 +202,10 @@ def run(args):
         options.cflags,
         options.html_assets.split('@@') if options.html_assets else [],
         options.content_files.split('@@') if options.content_files else [],
-        options.ignore_headers.split('@@') if options.ignore_headers else [])
+        options.ignore_headers.split('@@') if options.ignore_headers else [],
+        options.namespace,
+        options.expand_content_files.split('@@') if options.expand_content_files else [],
+        options.mode)
 
     if 'MESON_INSTALL_PREFIX' in os.environ:
         install_dir = options.install_dir if options.install_dir else options.modulename

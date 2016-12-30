@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2013-2016 The Meson development team
 
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -22,8 +20,9 @@
 # This file is basically a reimplementation of
 # http://cgit.freedesktop.org/libreoffice/core/commit/?id=3213cd54b76bc80a6f0516aac75a48ff3b2ad67c
 
-import sys, subprocess
-from mesonbuild import mesonlib
+import os, sys
+from .. import mesonlib
+from ..mesonlib import Popen_safe
 import argparse
 
 parser = argparse.ArgumentParser()
@@ -49,23 +48,31 @@ def write_if_changed(text, outfilename):
         f.write(text)
 
 def linux_syms(libfilename, outfilename):
-    pe = subprocess.Popen(['readelf', '-d', libfilename], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output = pe.communicate()[0].decode()
+    evar = 'READELF'
+    if evar in os.environ:
+        readelfbin = os.environ[evar].strip()
+    else:
+        readelfbin = 'readelf'
+    evar = 'NM'
+    if evar in os.environ:
+        nmbin = os.environ[evar].strip()
+    else:
+        nmbin = 'nm'
+    pe, output = Popen_safe([readelfbin, '-d', libfilename])[0:2]
     if pe.returncode != 0:
         raise RuntimeError('Readelf does not work')
     result = [x for x in output.split('\n') if 'SONAME' in x]
     assert(len(result) <= 1)
-    pnm = subprocess.Popen(['nm', '--dynamic', '--extern-only', '--defined-only', '--format=posix', libfilename],
-                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output = pnm.communicate()[0].decode()
+    pnm, output = Popen_safe([nmbin, '--dynamic', '--extern-only',
+                              '--defined-only', '--format=posix',
+                              libfilename])[0:2]
     if pnm.returncode != 0:
         raise RuntimeError('nm does not work.')
     result += [' '.join(x.split()[0:2]) for x in output.split('\n') if len(x) > 0]
     write_if_changed('\n'.join(result) + '\n', outfilename)
 
 def osx_syms(libfilename, outfilename):
-    pe = subprocess.Popen(['otool', '-l', libfilename], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output = pe.communicate()[0].decode()
+    pe, output = Popen_safe(['otool', '-l', libfilename])[0:2]
     if pe.returncode != 0:
         raise RuntimeError('Otool does not work.')
     arr = output.split('\n')
@@ -74,8 +81,7 @@ def osx_syms(libfilename, outfilename):
             match = i
             break
     result = [arr[match+2], arr[match+5]] # Libreoffice stores all 5 lines but the others seem irrelevant.
-    pnm = subprocess.Popen(['nm', '-g', '-P', libfilename], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    output = pnm.communicate()[0].decode()
+    pnm, output = Popen_safe(['nm', '-g', '-P', libfilename])[0:2]
     if pnm.returncode != 0:
         raise RuntimeError('nm does not work.')
     result += [' '.join(x.split()[0:2]) for x in output.split('\n') if len(x) > 0 and not x.endswith('U')]

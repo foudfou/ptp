@@ -27,6 +27,8 @@ import sys, os
 parser = argparse.ArgumentParser()
 parser.add_argument('--targets', action='store_true', dest='list_targets', default=False,
                     help='List top level targets.')
+parser.add_argument('--installed', action='store_true', dest='list_installed', default=False,
+                    help='List all installed files and directories.')
 parser.add_argument('--target-files', action='store', dest='target_files', default=None,
                     help='List source files for a given target.')
 parser.add_argument('--buildsystem-files', action='store_true', dest='buildsystem_files', default=False,
@@ -39,6 +41,8 @@ parser.add_argument('--benchmarks', action='store_true', dest='benchmarks', defa
                     help='List all benchmarks.')
 parser.add_argument('--dependencies', action='store_true', dest='dependencies', default=False,
                     help='list external dependencies.')
+parser.add_argument('--projectinfo', action='store_true', dest='projectinfo', default=False,
+                    help='information about projects.')
 parser.add_argument('args', nargs='+')
 
 def determine_installed_path(target, installdata):
@@ -53,6 +57,15 @@ def determine_installed_path(target, installdata):
     outdir = i[1]
     outname = os.path.join(installdata.prefix, outdir, os.path.split(fname)[-1])
     return outname
+
+
+def list_installed(installdata):
+    res = {}
+    for path, installpath in installdata.data:
+        res[path] = os.path.join(installdata.prefix, installpath)
+
+    print(json.dumps(res))
+
 
 def list_targets(coredata, builddata, installdata):
     tlist = []
@@ -168,12 +181,27 @@ def list_tests(testdata):
         else:
             fname = t.fname
         to['cmd'] = fname + t.cmd_args
-        to['env'] = t.env
+        if isinstance(t.env, build.EnvironmentVariables):
+            to['env'] = t.env.get_env(os.environ)
+        else:
+            to['env'] = t.env
         to['name'] = t.name
         to['workdir'] = t.workdir
         to['timeout'] = t.timeout
         to['suite'] = t.suite
         result.append(to)
+    print(json.dumps(result))
+
+def list_projinfo(builddata):
+    result = {}
+    result['name'] = builddata.project_name
+    result['version'] = builddata.project_version
+    subprojects = []
+    for k, v in builddata.subprojects.items():
+        c = {'name' : k,
+             'version' : v}
+        subprojects.append(c)
+    result['subprojects'] = subprojects
     print(json.dumps(result))
 
 def run(args):
@@ -202,6 +230,8 @@ def run(args):
         installdata = pickle.load(f)
     if options.list_targets:
         list_targets(coredata, builddata, installdata)
+    elif options.list_installed:
+        list_installed(installdata)
     elif options.target_files is not None:
         list_target_files(options.target_files, coredata, builddata)
     elif options.buildsystem_files:
@@ -214,6 +244,8 @@ def run(args):
         list_tests(benchmarkdata)
     elif options.dependencies:
         list_deps(coredata)
+    elif options.projectinfo:
+        list_projinfo(builddata)
     else:
         print('No command specified')
         return 1

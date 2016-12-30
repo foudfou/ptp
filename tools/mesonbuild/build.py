@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import coredata
 from . import environment
 from . import dependencies
 from . import mlog
 import copy, os, re
 from .mesonlib import File, flatten, MesonException, stringlistify, classify_unity_sources
 from .environment import for_windows, for_darwin
+from .compilers import is_object, clike_langs, lang_suffixes
 
 known_basic_kwargs = {'install' : True,
                       'c_pch' : True,
@@ -27,7 +27,9 @@ known_basic_kwargs = {'install' : True,
                       'cpp_args' : True,
                       'cs_args' : True,
                       'vala_args' : True,
+                      'fortran_args' : True,
                       'd_args' : True,
+                      'java_args' : True,
                       'link_args' : True,
                       'link_depends': True,
                       'link_with' : True,
@@ -61,17 +63,6 @@ known_lib_kwargs.update({'version' : True, # Only for shared libs
                          'pic' : True, # Only for static libs
                         })
 
-def compilers_are_msvc(compilers):
-    """
-    Check if all the listed compilers are MSVC. Used by Executable,
-    StaticLibrary, and SharedLibrary for deciding when to use MSVC-specific
-    file naming.
-    """
-    for compiler in compilers.values():
-        if compiler.get_id() != 'msvc':
-            return False
-    return True
-
 
 class InvalidArguments(MesonException):
     pass
@@ -87,8 +78,8 @@ class Build:
         self.environment = environment
         self.projects = {}
         self.targets = {}
-        self.compilers = []
-        self.cross_compilers = []
+        self.compilers = {}
+        self.cross_compilers = {}
         self.global_args = {}
         self.projects_args = {}
         self.global_link_args = {}
@@ -108,26 +99,19 @@ class Build:
         self.dep_manifest = {}
         self.cross_stdlibs = {}
 
-    def has_language(self, language):
-        for i in self.compilers:
-            if i.get_language() == language:
-                return True
-        return False
-
     def add_compiler(self, compiler):
         if self.static_linker is None and compiler.needs_static_linker():
             self.static_linker = self.environment.detect_static_linker(compiler)
-        if self.has_language(compiler.get_language()):
-            return
-        self.compilers.append(compiler)
+        lang = compiler.get_language()
+        if lang not in self.compilers:
+            self.compilers[lang] = compiler
 
     def add_cross_compiler(self, compiler):
         if len(self.cross_compilers) == 0:
             self.static_cross_linker = self.environment.detect_static_linker(compiler)
-        for i in self.cross_compilers:
-            if i.get_language() == compiler.get_language():
-                return
-        self.cross_compilers.append(compiler)
+        lang = compiler.get_language()
+        if lang not in self.cross_compilers:
+            self.cross_compilers[lang] = compiler
 
     def get_project(self):
         return self.projects['']
@@ -197,10 +181,15 @@ class ExtractedObjects():
     '''
     Holds a list of sources for which the objects must be extracted
     '''
-    def __init__(self, target, srclist):
+    def __init__(self, target, srclist, is_unity):
         self.target = target
         self.srclist = srclist
-        self.check_unity_compatible()
+        if is_unity:
+            self.check_unity_compatible()
+
+    def __repr__(self):
+        r = '<{0} {1!r}: {2}>'
+        return r.format(self.__class__.__name__, self.target.name, self.srclist)
 
     def check_unity_compatible(self):
         # Figure out if the extracted object list is compatible with a Unity
@@ -210,11 +199,9 @@ class ExtractedObjects():
         # from each unified source file.
         # If the list of sources for which we want objects is the same as the
         # list of sources that go into each unified build, we're good.
-        self.unity_compatible = False
         srclist_set = set(self.srclist)
         # Objects for all the sources are required, so we're compatible
         if srclist_set == set(self.target.sources):
-            self.unity_compatible = True
             return
         # Check if the srclist is a subset (of the target's sources) that is
         # going to form a unified source file and a single object
@@ -222,7 +209,6 @@ class ExtractedObjects():
                                           self.target.sources)
         for srcs in compsrcs.values():
             if srclist_set == set(srcs):
-                self.unity_compatible = True
                 return
         msg = 'Single object files can not be extracted in Unity builds. ' \
               'You can only extract all the object files at once.'
@@ -272,6 +258,7 @@ class BuildTarget():
         self.subdir = subdir
         self.subproject = subproject # Can not be calculated from subdir as subproject dirname can be changed per project.
         self.is_cross = is_cross
+        self.is_unity = environment.coredata.get_builtin_option('unity')
         self.environment = environment
         self.sources = []
         self.compilers = {}
@@ -290,7 +277,14 @@ class BuildTarget():
         self.extra_args = {}
         self.generated = []
         self.extra_files = []
+        # Sources can be:
+        # 1. Pre-existing source files in the source tree
+        # 2. Pre-existing sources generated by configure_file in the build tree
+        # 3. Sources files generated by another target or a Generator
         self.process_sourcelist(sources)
+        # Objects can be:
+        # 1. Pre-existing objects provided by the user with the `objects:` kwarg
+        # 2. Compiled objects created by and extracted from another target
         self.process_objectlist(objects)
         self.process_kwargs(kwargs, environment)
         self.check_unknown_kwargs(kwargs)
@@ -322,7 +316,7 @@ class BuildTarget():
     def check_unknown_kwargs_int(self, kwargs, known_kwargs):
         unknowns = []
         for k in kwargs:
-            if not k in known_kwargs:
+            if k not in known_kwargs:
                 unknowns.append(k)
         if len(unknowns) > 0:
             mlog.warning('Unknown keyword argument(s) in target %s: %s.' %
@@ -333,7 +327,7 @@ class BuildTarget():
         for s in objects:
             if hasattr(s, 'held_object'):
                 s = s.held_object
-            if isinstance(s, (str, ExtractedObjects)):
+            if isinstance(s, (str, File, ExtractedObjects)):
                 self.objects.append(s)
             elif isinstance(s, (GeneratedList, CustomTarget)):
                 msg =  'Generated files are not allowed in the \'objects\' kwarg ' + \
@@ -354,7 +348,7 @@ class BuildTarget():
             if hasattr(s, 'held_object'):
                 s = s.held_object
             if isinstance(s, File):
-                if not s in added_sources:
+                if s not in added_sources:
                     self.sources.append(s)
                     added_sources[s] = True
             elif isinstance(s, (GeneratedList, CustomTarget)):
@@ -380,19 +374,56 @@ class BuildTarget():
         return removed
 
     def process_compilers(self):
-        if len(self.sources) + len(self.generated) == 0:
+        '''
+        Populate self.compilers, which is the list of compilers that this
+        target will use for compiling all its sources.
+        We also add compilers that were used by extracted objects to simplify
+        dynamic linker determination.
+        '''
+        if len(self.sources) + len(self.generated) + len(self.objects) == 0:
             return
-        sources = list(self.sources)
-        for gensrc in self.generated:
-            sources += gensrc.get_outputs()
         # Populate list of compilers
         if self.is_cross:
             compilers = self.environment.coredata.cross_compilers
         else:
             compilers = self.environment.coredata.compilers
-        for lang, compiler in compilers.items():
-            if self.can_compile_sources(compiler, sources):
-                self.compilers[lang] = compiler
+        # Pre-existing sources
+        sources = list(self.sources)
+        # All generated sources
+        for gensrc in self.generated:
+            for s in gensrc.get_outputs():
+                # Generated objects can't be compiled, so don't use them for
+                # compiler detection. If our target only has generated objects,
+                # we will fall back to using the first c-like compiler we find,
+                # which is what we need.
+                if not is_object(s):
+                    sources.append(s)
+        # Sources that were used to create our extracted objects
+        for o in self.objects:
+            if not isinstance(o, ExtractedObjects):
+                continue
+            for s in o.srclist:
+                # Don't add Vala sources since that will pull in the Vala
+                # compiler even though we will never use it since we are
+                # dealing with compiled C code.
+                if not s.endswith(lang_suffixes['vala']):
+                    sources.append(s)
+        if sources:
+            # Add compilers based on the above sources
+            for lang, compiler in compilers.items():
+                # We try to be conservative because sometimes people add files
+                # in the list of sources that we can't determine the type based
+                # just on the suffix.
+                if self.can_compile_sources(compiler, sources):
+                    self.compilers[lang] = compiler
+        else:
+            # No source files, target consists of only object files of unknown
+            # origin. Just add the first clike compiler that we have and hope
+            # that it can link these objects
+            for lang in clike_langs:
+                if lang in compilers:
+                    self.compilers[lang] = compilers[lang]
+                    break
         # If all our sources are Vala, our target also needs the C compiler but
         # it won't get added above.
         if 'vala' in self.compilers and 'c' not in self.compilers:
@@ -457,10 +488,10 @@ class BuildTarget():
             if src not in self.sources:
                 raise MesonException('Tried to extract unknown source %s.' % src)
             obj_src.append(src)
-        return ExtractedObjects(self, obj_src)
+        return ExtractedObjects(self, obj_src, self.is_unity)
 
     def extract_all_objects(self):
-        return ExtractedObjects(self, self.sources)
+        return ExtractedObjects(self, self.sources, self.is_unity)
 
     def get_all_link_deps(self):
         return self.get_transitive_link_deps()
@@ -511,6 +542,10 @@ class BuildTarget():
         if not isinstance(valalist, list):
             valalist = [valalist]
         self.add_compiler_args('vala', valalist)
+        fortranlist = kwargs.get('fortran_args', [])
+        if not isinstance(fortranlist, list):
+            fortranlist = [fortranlist]
+        self.add_compiler_args('fortran', fortranlist)
         if not isinstance(self, Executable):
             self.vala_header = kwargs.get('vala_header', self.name + '.h')
             self.vala_vapi = kwargs.get('vala_vapi', self.name + '.vapi')
@@ -713,7 +748,7 @@ class BuildTarget():
             if hasattr(t, 'held_object'):
                 t = t.held_object
             if not isinstance(t, (StaticLibrary, SharedLibrary)):
-                raise InvalidArguments('Link target {!r} is not library.'.format(t.name))
+                raise InvalidArguments('Link target {!r} is not library.'.format(t))
             if isinstance(self, SharedLibrary) and isinstance(t, StaticLibrary) and not t.pic:
                 msg = "Can't link non-PIC static library {!r} into shared library {!r}. ".format(t.name, self.name)
                 msg += "Use the 'pic' option to static_library to build with PIC."
@@ -763,8 +798,45 @@ class BuildTarget():
         else:
             self.extra_args[language] = args
 
-    def get_aliaslist(self):
-        return []
+    def get_aliases(self):
+        return {}
+
+    def get_clike_dynamic_linker(self):
+        '''
+        We use the order of languages in `clike_langs` to determine which
+        linker to use in case the target has sources compiled with multiple
+        compilers. All languages other than those in this list have their own
+        linker.
+        Note that Vala outputs C code, so Vala sources can use any linker
+        that can link compiled C. We don't actually need to add an exception
+        for Vala here because of that.
+        '''
+        for l in clike_langs:
+            if l in self.compilers:
+                return self.compilers[l]
+
+    def get_using_msvc(self):
+        '''
+        Check if the dynamic linker is MSVC. Used by Executable, StaticLibrary,
+        and SharedLibrary for deciding when to use MSVC-specific file naming
+        and debug filenames.
+
+        If at least some code is built with MSVC and the final library is
+        linked with MSVC, we can be sure that some debug info will be
+        generated. We only check the dynamic linker here because the static
+        linker is guaranteed to be of the same type.
+
+        Interesting cases:
+        1. The Vala compiler outputs C code to be compiled by whatever
+           C compiler we're using, so all objects will still be created by the
+           MSVC compiler.
+        2. If the target contains only objects, process_compilers guesses and
+           picks the first compiler that smells right.
+        '''
+        linker = self.get_clike_dynamic_linker()
+        if linker and linker.get_id() == 'msvc':
+            return True
+        return False
 
 
 class Generator():
@@ -807,7 +879,7 @@ class Generator():
         for rule in outputs:
             if not isinstance(rule, str):
                 raise InvalidArguments('"output" may only contain strings.')
-            if not '@BASENAME@' in rule and not '@PLAINNAME@' in rule:
+            if '@BASENAME@' not in rule and '@PLAINNAME@' not in rule:
                 raise InvalidArguments('Every element of "output" must contain @BASENAME@ or @PLAINNAME@.')
             if '/' in rule or '\\' in rule:
                 raise InvalidArguments('"outputs" must not contain a directory separator.')
@@ -838,6 +910,15 @@ class Generator():
 
     def get_arglist(self):
         return self.arglist
+
+    def process_files(self, name, files, state, extra_args=[]):
+        output = GeneratedList(self, extra_args=extra_args)
+        for f in files:
+            if not isinstance(f, str):
+                raise InvalidArguments('{} arguments must be strings.'.format(name))
+            output.add_file(os.path.join(state.subdir, f))
+        return output
+
 
 class GeneratedList():
     def __init__(self, generator, extra_args=[]):
@@ -890,7 +971,7 @@ class Executable(BuildTarget):
             self.filename += '.' + self.suffix
         # See determine_debug_filenames() in build.SharedLibrary
         buildtype = environment.coredata.get_builtin_option('buildtype')
-        if compilers_are_msvc(self.compilers) and buildtype.startswith('debug'):
+        if self.get_using_msvc() and buildtype.startswith('debug'):
             self.debug_filename = self.prefix + self.name + '.pdb'
 
     def type_suffix(self):
@@ -921,7 +1002,7 @@ class StaticLibrary(BuildTarget):
         self.filename = self.prefix + self.name + '.' + self.suffix
         # See determine_debug_filenames() in build.SharedLibrary
         buildtype = environment.coredata.get_builtin_option('buildtype')
-        if compilers_are_msvc(self.compilers) and buildtype.startswith('debug'):
+        if self.get_using_msvc() and buildtype.startswith('debug'):
             self.debug_filename = self.prefix + self.name + '.pdb'
 
     def type_suffix(self):
@@ -957,7 +1038,7 @@ class SharedLibrary(BuildTarget):
         First we determine the filename template (self.filename_tpl), then we
         set the output filename (self.filename).
 
-        The template is needed while creating aliases (self.get_aliaslist),
+        The template is needed while creating aliases (self.get_aliases),
         which are needed while generating .so shared libraries for Linux.
 
         Besides this, there's also the import library name, which is only used
@@ -997,7 +1078,7 @@ class SharedLibrary(BuildTarget):
             suffix = 'dll'
             self.vs_import_filename = '{0}.lib'.format(self.name)
             self.gcc_import_filename = 'lib{0}.dll.a'.format(self.name)
-            if compilers_are_msvc(self.compilers):
+            if self.get_using_msvc():
                 # Shared library is of the form foo.dll
                 prefix = ''
                 # Import library is called foo.lib
@@ -1044,7 +1125,7 @@ class SharedLibrary(BuildTarget):
         determine_filenames() above.
         """
         buildtype = env.coredata.get_builtin_option('buildtype')
-        if compilers_are_msvc(self.compilers) and buildtype.startswith('debug'):
+        if self.get_using_msvc() and buildtype.startswith('debug'):
             # Currently we only implement separate debug symbol files for MSVC
             # since the toolchain does it for us. Other toolchains embed the
             # debugging symbols in the file itself by default.
@@ -1069,12 +1150,10 @@ class SharedLibrary(BuildTarget):
                 self.soversion = str(self.soversion)
             if not isinstance(self.soversion, str):
                 raise InvalidArguments('Shared library soversion is not a string or integer.')
-            try:
-                int(self.soversion)
-            except ValueError:
-                raise InvalidArguments('Shared library soversion must be a valid integer')
         elif self.ltversion:
             # library version is defined, get the soversion from that
+            # We replicate what Autotools does here and take the first
+            # number of the version by default.
             self.soversion = self.ltversion.split('.')[0]
         # Visual Studio module-definitions file
         if 'vs_module_defs' in kwargs:
@@ -1105,29 +1184,44 @@ class SharedLibrary(BuildTarget):
     def get_all_link_deps(self):
         return [self] + self.get_transitive_link_deps()
 
-    def get_aliaslist(self):
+    def get_aliases(self):
         """
         If the versioned library name is libfoo.so.0.100.0, aliases are:
-        * libfoo.so.0 (soversion)
-        * libfoo.so (unversioned; for linking)
+        * libfoo.so.0 (soversion) -> libfoo.so.0.100.0
+        * libfoo.so (unversioned; for linking) -> libfoo.so.0
         """
+        aliases = {}
         # Aliases are only useful with .so libraries. Also if the .so library
         # ends with .so (no versioning), we don't need aliases.
         if self.suffix != 'so' or self.filename.endswith('.so'):
-            return []
-        # Unversioned alias: libfoo.so
-        aliases = [self.basic_filename_tpl.format(self)]
-        # If ltversion != soversion we create an soversion alias: libfoo.so.X
+            return {}
+        # If ltversion != soversion we create an soversion alias:
+        # libfoo.so.0 -> libfoo.so.0.100.0
         if self.ltversion and self.ltversion != self.soversion:
             if not self.soversion:
                 # This is done in self.process_kwargs()
                 raise AssertionError('BUG: If library version is defined, soversion must have been defined')
             alias_tpl = self.filename_tpl.replace('ltversion', 'soversion')
-            aliases.append(alias_tpl.format(self))
+            ltversion_filename = alias_tpl.format(self)
+            aliases[ltversion_filename] = self.filename
+        else:
+            ltversion_filename = self.filename
+        # Unversioned alias: libfoo.so -> libfoo.so.0
+        aliases[self.basic_filename_tpl.format(self)] = ltversion_filename
         return aliases
 
     def type_suffix(self):
         return "@sha"
+
+# A shared library that is meant to be used with dlopen rather than linking
+# into something else.
+class SharedModule(SharedLibrary):
+    def __init__(self, name, subdir, subproject, is_cross, sources, objects, environment, kwargs):
+        if 'version' in kwargs:
+            raise MesonException('Shared modules must not specify the version kwarg.')
+        if 'soversion' in kwargs:
+            raise MesonException('Shared modules must not specify the soversion kwarg.')
+        super().__init__(name, subdir, subproject, is_cross, sources, objects, environment, kwargs)
 
 class CustomTarget:
     known_kwargs = {'input' : True,
@@ -1142,7 +1236,7 @@ class CustomTarget:
                     'depfile' : True,
                     }
 
-    def __init__(self, name, subdir, kwargs):
+    def __init__(self, name, subdir, kwargs, absolute_paths=False):
         self.name = name
         self.subdir = subdir
         self.dependencies = []
@@ -1151,6 +1245,8 @@ class CustomTarget:
         self.depfile = None
         self.process_kwargs(kwargs)
         self.extra_files = []
+        # Whether to use absolute paths for all files on the commandline
+        self.absolute_paths = absolute_paths
         unknowns = []
         for k in kwargs:
             if k not in CustomTarget.known_kwargs:
@@ -1342,13 +1438,16 @@ class Jar(BuildTarget):
             if not s.endswith('.java'):
                 raise InvalidArguments('Jar source %s is not a java file.' % s)
         self.filename = self.name + '.jar'
-        incdirs = kwargs.get('include_directories', [])
+        self.java_args = kwargs.get('java_args', [])
 
     def get_main_class(self):
         return self.main_class
 
     def type_suffix(self):
         return "@jar"
+
+    def get_java_args(self):
+        return self.java_args
 
 class ConfigureFile():
 
@@ -1401,7 +1500,10 @@ class Data():
         for s in self.sources:
             assert(isinstance(s, File))
 
-class InstallScript:
-    def __init__(self, cmd_arr):
-        assert(isinstance(cmd_arr, list))
-        self.cmd_arr = cmd_arr
+class RunScript(dict):
+    def __init__(self, script, args):
+        super().__init__()
+        assert(isinstance(script, list))
+        assert(isinstance(args, list))
+        self['exe'] = script
+        self['args'] = args

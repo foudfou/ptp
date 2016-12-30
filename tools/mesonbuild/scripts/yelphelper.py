@@ -1,4 +1,4 @@
-# Copyright 2016 Patrick Griffis <tingping@tingping.se>
+# Copyright 2016 The Meson development team
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys, os
+import os
 import subprocess
 import shutil
 import argparse
-from mesonbuild import mlog
-from mesonbuild.mesonlib import MesonException
-from mesonbuild.scripts import destdir_join
+from .. import mlog
+from . import destdir_join
 
 parser = argparse.ArgumentParser()
 parser.add_argument('command')
@@ -82,7 +81,6 @@ def install_help(srcdir, blddir, sources, media, langs, install_dir, destdir, pr
                         os.makedirs(os.path.dirname(outfile), exist_ok=True)
                     os.symlink(srcfile, outfile)
                 continue
-            symfile = os.path.join(install_dir, m)
             mlog.log('Installing %s to %s.' %(infile, outfile))
             if '/' in m or '\\' in m:
                 os.makedirs(os.path.dirname(outfile), exist_ok=True)
@@ -114,4 +112,3 @@ def run(args):
             merge_translations(build_subdir, abs_sources, langs)
         install_help(src_subdir, build_subdir, sources, media, langs, install_dir,
                      destdir, options.project_id, options.symlinks)
-

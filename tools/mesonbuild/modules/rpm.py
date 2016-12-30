@@ -19,7 +19,7 @@ from .. import build
 from .. import compilers
 import datetime
 from .. import mlog
-from ..modules import gnome
+from . import GirTarget, TypelibTarget
 
 import os
 
@@ -27,7 +27,7 @@ class RPMModule:
 
     def generate_spec_template(self, state, args, kwargs):
         compiler_deps = set()
-        for compiler in state.compilers:
+        for compiler in state.compilers.values():
             if isinstance(compiler, compilers.GnuCCompiler):
                 compiler_deps.add('gcc')
             elif isinstance(compiler, compilers.GnuCPPCompiler):
@@ -55,7 +55,7 @@ class RPMModule:
                 files.add('%%{_bindir}/%s' % target.get_filename())
             elif isinstance(target, build.SharedLibrary) and target.need_install:
                 files.add('%%{_libdir}/%s' % target.get_filename())
-                for alias in target.get_aliaslist():
+                for alias in target.get_aliases():
                     if alias.endswith('.so'):
                         files_devel.add('%%{_libdir}/%s' % alias)
                     else:
@@ -65,9 +65,9 @@ class RPMModule:
                 to_delete.add('%%{buildroot}%%{_libdir}/%s' % target.get_filename())
                 mlog.warning('removing', mlog.bold(target.get_filename()),
                              'from package because packaging static libs not recommended')
-            elif isinstance(target, gnome.GirTarget) and target.should_install():
+            elif isinstance(target, GirTarget) and target.should_install():
                 files_devel.add('%%{_datadir}/gir-1.0/%s' % target.get_filename()[0])
-            elif isinstance(target, gnome.TypelibTarget) and target.should_install():
+            elif isinstance(target, TypelibTarget) and target.should_install():
                 files.add('%%{_libdir}/girepository-1.0/%s' % target.get_filename()[0])
         for header in state.headers:
             if len(header.get_install_subdir()) > 0:
@@ -103,7 +103,7 @@ class RPMModule:
                              mlog.bold('dnf provides %s' % lib.fullpath))
             for prog in state.environment.coredata.ext_progs.values():
                 if not prog.found():
-                    fn.write('BuildRequires: %{_bindir}/%s # FIXME\n' %
+                    fn.write('BuildRequires: %%{_bindir}/%s # FIXME\n' %
                              prog.get_name())
                 else:
                     fn.write('BuildRequires: %s\n' % ' '.join(prog.fullpath))

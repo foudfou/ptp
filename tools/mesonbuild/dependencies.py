@@ -20,10 +20,11 @@
 # package before this gets too big.
 
 import re
-import os, stat, glob, subprocess, shutil
+import os, stat, glob, shutil
+import subprocess
 import sysconfig
 from collections import OrderedDict
-from . mesonlib import MesonException
+from . mesonlib import MesonException, version_compare, version_compare_many, Popen_safe
 from . import mlog
 from . import mesonlib
 from .environment import detect_cpu_family, for_windows
@@ -65,9 +66,6 @@ class Dependency():
     def need_threads(self):
         return False
 
-    def type_name(self):
-        return self.type_name
-
     def get_pkgconfig_variable(self, variable_name):
         raise MesonException('Tried to get a pkg-config variable from a non-pkgconfig dependency.')
 
@@ -92,7 +90,9 @@ class InternalDependency(Dependency):
         return self.version
 
 class PkgConfigDependency(Dependency):
-    pkgconfig_found = None
+    # The class's copy of the pkg-config path. Avoids having to search for it
+    # multiple times in the same Meson invocation.
+    class_pkgbin = None
 
     def __init__(self, name, environment, kwargs):
         Dependency.__init__(self, 'pkgconfig')
@@ -102,6 +102,9 @@ class PkgConfigDependency(Dependency):
         self.silent = kwargs.get('silent', False)
         if not isinstance(self.static, bool):
             raise DependencyException('Static keyword must be boolean')
+        # Store a copy of the pkg-config path on the object itself so it is
+        # stored in the pickled coredata and recovered.
+        self.pkgbin = None
         self.cargs = []
         self.libs = []
         if 'native' in kwargs and environment.is_cross_build():
@@ -109,48 +112,67 @@ class PkgConfigDependency(Dependency):
         else:
             want_cross = environment.is_cross_build()
         self.name = name
-        if PkgConfigDependency.pkgconfig_found is None:
-            self.check_pkgconfig()
+
+        # When finding dependencies for cross-compiling, we don't care about
+        # the 'native' pkg-config
+        if want_cross:
+            if 'pkgconfig' not in environment.cross_info.config['binaries']:
+                if self.required:
+                    raise DependencyException('Pkg-config binary missing from cross file')
+            else:
+                self.pkgbin = environment.cross_info.config['binaries']['pkgconfig']
+                PkgConfigDependency.class_pkgbin = self.pkgbin
+        # Only search for the native pkg-config the first time and
+        # store the result in the class definition
+        elif PkgConfigDependency.class_pkgbin is None:
+            self.pkgbin = self.check_pkgconfig()
+            PkgConfigDependency.class_pkgbin = self.pkgbin
+        else:
+            self.pkgbin = PkgConfigDependency.class_pkgbin
 
         self.is_found = False
-        if not PkgConfigDependency.pkgconfig_found:
+        if not self.pkgbin:
             if self.required:
                 raise DependencyException('Pkg-config not found.')
             return
-        if environment.is_cross_build() and want_cross:
-            if "pkgconfig" not in environment.cross_info.config["binaries"]:
-                raise DependencyException('Pkg-config binary missing from cross file.')
-            pkgbin = environment.cross_info.config["binaries"]['pkgconfig']
+        if want_cross:
             self.type_string = 'Cross'
         else:
-            pkgbin = 'pkg-config'
             self.type_string = 'Native'
 
-        mlog.debug('Determining dependency %s with pkg-config executable %s.' % (name, pkgbin))
-        self.pkgbin = pkgbin
+        mlog.debug('Determining dependency {!r} with pkg-config executable '
+                   '{!r}'.format(name, self.pkgbin))
         ret, self.modversion = self._call_pkgbin(['--modversion', name])
         if ret != 0:
             if self.required:
-                raise DependencyException('%s dependency %s not found.' % (self.type_string, name))
+                raise DependencyException('{} dependency {!r} not found'
+                                          ''.format(self.type_string, name))
             self.modversion = 'none'
             return
-        found_msg = ['%s dependency' % self.type_string, mlog.bold(name), 'found:']
-        self.version_requirement = kwargs.get('version', None)
-        if self.version_requirement is None:
+        found_msg = [self.type_string + ' dependency', mlog.bold(name), 'found:']
+        self.version_reqs = kwargs.get('version', None)
+        if self.version_reqs is None:
             self.is_found = True
         else:
-            if not isinstance(self.version_requirement, str):
-                raise DependencyException('Version argument must be string.')
-            self.is_found = mesonlib.version_compare(self.modversion, self.version_requirement)
+            if not isinstance(self.version_reqs, (str, list)):
+                raise DependencyException('Version argument must be string or list.')
+            if isinstance(self.version_reqs, str):
+                self.version_reqs = [self.version_reqs]
+            (self.is_found, not_found, found) = \
+                version_compare_many(self.modversion, self.version_reqs)
             if not self.is_found:
-                found_msg += [mlog.red('NO'), 'found {!r}'.format(self.modversion),
-                              'but need {!r}'.format(self.version_requirement)]
+                found_msg += [mlog.red('NO'),
+                              'found {!r} but need:'.format(self.modversion),
+                              ', '.join(["'{}'".format(e) for e in not_found])]
+                if found:
+                    found_msg += ['; matched:',
+                                  ', '.join(["'{}'".format(e) for e in found])]
                 if not self.silent:
                     mlog.log(*found_msg)
                 if self.required:
                     raise DependencyException(
                         'Invalid version of a dependency, needed %s %s found %s.' %
-                        (name, self.version_requirement, self.modversion))
+                        (name, not_found, self.modversion))
                 return
         found_msg += [mlog.green('YES'), self.modversion]
         if not self.silent:
@@ -160,18 +182,20 @@ class PkgConfigDependency(Dependency):
         # Fetch the libraries and library paths needed for using this
         self._set_libs()
 
+    def __repr__(self):
+        s = '<{0} {1}: {2} {3}>'
+        return s.format(self.__class__.__name__, self.name, self.is_found,
+                        self.version_reqs)
+
     def _call_pkgbin(self, args):
-        p = subprocess.Popen([self.pkgbin] + args,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                             env=os.environ, universal_newlines=True)
-        out = p.communicate()[0]
+        p, out = Popen_safe([self.pkgbin] + args, env=os.environ)[0:2]
         return (p.returncode, out.strip())
 
     def _set_cargs(self):
         ret, out = self._call_pkgbin(['--cflags', self.name])
         if ret != 0:
             raise DependencyException('Could not generate cargs for %s:\n\n%s' % \
-                                      (self.name, out.decode(errors='ignore')))
+                                      (self.name, out))
         self.cargs = out.split()
 
     def _set_libs(self):
@@ -181,7 +205,7 @@ class PkgConfigDependency(Dependency):
         ret, out = self._call_pkgbin(libcmd)
         if ret != 0:
             raise DependencyException('Could not generate libs for %s:\n\n%s' % \
-                                      (self.name, out.decode(errors='ignore')))
+                                      (self.name, out))
         self.libs = []
         for lib in out.split():
             if lib.endswith(".la"):
@@ -214,7 +238,7 @@ class PkgConfigDependency(Dependency):
         return self.modversion
 
     def get_version(self):
-        return self.get_modversion()
+        return self.modversion
 
     def get_compile_args(self):
         return self.cargs
@@ -223,21 +247,30 @@ class PkgConfigDependency(Dependency):
         return self.libs
 
     def check_pkgconfig(self):
+        evar = 'PKG_CONFIG'
+        if evar in os.environ:
+            pkgbin = os.environ[evar].strip()
+        else:
+            pkgbin = 'pkg-config'
         try:
-            p = subprocess.Popen(['pkg-config', '--version'], stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE)
-            out = p.communicate()[0]
-            if p.returncode == 0:
-                if not self.silent:
-                    mlog.log('Found pkg-config:', mlog.bold(shutil.which('pkg-config')),
-                             '(%s)' % out.decode().strip())
-                PkgConfigDependency.pkgconfig_found = True
-                return
-        except Exception:
-            pass
-        PkgConfigDependency.pkgconfig_found = False
+            p, out = Popen_safe([pkgbin, '--version'])[0:2]
+            if p.returncode != 0:
+                # Set to False instead of None to signify that we've already
+                # searched for it and not found it
+                pkgbin = False
+        except (FileNotFoundError, PermissionError):
+            pkgbin = False
+        if pkgbin and not os.path.isabs(pkgbin) and shutil.which(pkgbin):
+            # Sometimes shutil.which fails where Popen succeeds, so
+            # only find the abs path if it can be found by shutil.which
+            pkgbin = shutil.which(pkgbin)
         if not self.silent:
-            mlog.log('Found Pkg-config:', mlog.red('NO'))
+            if pkgbin:
+                mlog.log('Found pkg-config:', mlog.bold(pkgbin),
+                         '(%s)' % out.strip())
+            else:
+                mlog.log('Found Pkg-config:', mlog.red('NO'))
+        return pkgbin
 
     def found(self):
         return self.is_found
@@ -289,19 +322,16 @@ class WxDependency(Dependency):
             mlog.log("Neither wx-config-3.0 nor wx-config found; can't detect dependency")
             return
 
-        p = subprocess.Popen([self.wxc, '--version'],
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE)
-        out = p.communicate()[0]
+        p, out = Popen_safe([self.wxc, '--version'])[0:2]
         if p.returncode != 0:
             mlog.log('Dependency wxwidgets found:', mlog.red('NO'))
             self.cargs = []
             self.libs = []
         else:
-            self.modversion = out.decode().strip()
+            self.modversion = out.strip()
             version_req = kwargs.get('version', None)
             if version_req is not None:
-                if not mesonlib.version_compare(self.modversion, version_req):
+                if not version_compare(self.modversion, version_req, strict=True):
                     mlog.log('Wxwidgets version %s does not fullfill requirement %s' %\
                              (self.modversion, version_req))
                     return
@@ -310,24 +340,19 @@ class WxDependency(Dependency):
             self.requested_modules = self.get_requested(kwargs)
             # wx-config seems to have a cflags as well but since it requires C++,
             # this should be good, at least for now.
-            p = subprocess.Popen([self.wxc, '--cxxflags'],
-                                 stdout=subprocess.PIPE,
-                                 stderr=subprocess.PIPE)
-            out = p.communicate()[0]
+            p, out = Popen_safe([self.wxc, '--cxxflags'])[0:2]
             if p.returncode != 0:
                 raise DependencyException('Could not generate cargs for wxwidgets.')
-            self.cargs = out.decode().split()
+            self.cargs = out.split()
 
-            p = subprocess.Popen([self.wxc, '--libs'] + self.requested_modules,
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            out = p.communicate()[0]
+            p, out = Popen_safe([self.wxc, '--libs'] + self.requested_modules)[0:2]
             if p.returncode != 0:
                 raise DependencyException('Could not generate libs for wxwidgets.')
-            self.libs = out.decode().split()
+            self.libs = out.split()
 
     def get_requested(self, kwargs):
         modules = 'modules'
-        if not modules in kwargs:
+        if modules not in kwargs:
             return []
         candidates = kwargs[modules]
         if isinstance(candidates, str):
@@ -340,6 +365,9 @@ class WxDependency(Dependency):
     def get_modversion(self):
         return self.modversion
 
+    def get_version(self):
+        return self.modversion
+
     def get_compile_args(self):
         return self.cargs
 
@@ -349,16 +377,14 @@ class WxDependency(Dependency):
     def check_wxconfig(self):
         for wxc in ['wx-config-3.0', 'wx-config']:
             try:
-                p = subprocess.Popen([wxc, '--version'], stdout=subprocess.PIPE,
-                                     stderr=subprocess.PIPE)
-                out = p.communicate()[0]
+                p, out = Popen_safe([wxc, '--version'])[0:2]
                 if p.returncode == 0:
                     mlog.log('Found wx-config:', mlog.bold(shutil.which(wxc)),
-                             '(%s)' % out.decode().strip())
+                             '(%s)' % out.strip())
                     self.wxc = wxc
                     WxDependency.wx_found = True
                     return
-            except Exception:
+            except (FileNotFoundError, PermissionError):
                 pass
         WxDependency.wxconfig_found = False
         mlog.log('Found wx-config:', mlog.red('NO'))
@@ -367,6 +393,8 @@ class WxDependency(Dependency):
         return self.is_found
 
 class ExternalProgram():
+    windows_exts = ('exe', 'com', 'bat')
+
     def __init__(self, name, fullpath=None, silent=False, search_dir=None):
         self.name = name
         if fullpath is not None:
@@ -404,11 +432,10 @@ class ExternalProgram():
             pass
         return False
 
-    @staticmethod
-    def _is_executable(path):
+    def _is_executable(self, path):
         suffix = os.path.splitext(path)[-1].lower()[1:]
         if mesonlib.is_windows():
-            if suffix == 'exe' or suffix == 'com' or suffix == 'bat':
+            if suffix in self.windows_exts:
                 return True
         elif os.access(path, os.X_OK):
             return True
@@ -418,10 +445,15 @@ class ExternalProgram():
         if search_dir is None:
             return False
         trial = os.path.join(search_dir, name)
-        if not os.path.exists(trial):
+        if os.path.exists(trial):
+            if self._is_executable(trial):
+                return [trial]
+        else:
+            for ext in self.windows_exts:
+                trial_ext = '{}.{}'.format(trial, ext)
+                if os.path.exists(trial_ext):
+                    return [trial_ext]
             return False
-        if self._is_executable(trial):
-            return [trial]
         # Now getting desperate. Maybe it is a script file that is a) not chmodded
         # executable or b) we are on windows so they can't be directly executed.
         return self._shebang_to_cmd(trial)
@@ -435,6 +467,11 @@ class ExternalProgram():
         if fullpath or not mesonlib.is_windows():
             # On UNIX-like platforms, the standard PATH search is enough
             return [fullpath]
+        # On Windows, if name is an absolute path, we need the extension too
+        for ext in self.windows_exts:
+            fullpath = '{}.{}'.format(name, ext)
+            if os.path.exists(fullpath):
+                return [fullpath]
         # On Windows, interpreted scripts must have an extension otherwise they
         # cannot be found by a standard PATH search. So we do a custom search
         # where we manually search for a script with a shebang in PATH.
@@ -449,7 +486,7 @@ class ExternalProgram():
         return self.fullpath[0] is not None
 
     def get_command(self):
-        return self.fullpath
+        return self.fullpath[:]
 
     def get_name(self):
         return self.name
@@ -535,8 +572,7 @@ class BoostDependency(Dependency):
                 info = self.version + ', ' + self.boost_root
             else:
                 info = self.version
-            mlog.log('Dependency Boost (%s) found:' % module_str, mlog.green('YES'),
-                     '(' + info + ')')
+            mlog.log('Dependency Boost (%s) found:' % module_str, mlog.green('YES'), info)
         else:
             mlog.log("Dependency Boost (%s) found:" % module_str, mlog.red('NO'))
 
@@ -929,10 +965,7 @@ class QtBaseDependency(Dependency):
             if not self.qmake.found():
                 continue
             # Check that the qmake is for qt5
-            pc = subprocess.Popen(self.qmake.fullpath +  ['-v'],
-                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                  universal_newlines=True)
-            stdo = pc.communicate()[0]
+            pc, stdo = Popen_safe(self.qmake.fullpath +  ['-v'])[0:2]
             if pc.returncode != 0:
                 continue
             if not 'Qt version ' + self.qtver in stdo:
@@ -945,9 +978,7 @@ class QtBaseDependency(Dependency):
             return
         self.version = re.search(self.qtver + '(\.\d+)+', stdo).group(0)
         # Query library path, header path, and binary path
-        stdo = subprocess.Popen(self.qmake.fullpath +  ['-query'],
-                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                universal_newlines=True).communicate()[0]
+        stdo = Popen_safe(self.qmake.fullpath +  ['-query'])[1]
         qvars = {}
         for line in stdo.split('\n'):
             line = line.strip()
@@ -1017,8 +1048,9 @@ class QtBaseDependency(Dependency):
         # penalty when using self-built Qt or on platforms
         # where -fPIC is not required. If this is an issue
         # for you, patches are welcome.
-        # Fix this to be more portable, especially to MSVC.
-        return ['-fPIC']
+        if mesonlib.is_linux():
+            return ['-fPIC']
+        return []
 
 class Qt5Dependency(QtBaseDependency):
     def __init__(self, env, kwargs):
@@ -1031,16 +1063,15 @@ class Qt4Dependency(QtBaseDependency):
 class GnuStepDependency(Dependency):
     def __init__(self, environment, kwargs):
         Dependency.__init__(self, 'gnustep')
+        self.required = kwargs.get('required', True)
         self.modules = kwargs.get('modules', [])
         self.detect()
 
     def detect(self):
-        confprog = 'gnustep-config'
+        self.confprog = 'gnustep-config'
         try:
-            gp = subprocess.Popen([confprog, '--help'],
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            gp.communicate()
-        except FileNotFoundError:
+            gp = Popen_safe([self.confprog, '--help'])[0]
+        except (FileNotFoundError, PermissionError):
             self.args = None
             mlog.log('Dependency GnuStep found:', mlog.red('NO'), '(no gnustep-config)')
             return
@@ -1052,24 +1083,18 @@ class GnuStepDependency(Dependency):
             arg = '--gui-libs'
         else:
             arg = '--base-libs'
-        fp = subprocess.Popen([confprog, '--objc-flags'],
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (flagtxt, flagerr) = fp.communicate()
-        flagtxt = flagtxt.decode()
-        flagerr = flagerr.decode()
+        fp, flagtxt, flagerr = Popen_safe([self.confprog, '--objc-flags'])
         if fp.returncode != 0:
             raise DependencyException('Error getting objc-args: %s %s' % (flagtxt, flagerr))
         args = flagtxt.split()
         self.args = self.filter_arsg(args)
-        fp = subprocess.Popen([confprog, arg],
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        (libtxt, liberr) = fp.communicate()
-        libtxt = libtxt.decode()
-        liberr = liberr.decode()
+        fp, libtxt, liberr = Popen_safe([self.confprog, arg])
         if fp.returncode != 0:
             raise DependencyException('Error getting objc-lib args: %s %s' % (libtxt, liberr))
         self.libs = self.weird_filter(libtxt.split())
-        mlog.log('Dependency GnuStep found:', mlog.green('YES'))
+        self.version = self.detect_version()
+        mlog.log('Dependency', mlog.bold('GnuStep'), 'found:',
+                 mlog.green('YES'), self.version)
 
     def weird_filter(self, elems):
         """When building packages, the output of the enclosing Make
@@ -1089,8 +1114,40 @@ why. As a hack filter out everything that is not a flag."""
                 result.append(f)
         return result
 
+    def detect_version(self):
+        gmake = self.get_variable('GNUMAKE')
+        makefile_dir = self.get_variable('GNUSTEP_MAKEFILES')
+        # This Makefile has the GNUStep version set
+        base_make = os.path.join(makefile_dir, 'Additional', 'base.make')
+        # Print the Makefile variable passed as the argument. For instance, if
+        # you run the make target `print-SOME_VARIABLE`, this will print the
+        # value of the variable `SOME_VARIABLE`.
+        printver = "print-%:\n\t@echo '$($*)'"
+        env = os.environ.copy()
+        # See base.make to understand why this is set
+        env['FOUNDATION_LIB'] = 'gnu'
+        p, o, e = Popen_safe([gmake, '-f', '-', '-f', base_make,
+                              'print-GNUSTEP_BASE_VERSION'],
+                             env=env, write=printver, stdin=subprocess.PIPE)
+        version = o.strip()
+        if not version:
+            mlog.debug("Couldn't detect GNUStep version, falling back to '1'")
+            # Fallback to setting some 1.x version
+            version = '1'
+        return version
+
+    def get_variable(self, var):
+        p, o, e = Popen_safe([self.confprog, '--variable=' + var])
+        if p.returncode != 0 and self.required:
+            raise DependencyException('{!r} for variable {!r} failed to run'
+                                      ''.format(self.confprog, var))
+        return o.strip()
+
     def found(self):
         return self.args is not None
+
+    def get_version(self):
+        return self.version
 
     def get_compile_args(self):
         if self.args is None:
@@ -1120,6 +1177,9 @@ class AppleFrameworks(Dependency):
     def found(self):
         return mesonlib.is_osx()
 
+    def get_version(self):
+        return 'unknown'
+
 class GLDependency(Dependency):
     def __init__(self, environment, kwargs):
         Dependency.__init__(self, 'gl')
@@ -1133,20 +1193,26 @@ class GLDependency(Dependency):
                 self.is_found = True
                 self.cargs = pcdep.get_compile_args()
                 self.linkargs = pcdep.get_link_args()
+                self.version = pcdep.get_version()
                 return
         except Exception:
             pass
         if mesonlib.is_osx():
             self.is_found = True
             self.linkargs = ['-framework', 'OpenGL']
+            self.version = '1' # FIXME
             return
         if mesonlib.is_windows():
             self.is_found = True
             self.linkargs = ['-lopengl32']
+            self.version = '1' # FIXME: unfixable?
             return
 
     def get_link_args(self):
         return self.linkargs
+
+    def get_version(self):
+        return self.version
 
 # There are three different ways of depending on SDL2:
 # sdl2-config, pkg-config and OSX framework
@@ -1170,19 +1236,15 @@ class SDL2Dependency(Dependency):
             pass
         sdlconf = shutil.which('sdl2-config')
         if sdlconf:
-            pc = subprocess.Popen(['sdl2-config', '--cflags'],
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL)
-            (stdo, _) = pc.communicate()
-            self.cargs = stdo.decode().strip().split()
-            pc = subprocess.Popen(['sdl2-config', '--libs'],
-                                  stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL)
-            (stdo, _) = pc.communicate()
-            self.linkargs = stdo.decode().strip().split()
+            stdo = Popen_safe(['sdl2-config', '--cflags'])[1]
+            self.cargs = stdo.strip().split()
+            stdo = Popen_safe(['sdl2-config', '--libs'])[1]
+            self.linkargs = stdo.strip().split()
+            stdo = Popen_safe(['sdl2-config', '--version'])[1]
+            self.version = stdo.strip()
             self.is_found = True
-            mlog.log('Dependency', mlog.bold('sdl2'), 'found:', mlog.green('YES'), '(%s)' % sdlconf)
-            self.version = '2' # FIXME
+            mlog.log('Dependency', mlog.bold('sdl2'), 'found:', mlog.green('YES'),
+                     self.version, '(%s)' % sdlconf)
             return
         mlog.debug('Could not find sdl2-config binary, trying next.')
         if mesonlib.is_osx():
@@ -1248,6 +1310,9 @@ class ExtraFrameworkDependency(Dependency):
     def found(self):
         return self.name is not None
 
+    def get_version(self):
+        return 'unknown'
+
 class ThreadDependency(Dependency):
     def __init__(self, environment, kwargs):
         super().__init__('threads')
@@ -1258,12 +1323,16 @@ class ThreadDependency(Dependency):
     def need_threads(self):
         return True
 
+    def get_version(self):
+        return 'unknown'
+
 class Python3Dependency(Dependency):
     def __init__(self, environment, kwargs):
         super().__init__('python3')
         self.name = 'python3'
         self.is_found = False
-        self.version = "3.something_maybe"
+        # We can only be sure that it is Python 3 at this point
+        self.version = '3'
         try:
             pkgdep = PkgConfigDependency('python3', environment, kwargs)
             if pkgdep.found():
@@ -1276,18 +1345,7 @@ class Python3Dependency(Dependency):
             pass
         if not self.is_found:
             if mesonlib.is_windows():
-                inc = sysconfig.get_path('include')
-                platinc = sysconfig.get_path('platinclude')
-                self.cargs = ['-I' + inc]
-                if inc != platinc:
-                    self.cargs.append('-I' + platinc)
-                # Nothing exposes this directly that I coulf find
-                basedir = sysconfig.get_config_var('base')
-                vernum = sysconfig.get_config_var('py_version_nodot')
-                self.libs = ['-L{}/libs'.format(basedir),
-                             '-lpython{}'.format(vernum)]
-                self.is_found = True
-                self.version = sysconfig.get_config_var('py_version_short')
+                self._find_libpy3_windows(environment)
             elif mesonlib.is_osx():
                 # In OSX the Python 3 framework does not have a version
                 # number in its name.
@@ -1300,6 +1358,42 @@ class Python3Dependency(Dependency):
             mlog.log('Dependency', mlog.bold(self.name), 'found:', mlog.green('YES'))
         else:
             mlog.log('Dependency', mlog.bold(self.name), 'found:', mlog.red('NO'))
+
+    def _find_libpy3_windows(self, env):
+        '''
+        Find python3 libraries on Windows and also verify that the arch matches
+        what we are building for.
+        '''
+        pyarch = sysconfig.get_platform()
+        arch = detect_cpu_family(env.coredata.compilers)
+        if arch == 'x86':
+            arch = '32'
+        elif arch == 'x86_64':
+            arch = '64'
+        else:
+            # We can't cross-compile Python 3 dependencies on Windows yet
+            mlog.log('Unknown architecture {!r} for'.format(arch),
+                     mlog.bold(self.name))
+            self.is_found = False
+            return
+        # Pyarch ends in '32' or '64'
+        if arch != pyarch[-2:]:
+            mlog.log('Need', mlog.bold(self.name),
+                     'for {}-bit, but found {}-bit'.format(arch, pyarch[-2:]))
+            self.is_found = False
+            return
+        inc = sysconfig.get_path('include')
+        platinc = sysconfig.get_path('platinclude')
+        self.cargs = ['-I' + inc]
+        if inc != platinc:
+            self.cargs.append('-I' + platinc)
+        # Nothing exposes this directly that I coulf find
+        basedir = sysconfig.get_config_var('base')
+        vernum = sysconfig.get_config_var('py_version_nodot')
+        self.libs = ['-L{}/libs'.format(basedir),
+                     '-lpython{}'.format(vernum)]
+        self.version = sysconfig.get_config_var('py_version_short')
+        self.is_found = True
 
     def get_compile_args(self):
         return self.cargs
