@@ -4,7 +4,8 @@ tests = [
     ['list', 'list.c'],
     ['hash', 'hash.c'],
     ['bstree', 'bstree.c'],
-    ['rbtree', 'rbtree.c']
+    ['rbtree', 'rbtree.c'],
+    ['aatree', 'aatree.c']
 ]
 
 foreach t : tests
