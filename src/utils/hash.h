@@ -3,14 +3,11 @@
 /**
  * A simple hash table inspired from the Linux Kernel and cjdns.
  *
- * This header can be imported multiple times to create different hash types.
- * Just make sure to use a different HASH_NAME.
- *
  * Consumer MUST provide a hash function and a key comparison function, with the
  * following signatures:
  *
- * uint32_t HASH_FUNCTION(hash)(HASH_KEY_TYPE key);
- * int HASH_FUNCTION(compare)(HASH_KEY_TYPE keyA, HASH_KEY_TYPE keyB);
+ *   uint32_t name##_hash(const HASH_KEY_TYPE key);
+ *   int name##_compare(const HASH_KEY_TYPE keyA, const HASH_KEY_TYPE keyB);
  *
  * The reason is that we can hardly make a hash function for all types (struct,
  * char*, int). Neither can we compare keys of unknow formats.
@@ -27,6 +24,10 @@
  */
 #define HASH_DECL(name, size)                   \
     struct list_item name[size]
+
+#define HASH_GENERATE(name, field_item, field_key)  \
+    HASH_GENERATE_INSERT(name)                      \
+    HASH_GENERATE_GET(name, field_item, field_key)
 
 /**
  * Initialize a hash.
@@ -54,69 +55,39 @@ static inline void hash_delete(struct list_item* item)
         if (!list_is_empty(&hash[i]) && ((it) = &hash[i]))  \
             list_for(it, &hash[i])
 
-#endif  /* HASH_H */
-
-// FIXME: turn to a full-macro header (see bstree)
-
-#ifndef HASH_NAME
-    #error must give this map type a name by defining HASH_NAME
-#endif
-#ifndef HASH_TYPE
-    #error must define HASH_TYPE
-#endif
-#ifndef HASH_ITEM_MEMBER
-    #error must define HASH_ITEM_MEMBER
-#endif
-#if defined(HASH_KEY_TYPE)
-    assert_compilation(!(sizeof(HASH_KEY_TYPE) % 4));
-#else
-    #error must define HASH_KEY_TYPE
-#endif
-#ifndef HASH_KEY_MEMBER
-    #error must define HASH_KEY_MEMBER
-#endif
-
-#define HASH_FUNCTION(name) HASH_GLUE(HASH_GLUE(HASH_GLUE(hash_, HASH_NAME), _), name)
-#define HASH_GLUE(x, y) HASH_GLUE2(x, y)
-#define HASH_GLUE2(x, y) x ## y
-
+#define HASH_GENERATE_INSERT(name)              \
 /**
  * Insert a list item into a hash.
  *
  * @warning we don't check if an item with key @key has already been inserted!
- */
-static inline void
-HASH_FUNCTION(insert)(struct list_item* hash, const size_t size,
-                      HASH_KEY_TYPE key, struct list_item* item)
-{
-    uint32_t index = HASH_FUNCTION(hash)(key) % size;
-    list_prepend(&hash[index], item);
+ */                                                                     \
+static inline void                                                      \
+name##_insert(struct list_item* hash, const size_t size,                \
+                     const HASH_KEY_TYPE key, struct list_item* item)   \
+{                                                                       \
+    uint32_t index = name##_hash(key) % size;                           \
+    list_prepend(&hash[index], item);                                   \
 }
 
+#define HASH_GENERATE_GET(name, field_item, field_key)  \
 /**
  * Gets an entry by its key.
  *
  * Returns NULL when not found.
- */
-static inline HASH_TYPE*
-HASH_FUNCTION(get)(struct list_item* hash, const size_t size, HASH_KEY_TYPE key)
-{
-    uint32_t index = HASH_FUNCTION(hash)(key) % size;
-    struct list_item* slot = &hash[index];
-    struct list_item* it = slot;
-    HASH_TYPE* found;
-    list_for(it, slot) {
-        found = cont(it, HASH_TYPE, HASH_ITEM_MEMBER);
-        if (!HASH_FUNCTION(compare)(found->HASH_KEY_MEMBER, key))
-            return found;
-    }
-    return NULL;
+ */                                                                     \
+static inline struct name*                                              \
+name##_get(struct list_item* hash, const size_t size, const HASH_KEY_TYPE key) \
+{                                                                       \
+    uint32_t index = name##_hash(key) % size;                           \
+    struct list_item* slot = &hash[index];                              \
+    struct list_item* it = slot;                                        \
+    struct name* found;                                                 \
+    list_for(it, slot) {                                                \
+        found = cont(it, struct name, field_item);                      \
+        if (!name##_compare(found->field_key, key))                     \
+            return found;                                               \
+    }                                                                   \
+    return NULL;                                                        \
 }
 
-
-#undef HASH_ITEM_MEMBER
-#undef HASH_FUNCTION
-#undef HASH_KEY_TYPE
-#undef HASH_KEY_MEMBER
-#undef HASH_TYPE
-#undef HASH_NAME
+#endif  /* HASH_H */
