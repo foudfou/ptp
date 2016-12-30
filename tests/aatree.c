@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdlib.h>
+#include <time.h>
 #include "utils/cont.h"
 #include "utils/aatree.h"
 
@@ -47,61 +48,73 @@ foo_insert(struct aatree_node **tree, struct foo *data)
     return true;
 }
 
-/* /\* FIXME: *\/ */
-/* int aatree_validate(struct aatree_node *root) */
-/* { */
-/*     if (!root) */
-/*         return 1; */
-
-/*     struct aatree_node *ln = root->link[LEFT]; */
-/*     struct aatree_node *rn = root->link[RIGHT]; */
-
-/*     /\* Red violation / Consecutive red links *\/ */
-/*     assert(!(IS_RED(root) && (IS_RED(ln) || IS_RED(rn)))); */
-
-/*     int lh = aatree_validate(ln); */
-/*     int rh = aatree_validate(rn); */
-
-/*     /\* Binary tree violation / Invalid binary search tree *\/ */
-/*     uint32_t root_key = cont(root, struct foo, node)->key; */
-/*     assert(!((ln && cont(ln, struct foo, node)->key >= root_key) || */
-/*              (rn && cont(rn, struct foo, node)->key <= root_key))); */
-
-/*     /\* Black violation / Black height mismatch *\/ */
-/*     assert(!(lh != 0 && rh != 0 && lh != rh)); */
-
-/*     /\* Only count black links *\/ */
-/*     if (lh != 0 && rh != 0) */
-/*         return IS_RED(root) ? lh : lh + 1; // just count the left-hand side */
-/*     else */
-/*         return 0; */
-/* } */
-
 #include <stdio.h>
-void aatree_display(struct aatree_node *root)
+void aatree_display_nodes(struct aatree_node *root)
 {
-    if (!root) {
-        printf(".");
+    if (!root)
         return;
-    }
 
     struct aatree_node *ln = root->link[LEFT];
     struct aatree_node *rn = root->link[RIGHT];
 
     struct foo *this = cont(root, struct foo, node);
-    printf("{%d(%d)=", this->key, root->level);
-    aatree_display(ln);
-    printf(",");
-    aatree_display(rn);
-    printf("} ");
+    if (ln) {
+        struct foo *lobj = cont(ln, struct foo, node);
+        printf("\"%d(%d)\" -> \"%d(%d)\";\n", this->key, root->level,
+               lobj->key, ln->level);
+    }
+    if (rn) {
+        struct foo *robj = cont(rn, struct foo, node);
+        printf("\"%d(%d)\" -> \"%d(%d)\";\n", this->key, root->level,
+               robj->key, rn->level);
+    }
+
+    aatree_display_nodes(ln);
+    aatree_display_nodes(rn);
+}
+
+/* Graphviz: dot -Tjpg -O /tmp/aa2.dot */
+void aatree_display(struct aatree_node *root) {
+    printf("digraph aatree {\n");
+    aatree_display_nodes(root);
+    printf("}\n");
+}
+
+bool aatree_validate(struct aatree_node *root)
+{
+    if (!root)
+        return true;
+
+    struct aatree_node *ln = root->link[LEFT];
+    struct aatree_node *rn = root->link[RIGHT];
+
+    aatree_validate(ln);
+    aatree_validate(rn);
+
+    /* Left child not same level. */
+    if (ln)
+        assert(root->level == (ln->level + 1));
+
+    /* No more than two right children with the same level. */
+    if (rn && rn->link[RIGHT])
+        assert(root->level != rn->link[RIGHT]->level);
+
+    /* Binary tree violation / Invalid binary search tree */
+    uint32_t root_key = cont(root, struct foo, node)->key;
+    assert(!((ln && cont(ln, struct foo, node)->key >= root_key) ||
+             (rn && cont(rn, struct foo, node)->key <= root_key)));
+
+    /* We shouldn't need to count pseudo-heights if the previous constraints
+       are verified. So the level field should be accurate. */
+    return true;
 }
 
 int main ()
 {
-    int nlen = 16;
-    struct foo n[nlen];
-    for (int i = 0; i < nlen; i++)
-        n[i] = (struct foo) FOO_INIT(0, NULL, NULL, NULL, i+1);
+    int n1len = 14;
+    struct foo n1[n1len];
+    for (int i = 0; i < n1len; i++)
+        n1[i] = (struct foo) FOO_INIT(0, NULL, NULL, NULL, i+1);
 
     /* Btree declaration */
     AATREE_DECL(aa1);
@@ -109,11 +122,25 @@ int main ()
     assert(aatree_is_empty(aa1));
 
     /* Tree insertion */
-    for (int i = 0; i < nlen; i++) {
-        AATREE_NODE_INIT(n[i].node);
-        assert(foo_insert(&aa1, &n[i]));
+    for (int i = 0; i < n1len; i++) {
+        AATREE_NODE_INIT(n1[i].node);
+        assert(foo_insert(&aa1, &n1[i]));
     }
-    /* {8(4)={4(3)={2(2)={1(1)=.,.} ,{3(1)=.,.} } ,{6(2)={5(1)=.,.} ,{7(1)=.,.} } } ,{12(3)={10(2)={9(1)=.,.} ,{11(1)=.,.} } ,{14(2)={13(1)=.,.} ,{15(1)=.,{16(1)=.,.} } } } } */
+    aatree_validate(aa1);
+
+    srand(time(NULL));  // once
+    int n2len = 132;
+    struct foo n2[n2len];
+    AATREE_DECL(aa2);
+    for (int i = 0; i < n2len; i++) {
+        bool inserted = false;
+        while (!inserted) {
+            n2[i] = (struct foo) FOO_INIT(0, NULL, NULL, NULL, rand() % 256);
+            AATREE_NODE_INIT(n2[i].node);
+            inserted = foo_insert(&aa2, &n2[i]);
+        }
+    }
+    aatree_validate(aa2);
 
 
     return 0;
