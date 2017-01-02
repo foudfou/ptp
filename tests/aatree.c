@@ -73,11 +73,51 @@ void aatree_display_nodes(struct aatree_node *root)
     aatree_display_nodes(rn);
 }
 
-/* Graphviz: dot -Tjpg -O /tmp/aa2.dot */
+/* Graphviz: `dot -Tjpg -O /tmp/aa2.dot`, or better
+   `dot /tmp/a1.dot | gvpr -c -ftools/tree.gv | neato -n -Tpng -o /tmp/a1.png` */
 void aatree_display(struct aatree_node *root) {
     printf("digraph aatree {\n");
     aatree_display_nodes(root);
     printf("}\n");
+}
+
+static inline bool
+foo_delete(struct aatree_node **tree, struct aatree_node *node)
+{
+    struct aatree_node **parent_link_orig = aatree_parent_link(tree, node);
+    struct aatree_node *parent_orig = node->parent;
+    int level_orig = node->level;
+
+    if (!foo_bs_delete(tree, node))
+        return false;
+
+    /* Test if delete-by-swap occured. */
+    if (*parent_link_orig && node->parent != parent_orig)
+        (*parent_link_orig)->level = level_orig;
+
+    while (node) {
+        unsigned int levell = node->link[LEFT] ? node->link[LEFT]->level : 0;
+        unsigned int levelr = node->link[RIGHT] ? node->link[RIGHT]->level : 0;
+        if ((levell < node->level - 1) || (levelr < node->level - 1)) {
+            node->level -= 1;
+            if (levelr > node->level)
+                node->link[RIGHT]->level = node->level;
+
+            struct aatree_node **top = aatree_parent_link(tree, node);
+            aatree_skew(node, top);
+            if ((*top)->link[RIGHT])
+                aatree_skew((*top)->link[RIGHT], &((*top)->link[RIGHT]));
+            if ((*top)->link[RIGHT]->link[RIGHT])
+                aatree_skew((*top)->link[RIGHT]->link[RIGHT],
+                            &((*top)->link[RIGHT]->link[RIGHT]));
+            aatree_split((*top), top);
+            aatree_split((*top)->link[RIGHT], &((*top)->link[RIGHT]));
+        }
+
+        node = node->parent;
+    }
+
+    return true;
 }
 
 bool aatree_validate(struct aatree_node *root)
@@ -141,6 +181,11 @@ int main ()
         }
     }
     aatree_validate(aa2);
+
+    for (int i = 0; i < n2len; i++) {
+        assert(foo_delete(&aa2, &(n2[i].node)));
+        aatree_validate(aa2);
+    }
 
 
     return 0;
