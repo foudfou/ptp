@@ -20,33 +20,6 @@ AATREE_GENERATE(foo, aatree, node, key)
 #define FOO_INIT(level, parent, left, right, key)  \
     {{(level), (parent), {(left), (right)}}, (key)}
 
-/*
-               4,3
-        /               \
-     2,2                 10,3
-    /   \            /          \
- 1,1     3,1      6,2            12,2
-                 /   \          /    \
-              5,1     8,2   11,1      13,1
-                     /   \
-                  7,1     9,1
- */
-static inline bool
-foo_insert(struct aatree_node **tree, struct foo *data)
-{
-    if (!foo_bs_insert(tree, data))
-        return false;
-
-    struct aatree_node *node = &data->node;
-    while (node) {
-        struct aatree_node **top = aatree_parent_link(tree, node);
-        aatree_skew(node, top);
-        aatree_split(node, top);
-        node = node->parent;
-    }
-
-    return true;
-}
 
 #include <stdio.h>
 void aatree_display_nodes(struct aatree_node *root)
@@ -79,45 +52,6 @@ void aatree_display(struct aatree_node *root) {
     printf("digraph aatree {\n");
     aatree_display_nodes(root);
     printf("}\n");
-}
-
-static inline bool
-foo_delete(struct aatree_node **tree, struct aatree_node *node)
-{
-    struct aatree_node **parent_link_orig = aatree_parent_link(tree, node);
-    struct aatree_node *parent_orig = node->parent;
-    int level_orig = node->level;
-
-    if (!foo_bs_delete(tree, node))
-        return false;
-
-    /* Test if delete-by-swap occured. */
-    if (*parent_link_orig && node->parent != parent_orig)
-        (*parent_link_orig)->level = level_orig;
-
-    while (node) {
-        unsigned int levell = node->link[LEFT] ? node->link[LEFT]->level : 0;
-        unsigned int levelr = node->link[RIGHT] ? node->link[RIGHT]->level : 0;
-        if ((levell < node->level - 1) || (levelr < node->level - 1)) {
-            node->level -= 1;
-            if (levelr > node->level)
-                node->link[RIGHT]->level = node->level;
-
-            struct aatree_node **top = aatree_parent_link(tree, node);
-            aatree_skew(node, top);
-            if ((*top)->link[RIGHT])
-                aatree_skew((*top)->link[RIGHT], &((*top)->link[RIGHT]));
-            if ((*top)->link[RIGHT]->link[RIGHT])
-                aatree_skew((*top)->link[RIGHT]->link[RIGHT],
-                            &((*top)->link[RIGHT]->link[RIGHT]));
-            aatree_split((*top), top);
-            aatree_split((*top)->link[RIGHT], &((*top)->link[RIGHT]));
-        }
-
-        node = node->parent;
-    }
-
-    return true;
 }
 
 bool aatree_validate(struct aatree_node *root)

@@ -48,9 +48,9 @@ struct aatree_node {
 #define AATREE_GENERATE_INTERNAL(name, type, field, key, opt)   \
     BSTREE_GENERATE_DELETE(name, type, opt)                     \
     BSTREE_GENERATE_INSERT(name, type, field, key, opt)         \
-    BSTREE_GENERATE_SEARCH(name, type, field, key)
-    /* AATREE_GENERATE_INSERT(name, field, opt)                    \ */
-    /* AATREE_GENERATE_DELETE(name, opt) */
+    BSTREE_GENERATE_SEARCH(name, type, field, key)              \
+    AATREE_GENERATE_INSERT(name, field, opt)                    \
+    AATREE_GENERATE_DELETE(name, opt)
 
 BSTREE_GENERATE_BASE(aatree)
 
@@ -95,6 +95,64 @@ static inline void aatree_split(struct aatree_node *root,
         aatree_link_node(root, new, &(new->link[LEFT]));
         new->level += 1;
     }
+}
+
+#define AATREE_GENERATE_INSERT(name, field, opt)                    \
+static inline bool                                                  \
+name##_insert(struct aatree_node **tree, struct name *data)         \
+{                                                                   \
+    if (!foo_bs_insert(tree, data))                                 \
+        return false;                                               \
+                                                                    \
+    struct aatree_node *node = &data->field;                        \
+    while (node) {                                                  \
+        struct aatree_node **top = aatree_parent_link(tree, node);  \
+        aatree_skew(node, top);                                     \
+        aatree_split(node, top);                                    \
+        node = node->parent;                                        \
+    }                                                               \
+                                                                    \
+    return true;                                                    \
+}
+
+#define AATREE_GENERATE_DELETE(name, opt)                               \
+static inline bool                                                      \
+name##_delete(struct aatree_node **tree, struct aatree_node *node)      \
+{                                                                       \
+    struct aatree_node **parent_link_orig = aatree_parent_link(tree, node); \
+    struct aatree_node *parent_orig = node->parent;                     \
+    int level_orig = node->level;                                       \
+                                                                        \
+    if (!name##opt##_delete(tree, node))                                \
+        return false;                                                   \
+                                                                        \
+    /* Test if delete-by-swap occured. */                               \
+    if (*parent_link_orig && node->parent != parent_orig)               \
+        (*parent_link_orig)->level = level_orig;                        \
+                                                                        \
+    while (node) {                                                      \
+        unsigned int levell = node->link[LEFT] ? node->link[LEFT]->level : 0; \
+        unsigned int levelr = node->link[RIGHT] ? node->link[RIGHT]->level : 0; \
+        if ((levell < node->level - 1) || (levelr < node->level - 1)) { \
+            node->level -= 1;                                           \
+            if (levelr > node->level)                                   \
+                node->link[RIGHT]->level = node->level;                 \
+                                                                        \
+            struct aatree_node **top = aatree_parent_link(tree, node);  \
+            aatree_skew(node, top);                                     \
+            if ((*top)->link[RIGHT])                                    \
+                aatree_skew((*top)->link[RIGHT], &((*top)->link[RIGHT])); \
+            if ((*top)->link[RIGHT]->link[RIGHT])                       \
+                aatree_skew((*top)->link[RIGHT]->link[RIGHT],           \
+                            &((*top)->link[RIGHT]->link[RIGHT]));       \
+            aatree_split((*top), top);                                  \
+            aatree_split((*top)->link[RIGHT], &((*top)->link[RIGHT]));  \
+        }                                                               \
+                                                                        \
+        node = node->parent;                                            \
+    }                                                                   \
+                                                                        \
+    return true;                                                        \
 }
 
 #endif /* AATREE_H */
