@@ -183,7 +183,7 @@ name##_delete(struct rbtree_node **tree, struct rbtree_node *node)      \
         return false;                                                   \
                                                                         \
     /* Test if delete-by-swap occured. We could also test if node had 2
-       children bferohand. Now node still points to the same struct but its
+       children beforehand. Now node still points to the same struct but its
        bstree values are now those of the deepest actually deleted node.
        *parent_link_orig however points to the replacing node. */       \
     if (*parent_link_orig && node->parent != parent_orig)               \
