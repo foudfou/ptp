@@ -20,39 +20,8 @@ AATREE_GENERATE(foo, aatree, node, key)
 #define FOO_INIT(level, parent, left, right, key)  \
     {{(level), (parent), {(left), (right)}}, (key)}
 
-
-#include <stdio.h>
-void aatree_display_nodes(struct aatree_node *root)
-{
-    if (!root)
-        return;
-
-    struct aatree_node *ln = root->link[LEFT];
-    struct aatree_node *rn = root->link[RIGHT];
-
-    struct foo *this = cont(root, struct foo, node);
-    if (ln) {
-        struct foo *lobj = cont(ln, struct foo, node);
-        printf("\"%d(%d)\" -> \"%d(%d)\";\n", this->key, root->level,
-               lobj->key, ln->level);
-    }
-    if (rn) {
-        struct foo *robj = cont(rn, struct foo, node);
-        printf("\"%d(%d)\" -> \"%d(%d)\";\n", this->key, root->level,
-               robj->key, rn->level);
-    }
-
-    aatree_display_nodes(ln);
-    aatree_display_nodes(rn);
-}
-
-/* Graphviz: `dot -Tjpg -O /tmp/aa2.dot`, or better
-   `dot /tmp/a1.dot | gvpr -c -ftools/tree.gv | neato -n -Tpng -o /tmp/a1.png` */
-void aatree_display(struct aatree_node *root) {
-    printf("digraph aatree {\n");
-    aatree_display_nodes(root);
-    printf("}\n");
-}
+/* For debugging, recover the definition from the SCM. */
+extern void aatree_display_nodes(struct aatree_node *root);
 
 bool aatree_validate(struct aatree_node *root)
 {
