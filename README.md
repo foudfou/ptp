@@ -1,5 +1,9 @@
 # PTP ambitious project
 
+Pet project to study P2P concepts.
+
+For now, only basic data structures (list, hash, trees) are provided.
+
 ## Build
 
 You need `ninja` installed first.
