@@ -18,38 +18,7 @@ static inline int foo_compare(uint32_t keyA, uint32_t keyB)
 RBTREE_GENERATE(foo, rbtree, node, key)
 
 /* For debugging, recover the definition from the SCM. */
-#include <stdio.h>
-void rbtree_display_nodes(struct rbtree_node *root)
-{
-    if (!root)
-        return;
-
-    struct rbtree_node *ln = root->link[LEFT];
-    struct rbtree_node *rn = root->link[RIGHT];
-
-    struct foo *this = cont(root, struct foo, node);
-    if (ln) {
-        struct foo *lobj = cont(ln, struct foo, node);
-        printf("\"%d(%d)\" -> \"L-%d(%d)\";\n", this->key, root->color,
-               lobj->key, ln->color);
-    }
-    if (rn) {
-        struct foo *robj = cont(rn, struct foo, node);
-        printf("\"%d(%d)\" -> \"R-%d(%d)\";\n", this->key, root->color,
-               robj->key, rn->color);
-    }
-
-    rbtree_display_nodes(ln);
-    rbtree_display_nodes(rn);
-}
-
-/* Graphviz: `dot -Tjpg -O /tmp/aa2.dot`, or better
-   `dot /tmp/a1.dot | gvpr -c -ftools/tree.gv | neato -n -Tpng -o /tmp/a1.png` */
-void rbtree_display(struct rbtree_node *root) {
-    printf("digraph rbtree {\n");
-    rbtree_display_nodes(root);
-    printf("}\n");
-}
+extern void rbtree_display_nodes(struct rbtree_node *root);
 
 #define IS_RED(node) (node != NULL && (node)->color == RB_RED)
 
@@ -63,11 +32,7 @@ int rbtree_validate(struct rbtree_node *root)
     struct rbtree_node *rn = root->link[RIGHT];
 
     /* Red violation / Consecutive red links */
-    /* assert(!(IS_RED(root) && (IS_RED(ln) || IS_RED(rn)))); */
-    if (IS_RED(root) && (IS_RED(ln) || IS_RED(rn))) {
-        printf("FAIL: %d\n", cont(root, struct foo, node)->key);
-        exit(1);
-    }
+    assert(!(IS_RED(root) && (IS_RED(ln) || IS_RED(rn))));
 
     int lh = rbtree_validate(ln);
     int rh = rbtree_validate(rn);
