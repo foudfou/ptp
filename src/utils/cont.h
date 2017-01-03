@@ -1,3 +1,4 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #ifndef CONT_H
 #define CONT_H
 

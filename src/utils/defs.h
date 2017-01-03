@@ -1,3 +1,4 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #ifndef DEFS_H
 #define DEFS_H
 

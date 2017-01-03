@@ -1,3 +1,4 @@
+# Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 # -*- mode: python -*-
 
 project('ptp', 'c', version : '0.0.2', license : 'MIT',

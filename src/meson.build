@@ -1,3 +1,4 @@
+# Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 # -*- mode: python -*-
 
 configure_file(input : 'config.h.in',

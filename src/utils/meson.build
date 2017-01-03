@@ -1,3 +1,4 @@
+# Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 # -*- mode: python -*-
 
 utils_sources = ['string_s.c']

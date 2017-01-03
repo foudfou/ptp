@@ -1,3 +1,4 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <stddef.h>
 #include <string.h>
 #include <sys/types.h>

@@ -1,3 +1,4 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #ifndef AATREE_H
 #define AATREE_H
 

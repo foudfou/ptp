@@ -1,3 +1,4 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include "utils/cont.h"
 #include "utils/list.h"

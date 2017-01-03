@@ -1,3 +1,4 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #ifndef PTP_STRING_H
 #define PTP_STRING_H
 
