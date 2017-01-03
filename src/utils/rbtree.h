@@ -104,13 +104,7 @@ name##_insert(struct rbtree_node **tree, struct name *data)             \
         return false;                                                   \
                                                                         \
     struct rbtree_node *node = &data->field;                            \
-    while (node->parent) {                                              \
-        node->color = RB_RED;                                           \
-                                                                        \
-        /* Parent black, nothing to do. */                              \
-        if (node->parent->color == RB_BLACK)                            \
-            return true;                                                \
-                                                                        \
+    while (node->parent && node->parent->color == RB_RED) {             \
         /* Red parent => has a grand-parent. */                         \
         struct rbtree_node *parent = node->parent;                      \
         int par_dir = RIGHT_IF(parent == parent->parent->link[RIGHT]);  \
@@ -153,14 +147,16 @@ name##_insert(struct rbtree_node **tree, struct name *data)             \
              *     \                \
              *      r*               B
              */                                                         \
-            else                                                        \
+            else {                                                      \
+                node = parent;                                          \
                 rbtree_rotate_double(parent->parent, !par_dir, top);    \
+            }                                                           \
             (*top)->color = RB_BLACK;                                   \
             (*top)->link[!par_dir]->color = RB_RED;                     \
         }                                                               \
     }                                                                   \
+    (*tree)->color = RB_BLACK;                                          \
                                                                         \
-    node->color = RB_BLACK;                                             \
     return true;                                                        \
 }
 

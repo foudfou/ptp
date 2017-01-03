@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdlib.h>
+#include <time.h>
 #include "utils/cont.h"
 #include "utils/rbtree.h"
 
@@ -17,7 +18,38 @@ static inline int foo_compare(uint32_t keyA, uint32_t keyB)
 RBTREE_GENERATE(foo, rbtree, node, key)
 
 /* For debugging, recover the definition from the SCM. */
-extern void rbtree_display(struct rbtree_node *root);
+#include <stdio.h>
+void rbtree_display_nodes(struct rbtree_node *root)
+{
+    if (!root)
+        return;
+
+    struct rbtree_node *ln = root->link[LEFT];
+    struct rbtree_node *rn = root->link[RIGHT];
+
+    struct foo *this = cont(root, struct foo, node);
+    if (ln) {
+        struct foo *lobj = cont(ln, struct foo, node);
+        printf("\"%d(%d)\" -> \"L-%d(%d)\";\n", this->key, root->color,
+               lobj->key, ln->color);
+    }
+    if (rn) {
+        struct foo *robj = cont(rn, struct foo, node);
+        printf("\"%d(%d)\" -> \"R-%d(%d)\";\n", this->key, root->color,
+               robj->key, rn->color);
+    }
+
+    rbtree_display_nodes(ln);
+    rbtree_display_nodes(rn);
+}
+
+/* Graphviz: `dot -Tjpg -O /tmp/aa2.dot`, or better
+   `dot /tmp/a1.dot | gvpr -c -ftools/tree.gv | neato -n -Tpng -o /tmp/a1.png` */
+void rbtree_display(struct rbtree_node *root) {
+    printf("digraph rbtree {\n");
+    rbtree_display_nodes(root);
+    printf("}\n");
+}
 
 #define IS_RED(node) (node != NULL && (node)->color == RB_RED)
 
@@ -31,7 +63,11 @@ int rbtree_validate(struct rbtree_node *root)
     struct rbtree_node *rn = root->link[RIGHT];
 
     /* Red violation / Consecutive red links */
-    assert(!(IS_RED(root) && (IS_RED(ln) || IS_RED(rn))));
+    /* assert(!(IS_RED(root) && (IS_RED(ln) || IS_RED(rn)))); */
+    if (IS_RED(root) && (IS_RED(ln) || IS_RED(rn))) {
+        printf("FAIL: %d\n", cont(root, struct foo, node)->key);
+        exit(1);
+    }
 
     int lh = rbtree_validate(ln);
     int rh = rbtree_validate(rn);
@@ -309,6 +345,27 @@ int main ()
      */
     assert(foo_delete(&digits, &digits_ary[4].node)); // 1
     assert(rbtree_validate(digits) == 3);
+
+
+    srand(time(NULL));  // once
+
+    int rb1len = 132;
+    struct foo ns[rb1len];
+    RBTREE_DECL(rb1);
+    for (int i = 0; i < rb1len; i++) {
+        bool inserted = false;
+        while (!inserted) {
+            ns[i] = (struct foo) FOO_INIT(0, NULL, NULL, NULL, rand() % 256);
+            RBTREE_NODE_INIT(ns[i].node);
+            inserted = foo_insert(&rb1, &ns[i]);
+        }
+        rbtree_validate(rb1);
+    }
+
+    for (int i = 0; i < rb1len; i++) {
+        assert(foo_delete(&rb1, &(ns[i].node)));
+        rbtree_validate(rb1);
+    }
 
 
     return 0;
