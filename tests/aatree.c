@@ -72,6 +72,10 @@ int main ()
     }
     aatree_validate(aa1);
 
+    assert(!foo_search(aa1, n1len+1));
+    assert(foo_search(aa1, 7) == &n1[6]);
+
+
     srand(time(NULL));  // once
     int n2len = 132;
     struct foo n2[n2len];
