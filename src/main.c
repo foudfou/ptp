@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "options.h"
 
 #define BUFLEN 10
 
@@ -42,9 +43,7 @@ int server_start(const char bind_addr[], const char bind_port[])
 
     // socket and bind
     struct addrinfo *it;
-    int i = 0;
     for (it = addrs; it; it=it->ai_next) {
-        printf("i=%d\n", i);
         listendfd = socket(it->ai_family, it->ai_socktype, it->ai_protocol);
         if (listendfd == -1)
             continue;
@@ -56,7 +55,6 @@ int server_start(const char bind_addr[], const char bind_port[])
             break;
 
         close(listendfd);
-        i++;
     }
 
     if (!it) {
@@ -93,18 +91,16 @@ int server_accept(const int listenfd)
     return conn;
 }
 
-// Data structure filled in when parsing command line args
-static struct user_options_t {
-    char bind_addr[NI_MAXHOST];
-    char bind_port[NI_MAXSERV];
-} opts = {
-    "::", "22000"
-};
 
-
-int main()
+int main(int argc, char *argv[])
 {
-    int sock = server_start(opts.bind_addr, opts.bind_port);
+    struct config conf = CONFIG_DEFAULT;
+
+    int rv = options_parse(&conf, argc, argv);
+    if (rv < 2)
+        return rv;
+
+    int sock = server_start(conf.bind_addr, conf.bind_port);
     if (sock < 0) {
         perror("server_start");
         return 1;

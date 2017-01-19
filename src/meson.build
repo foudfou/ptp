@@ -5,7 +5,7 @@ configure_file(input : 'config.h.in',
                output : 'config.h',
                configuration : conf)
 
-subdir('utils')
+main_sources = ['main.c', 'utils/string_s.c', 'options.c']
 
-mainexe = executable('server', 'main.c',
+mainexe = executable('server', main_sources,
                      c_args : ['-D_POSIX_C_SOURCE=200809L', '-D_DEFAULT_SOURCE'])

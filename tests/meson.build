@@ -1,5 +1,5 @@
-# Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 # -*- mode: python -*-
+# Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 tests = [
     ['list', 'list.c'],
