@@ -1,17 +1,29 @@
 #include <getopt.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include "utils/string_s.h"
 #include "options.h"
 #include "config.h"
+
+const struct config CONFIG_DEFAULT = {
+    .bind_addr = "::",
+    .bind_port = "22000",
+    .logtype   = LOG_TYPE_STDOUT,
+    .loglevel  = LOG_UPTO(LOG_DEBUG),
+};
 
 static void usage(void)
 {
     printf("Usage: %s [parameters]\n", PACKAGE_NAME);
     printf("\nParameters:\n"
-           " -l, --listen=[addr]   Run server as a daemon\n"
-           " -p, --port=[port]     Print version of the server\n"
-           " -h, --help            Print help and usage\n");
+           " -a, --addr=[addr]       Set bind address (ip4 or ip6)\n"
+           " -p, --port=[port]       Set bind port\n"
+           " -l, --log=[level]       Set log level (debug..critical)\n"
+           " -o, --output=[file]     Set log output file\n"
+           " -s, --syslog            Use syslog\n"
+           " -h, --help              Print help and usage\n"
+           " -v, --version           Print version of the server\n");
 }
 
 /**
@@ -23,19 +35,23 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
     while (1) {
         int option_index = 0;
         static struct option long_options[] = {
-            {"listen", required_argument, 0, 'l'},
-            {"port", required_argument, 0, 'p'},
-            {"help", no_argument, 0, 'h'},
+            {"addr",    required_argument, 0, 'a'},
+            {"port",    required_argument, 0, 'p'},
+            {"log",     required_argument, 0, 'l'},
+            {"output",  required_argument, 0, 'o'},
+            {"syslog",  no_argument,       0, 's'},
+            {"help",    no_argument,       0, 'h'},
+            {"version", no_argument,       0, 'v'},
             {0}
         };
 
-        c = getopt_long(argc, argv, "l:p:h",
+        c = getopt_long(argc, argv, "a:p:l:o:shv",
                         long_options, &option_index);
         if (c == -1)
             break;
 
         switch (c) {
-        case 'l':
+        case 'a':
             if (!safe_strcpy(conf->bind_addr, optarg, NI_MAXHOST)) {
                 fprintf(stderr, "wrong value for --listen\n");
                 return 1;
@@ -49,8 +65,37 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
             }
             break;
 
+        case 'l': {
+            int sevmask = 0;
+            for (int i = 0; log_severities[i].id; i++) {
+                if (strcmp(log_severities[i].name, optarg) == 0) {
+                    sevmask = log_severities[i].id;
+                    break;
+                }
+            }
+            if (!sevmask) {
+                fprintf(stderr, "wrong value for --log\n");
+                return 1;
+            }
+            conf->loglevel = sevmask;
+            break;
+        }
+
+        case 'o':
+            // TODO:
+            break;
+
+        case 's':
+            conf->logtype = LOG_TYPE_SYSLOG;
+            break;
+
         case 'h':
             usage();
+            return 0;
+            break;
+
+        case 'v':
+            printf("%s\n", PACKAGE_VERSION);
             return 0;
             break;
 
@@ -59,7 +104,6 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
             break;
 
         default:
-            fprintf(stderr, "dafeault\n");
             usage();
             return 1;
         }

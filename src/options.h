@@ -2,15 +2,16 @@
 #define OPTIONS_H
 
 #include <netdb.h>
+#include "log.h"
 
 struct config {
-    char bind_addr[NI_MAXHOST];
-    char bind_port[NI_MAXSERV];
+    char       bind_addr[NI_MAXHOST];
+    char       bind_port[NI_MAXSERV];
+    logtype_t  logtype;
+    int        loglevel;
 };
-static struct config CONFIG_DEFAULT = {
-    .bind_addr = "::",
-    .bind_port = "22000",
-};
+
+extern const struct config CONFIG_DEFAULT;
 
 int options_parse(struct config *conf, const int argc, char *const argv[]);
 

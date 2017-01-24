@@ -1,0 +1,49 @@
+#ifndef LOG_H
+#define LOG_H
+
+#include <stdbool.h>
+#include <syslog.h>
+
+#define LOG_TIME_FORMAT "%Y-%m-%dT%H:%M:%S"
+
+#define log_fatal(...)   log_msg(LOG_CRIT,    ##__VA_ARGS__)
+#define log_error(...)   log_msg(LOG_ERR,     ##__VA_ARGS__)
+#define log_warning(...) log_msg(LOG_WARNING, ##__VA_ARGS__)
+#define log_notice(...)  log_msg(LOG_NOTICE,  ##__VA_ARGS__)
+#define log_info(...)    log_msg(LOG_INFO,    ##__VA_ARGS__)
+#define log_debug(...)   log_msg(LOG_DEBUG,   ##__VA_ARGS__)
+
+typedef enum {
+    LOG_TYPE_SYSLOG = 0, /*!< Logging to syslog(3) facility. */
+    LOG_TYPE_STDOUT = 1, /*!< Print log messages to the stdout. */
+    LOG_TYPE_STDERR = 2, /*!< Print log messages to the stderr. */
+    LOG_TYPE_FILE   = 3  /*!< Generic logging to (unbuffered) file on the disk. */
+} logtype_t;
+
+struct lookup_table {
+        int id;
+        const char *name;
+};
+
+typedef struct lookup_table lookup_table_t;
+
+static const lookup_table_t log_severities[] = {
+        { LOG_UPTO(LOG_CRIT),    "critical" },
+        { LOG_UPTO(LOG_ERR),     "error" },
+        { LOG_UPTO(LOG_WARNING), "warning" },
+        { LOG_UPTO(LOG_NOTICE),  "notice" },
+        { LOG_UPTO(LOG_INFO),    "info" },
+        { LOG_UPTO(LOG_DEBUG),   "debug" },
+        { 0, NULL }
+};
+
+void (*log_msg)(int, const char *, ...);
+int (*log_setmask)(int);
+
+void log_init();
+int log_console_setlogmask(int mask);
+void log_console(int priority, const char *format, ...);
+bool log_setup(int type, int logmask);
+bool log_shutdown();
+
+#endif /* LOG_H */

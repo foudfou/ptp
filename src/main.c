@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "options.h"
+#include "log.h"
 
 #define BUFLEN 10
 
@@ -84,9 +85,9 @@ int server_accept(const int listenfd)
                          host, NI_MAXHOST, service, NI_MAXSERV,
                          NI_NUMERICHOST | NI_NUMERICSERV);
     if (rv == 0)
-        printf("[%s]:%s connected\n", host, service);
+        log_info("Accepted connection from peer [%s]:%s.", host, service);
     else
-        fprintf(stderr, "getnameinfo: %s\n", gai_strerror(rv));
+        log_error("Failed to getnameinfo: %s.", gai_strerror(rv));
 
     return conn;
 }
@@ -95,16 +96,21 @@ int server_accept(const int listenfd)
 int main(int argc, char *argv[])
 {
     struct config conf = CONFIG_DEFAULT;
-
     int rv = options_parse(&conf, argc, argv);
     if (rv < 2)
         return rv;
 
-    int sock = server_start(conf.bind_addr, conf.bind_port);
-    if (sock < 0) {
-        perror("server_start");
+    if (!log_setup(conf.logtype, conf.loglevel)) {
+        fprintf(stderr, "Could not setup logging.");
         return 1;
     }
+
+    int sock = server_start(conf.bind_addr, conf.bind_port);
+    if (sock < 0) {
+        log_error("Could not start server.");
+        return 1;
+    }
+    log_info("Server started and listening on [%s]:%s.", conf.bind_addr, conf.bind_port);
 
     int client = server_accept(sock);
 
@@ -116,7 +122,7 @@ int main(int argc, char *argv[])
         char data[BUFLEN+21+1] = {0};
         snprintf(data, BUFLEN+21, "Echoing back - (%03ld) %s", slen, buf);
         data[BUFLEN+21] = '\0';
-        printf("%s", data);
+        log_debug("%s", data);
 
         int resp = send(client, buf, slen + 1, MSG_NOSIGNAL);
         if (resp == -1 && errno == EPIPE) {
@@ -127,6 +133,7 @@ int main(int argc, char *argv[])
 
     close(client);
     close(sock);
+    log_shutdown(conf.logtype);
 
     return 0;
 }
