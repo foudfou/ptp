@@ -14,7 +14,6 @@
  * char*, int). Neither can we compare keys of unknow formats.
  */
 
-#include "base.h"
 #include "cont.h"
 #include "list.h"
 

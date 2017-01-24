@@ -5,25 +5,14 @@
  * and  Knot-DNS.
  */
 
-#include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include "config.h"
 #include "log.h"
 
-#define LOG_BUFLEN 512
-
 static int _streammask;
 static FILE* _stream;
-
-int log_stream_setlogmask(int mask)
-{
-  int oldmask = _streammask;
-  if(mask == 0)
-    return oldmask; /* POSIX definition for 0 mask */
-  _streammask = mask;
-  return oldmask;
-}
 
 static const char *log_level_prefix(int level)
 {
@@ -49,6 +38,15 @@ static void log_time(char tstr[])
     }
 }
 
+int log_stream_setlogmask(int mask)
+{
+  int oldmask = _streammask;
+  if(mask == 0)
+    return oldmask; /* POSIX definition for 0 mask */
+  _streammask = mask;
+  return oldmask;
+}
+
 void log_stream(int prio, const char *fmt, ...)
 {
   if (!(LOG_MASK(prio) & _streammask))
@@ -63,6 +61,13 @@ void log_stream(int prio, const char *fmt, ...)
   vfprintf(_stream, fmt, arglist);
   fprintf(_stream, "\n");
   va_end(arglist);
+}
+
+void log_perror(const char *fmt, const int errnum)
+{
+    char errtxt[LOG_ERRLEN];
+    strerror_r(errnum, errtxt, LOG_ERRLEN);
+    log_msg(LOG_ERR, fmt, errtxt);
 }
 
 bool log_setup(int logtype, int logmask)
@@ -86,7 +91,7 @@ bool log_setup(int logtype, int logmask)
         break;
 
     default:
-        // FIXME:
+        fprintf(stderr, "Unsupported log type %d.", logtype);
         return false;
     }
 

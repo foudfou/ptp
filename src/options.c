@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
-#include "utils/string_s.h"
+#include "utils/safe.h"
 #include "options.h"
 #include "config.h"
 

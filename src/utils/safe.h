@@ -1,10 +1,9 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#ifndef BASE_H
-#define BASE_H
+#ifndef SAFE_H
+#define SAFE_H
 
-#include <errno.h>
-#include <stdint.h>
-#include <stddef.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 #define safe_free(p) do {                       \
         free(p);                                \
@@ -23,4 +22,7 @@
 #define assert_compilation(isTrue) \
     void assert_compilation(char x[1 - (!(isTrue))])
 
-#endif /* BASE_H */
+// http://blog.liw.fi/posts/strncpy/
+bool safe_strcpy(char *dst, const char *src, size_t size);
+
+#endif /* SAFE_H */

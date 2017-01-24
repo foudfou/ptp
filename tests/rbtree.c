@@ -1,5 +1,6 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
 #include "utils/cont.h"

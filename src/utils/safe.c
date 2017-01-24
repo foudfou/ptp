@@ -3,7 +3,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <sys/types.h>
-#include "string_s.h"
+#include "safe.h"
 
 bool safe_strcpy(char *dst, const char *src, size_t size)
 {

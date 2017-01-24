@@ -13,7 +13,6 @@
  */
 #include <stdbool.h>
 #include <stddef.h>
-#include "base.h"
 #include "cont.h"
 
 #define BSTREE_MEMBERS(node_t)     \

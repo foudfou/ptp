@@ -1,10 +1,14 @@
 #ifndef LOG_H
 #define LOG_H
 
+#include <stdarg.h>
 #include <stdbool.h>
 #include <syslog.h>
 
 #define LOG_TIME_FORMAT "%Y-%m-%dT%H:%M:%S"
+
+#define LOG_BUFLEN 512
+#define LOG_ERRLEN 256
 
 #define log_fatal(...)   log_msg(LOG_CRIT,    ##__VA_ARGS__)
 #define log_error(...)   log_msg(LOG_ERR,     ##__VA_ARGS__)
@@ -40,9 +44,16 @@ static const lookup_table_t log_severities[] = {
 void (*log_msg)(int, const char *, ...);
 int (*log_setmask)(int);
 
-void log_init();
-int log_console_setlogmask(int mask);
-void log_console(int priority, const char *format, ...);
+int log_stream_setlogmask(int mask);
+void log_stream(int prio, const char *fmt, ...);
+
+/**
+ * Log with error text corresponding to @errnum.
+ *
+ * Provide a *single* `%s` placeholder for the error text in @fmt.
+ */
+void log_perror(const char *fmt, const int errnum);
+
 bool log_setup(int type, int logmask);
 bool log_shutdown();
 
