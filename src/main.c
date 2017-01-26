@@ -5,6 +5,10 @@
 #include "log.h"
 #include "server.h"
 
+// FIXME: these should probably only appear in server.c
+#include <sys/socket.h>
+#include <sys/types.h>
+
 int main(int argc, char *argv[])
 {
     struct config conf = CONFIG_DEFAULT;

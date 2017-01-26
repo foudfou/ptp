@@ -13,6 +13,12 @@ You need `ninja` installed first.
     ../tools/meson.py ..
     ninja
 
+Clang may wrongly [complain for missing field initializers](https://llvm.org/bugs/show_bug.cgi?id=21689).
+
+## Usage
+
+`kldload mqueuefs` on FreeBSD.
+
 ## Acknowledgements
 
 * [cjdns](https://github.com/cjdelisle/cjdns/) by Caleb James DeLisle

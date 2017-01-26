@@ -20,12 +20,12 @@
 #define LOG_MSG_LEN 512
 #define LOG_ERR_LEN 256
 
-#define log_fatal(...)   log_msg(LOG_CRIT,    ##__VA_ARGS__)
-#define log_error(...)   log_msg(LOG_ERR,     ##__VA_ARGS__)
-#define log_warning(...) log_msg(LOG_WARNING, ##__VA_ARGS__)
-#define log_notice(...)  log_msg(LOG_NOTICE,  ##__VA_ARGS__)
-#define log_info(...)    log_msg(LOG_INFO,    ##__VA_ARGS__)
-#define log_debug(...)   log_msg(LOG_DEBUG,   ##__VA_ARGS__)
+#define log_fatal(...)   log_msg(LOG_CRIT,    __VA_ARGS__)
+#define log_error(...)   log_msg(LOG_ERR,     __VA_ARGS__)
+#define log_warning(...) log_msg(LOG_WARNING, __VA_ARGS__)
+#define log_notice(...)  log_msg(LOG_NOTICE,  __VA_ARGS__)
+#define log_info(...)    log_msg(LOG_INFO,    __VA_ARGS__)
+#define log_debug(...)   log_msg(LOG_DEBUG,   __VA_ARGS__)
 
 typedef enum {
     LOG_TYPE_SYSLOG = 0, /*!< Logging to syslog(3) facility. */

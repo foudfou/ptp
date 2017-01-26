@@ -23,8 +23,8 @@ static struct log_ctx_t {
     .fmask   = 0,
     .flog    = NULL,
     .th_cons = 0,
-    .mqw     = -1,
-    .mqr     = -1,
+    .mqw     = (mqd_t)-1,
+    .mqr     = (mqd_t)-1,
 };
 
 static const char *log_level_prefix(int level)
@@ -111,9 +111,9 @@ void *log_queue_consumer(void *data)
     while (!must_stop);
 
     // TODO: void pthread_cleanup_push(void (*routine)(void *), void *arg);
-    if (log_ctx.mqr != (mqd_t)-1 && mq_close(log_ctx.mqr) == (mqd_t)-1)
+    if (log_ctx.mqr != (mqd_t)-1 && mq_close(log_ctx.mqr) == -1)
         perror("mq_close RO");
-    if (mq_unlink(LOG_QUEUE_NAME) == (mqd_t)-1)
+    if (mq_unlink(LOG_QUEUE_NAME) == -1)
         perror("mq_unlink");
 
     pthread_exit(NULL);
@@ -129,7 +129,7 @@ bool log_queue_shutdown()
     if (mq_send(log_ctx.mqw, buf, LOG_MSG_LEN, 0) < 0)
         perror("mq_send STOP");
 
-    if (log_ctx.mqw != (mqd_t)-1 && mq_close(log_ctx.mqw) == (mqd_t)-1)
+    if (log_ctx.mqw != (mqd_t)-1 && mq_close(log_ctx.mqw) == -1)
         ret = false;
 
     int rv = pthread_join(log_ctx.th_cons, NULL); // FIXME: void **retval
