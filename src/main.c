@@ -12,8 +12,8 @@ int main(int argc, char *argv[])
     if (rv < 2)
         return rv;
 
-    if (!log_setup(conf.logtype, conf.loglevel)) {
-        fprintf(stderr, "Could not setup logging. Aborting.");
+    if (!log_init(conf.logtype, conf.loglevel)) {
+        fprintf(stderr, "Could not setup logging. Aborting.\n");
         return 1;
     }
 
@@ -38,7 +38,7 @@ int main(int argc, char *argv[])
 
         int resp = send(client, buf, slen + 1, MSG_NOSIGNAL);
         if (resp == -1 && errno == EPIPE) {
-            /* printf("\n[%s]:%s disconnected\n", host, service); */
+            log_info("Client [%%s]:%%s disconnected."); // TODO: , host, service
             break;
         }
     }

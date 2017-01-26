@@ -10,7 +10,7 @@ const struct config CONFIG_DEFAULT = {
     .bind_addr = "::",
     .bind_port = "22000",
     .logtype   = LOG_TYPE_STDOUT,
-    .loglevel  = LOG_UPTO(LOG_DEBUG),
+    .loglevel  = LOG_UPTO(LOG_INFO),
 };
 
 static void usage(void)

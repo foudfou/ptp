@@ -71,6 +71,7 @@ int server_start(const char bind_addr[], const char bind_port[])
 
 int server_stop(int sock)
 {
+    log_info("Stopping server.");
     return close(sock);
 }
 
@@ -90,10 +91,13 @@ int server_conn_accept(const int listenfd)
     else
         log_error("Failed to getnameinfo: %s.", gai_strerror(rv));
 
+    // TODO: store cli to some collection
+
     return conn;
 }
 
 int server_conn_close(int client)
 {
+    log_info("Closing connection with peer [%%s]:%%s."); // TODO:
     return close(client);
 }

@@ -1,5 +1,15 @@
 #ifndef LOG_H
 #define LOG_H
+/**
+ * Logging component.
+ *
+ * Logging can be set up to use syslog(3) or some stream (stdout, stderr or a
+ * file). In the later case, messages sink to a dedicated thread via a
+ * msgqueue.
+ *
+ * Inspired by http://kev009.com/wp/2010/12/no-nonsense-logging-in-c-and-cpp/
+ * and Knot-DNS.
+ */
 
 #include <stdarg.h>
 #include <stdbool.h>
@@ -7,8 +17,8 @@
 
 #define LOG_TIME_FORMAT "%Y-%m-%dT%H:%M:%S"
 
-#define LOG_BUFLEN 512
-#define LOG_ERRLEN 256
+#define LOG_MSG_LEN 512
+#define LOG_ERR_LEN 256
 
 #define log_fatal(...)   log_msg(LOG_CRIT,    ##__VA_ARGS__)
 #define log_error(...)   log_msg(LOG_ERR,     ##__VA_ARGS__)
@@ -45,7 +55,7 @@ void (*log_msg)(int, const char *, ...);
 int (*log_setmask)(int);
 
 int log_stream_setlogmask(int mask);
-void log_stream(int prio, const char *fmt, ...);
+void log_stream_msg(int prio, const char *fmt, ...);
 
 /**
  * Log with error text corresponding to @errnum.
@@ -54,7 +64,7 @@ void log_stream(int prio, const char *fmt, ...);
  */
 void log_perror(const char *fmt, const int errnum);
 
-bool log_setup(int type, int logmask);
-bool log_shutdown();
+bool log_init(int type, int logmask);
+bool log_shutdown(int logtype);
 
 #endif /* LOG_H */

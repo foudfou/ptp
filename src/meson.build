@@ -13,5 +13,8 @@ main_sources = [
     'server.c',
 ]
 
-mainexe = executable('server', main_sources,
-                     c_args : ['-D_POSIX_C_SOURCE=200809L', '-D_DEFAULT_SOURCE'])
+main_exe = executable(
+    'server', main_sources,
+    c_args : ['-D_POSIX_C_SOURCE=200809L', '-D_DEFAULT_SOURCE'],
+    link_args : ['-lrt', '-lpthread']
+)
