@@ -2,6 +2,7 @@
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 tests = [
+    ['bit', 'bit.c'],
     ['list', 'list.c'],
     ['hash', 'hash.c'],
     ['bstree', 'bstree.c'],
