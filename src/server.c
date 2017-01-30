@@ -301,7 +301,8 @@ void server_run(const struct config *conf)
     log_info("Server started and listening on [%s]:%s.",
              conf->bind_addr, conf->bind_port);
 
-    struct pollfd fds[MAX_PEERS] = {0};
+    struct pollfd fds[conf->max_peers];
+    memset(fds, 0, sizeof(fds));
     int nfds = 1;
     fds[0].fd = sock;
     fds[0].events = POLL_EVENTS;

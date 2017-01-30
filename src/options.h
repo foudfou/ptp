@@ -10,6 +10,7 @@ struct config {
     char       bind_port[NI_MAXSERV];
     logtype_t  logtype;
     int        loglevel;
+    size_t     max_peers;
 };
 
 extern const struct config CONFIG_DEFAULT;

@@ -43,7 +43,7 @@ bool sig_install()
     };
     int len = sizeof(sig) / sizeof(int) / 2;
 
-    struct sigaction sa;
+    struct sigaction sa = {0};
     sa.sa_handler = sig_handler;
     for (int i = 0; i < len; i++) {
         sigemptyset(&sa.sa_mask);
