@@ -3,17 +3,28 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include "utils/bit.h"
+#include "utils/cont.h"
+#include "utils/list.h"
+#include "config.h"
 #include "log.h"
 #include "server.h"
 
-#define MAX_CONN 256
 #define SECOND 1000
 #define SERVER_BUFLEN 10
+#define POLL_EVENTS POLLIN|POLLPRI
+
+struct peer {
+    struct list_item item;
+    int              fd;
+    char             host[NI_MAXHOST];
+    char             service[NI_MAXSERV];
+};
 
 
 static int server_sock_setnonblock(int sock) {
@@ -102,16 +113,69 @@ static int server_shutdown(int sock)
     return close(sock);
 }
 
+static struct peer*
+peer_register(struct list_item *peers, int conn,
+              struct sockaddr_storage *addr, socklen_t *addr_len)
+{
+    char host[NI_MAXHOST], service[NI_MAXSERV];
+    int rv = getnameinfo((struct sockaddr *) addr, *addr_len,
+                         host, NI_MAXHOST, service, NI_MAXSERV,
+                         NI_NUMERICHOST | NI_NUMERICSERV);
+    if (rv) {
+        log_error("Failed to getnameinfo: %s.", gai_strerror(rv));
+        return NULL;
+    }
+
+    struct peer *peer = malloc(sizeof(struct peer));
+    peer->fd = conn;
+    strcpy(peer->host, host);
+    strcpy(peer->service, service);
+    list_append(peers, &(peer->item));
+    log_debug("Peer [%s]:%s registered.", host, service);
+
+    return peer;
+}
+
+static struct peer*
+peer_find_by_fd(struct list_item *peers, const int fd)
+{
+    struct peer *p;
+    struct list_item * it = peers;
+    list_for(it, peers) {
+        p = cont(it, struct peer, item);
+        if (p->fd == fd)
+            break;
+    }
+
+    if (it == peers) {
+        log_warning("Peer not found fd=%d.", fd);
+        return NULL;
+    }
+
+    return p;
+}
+
+static void
+peer_unregister(struct peer *peer)
+{
+    log_debug("Unregistering peer [%s]:%s.", peer->host, peer->service);
+    list_delete(&peer->item);
+    free(peer);
+}
+
 /**
  * Drain all incoming connections
  */
-static bool server_accept_all(const int listenfd, struct pollfd fds[], int *nfds)
+static bool server_accept_all(const int listenfd, struct list_item *peers)
 {
-    struct sockaddr_storage client_addr = {0};
-    socklen_t client_addr_len = sizeof(client_addr);
+    struct sockaddr_storage peer_addr = {0};
+    socklen_t peer_addr_len = sizeof(peer_addr);
     int conn;
+    int fail = 0;
     do {
-        conn = accept(listenfd, (struct sockaddr *)&client_addr, &client_addr_len);
+        // TODO: refuse conn if > MAX_PEERS
+
+        conn = accept(listenfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
         if (conn < 0) {
             if (errno != EWOULDBLOCK) {
                 log_perror("Failed server_conn_accept: %s.", errno);
@@ -121,37 +185,31 @@ static bool server_accept_all(const int listenfd, struct pollfd fds[], int *nfds
         }
         log_debug("Incoming connection...");
 
-        char host[NI_MAXHOST], service[NI_MAXSERV];
-        int rv = getnameinfo((struct sockaddr *) &client_addr, client_addr_len,
-                             host, NI_MAXHOST, service, NI_MAXSERV,
-                             NI_NUMERICHOST | NI_NUMERICSERV);
-        if (rv) {
-            log_error("Failed to getnameinfo: %s.", gai_strerror(rv));
+        struct peer *p = peer_register(peers, conn, &peer_addr, &peer_addr_len);
+        if (!p) {
+            fail++;
             continue;
         }
+        log_info("Accepted connection from peer [%s]:%s.", p->host, p->service);
 
-        log_info("Accepted connection from peer [%s]:%s.", host, service);
-        fds[*nfds].fd = conn;
-        fds[*nfds].events = POLLIN;
-        (*nfds)++;
     } while (conn != -1);
 
-    return true;
+    return fail ? false : true;
 }
 
-static int server_conn_close(int client)
+static int server_conn_close(const struct peer *peer)
 {
-    log_info("Closing connection with peer [%%s]:%%s."); // TODO:
-    return close(client);
+    log_info("Closing connection with peer [%s]:%s.", peer->host, peer->service);
+    return close(peer->fd);
 }
 
-bool server_handle_data(const struct pollfd fdp[])
+bool server_handle_data(const struct peer *peer)
 {
     bool conn_close = false;
 
     char buf[SERVER_BUFLEN];
     memset(buf, 0, SERVER_BUFLEN);
-    ssize_t slen = recv(fdp->fd, buf, SERVER_BUFLEN, 0);
+    ssize_t slen = recv(peer->fd, buf, SERVER_BUFLEN, 0);
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
             log_perror("Failed recv: %s", errno);
@@ -161,17 +219,17 @@ bool server_handle_data(const struct pollfd fdp[])
     }
 
     if (slen == 0) {
-        log_info("Client [%%s]:%%s closed connection."); // TODO: , host, service
+        log_info("Peer [%s]:%s closed connection.", peer->host, peer->service);
         conn_close = true;
         goto end;
     }
     log_debug("Received %d bytes.", slen);
 
     /* Echo back */
-    int resp = send(fdp->fd, buf, slen, MSG_NOSIGNAL);
+    int resp = send(peer->fd, buf, slen, MSG_NOSIGNAL);
     if (resp < 0) {
         if (errno == EPIPE)
-            log_info("Client [%%s]:%%s disconnected."); // TODO: , host, service
+            log_info("Peer [%s]:%s  disconnected.", peer->host, peer->service);
         else
             log_perror("Failed send: %s.", errno);
         conn_close = true;
@@ -182,8 +240,24 @@ bool server_handle_data(const struct pollfd fdp[])
     return conn_close;
 }
 
+static int pollfds_update(struct pollfd fds[], struct list_item *peer_list)
+{
+    struct list_item * it = peer_list;
+    int npeer = 1;
+    list_for(it, peer_list) {
+        struct peer *p = cont(it, struct peer, item);
+        fds[npeer].fd = p->fd;
+        fds[npeer].events = POLL_EVENTS;
+        npeer++;
+    }
+    return npeer;
+}
+
 /**
  * Main event loop
+ *
+ * poll(2) is portable and should be sufficient as we don't expect to handle
+ * thousands of peer connections.
  *
  * Initially inspired from
  * https://www.ibm.com/support/knowledgecenter/en/ssw_i5_54/rzab6/poll.htm
@@ -198,12 +272,13 @@ void server_run(const struct config *conf)
     log_info("Server started and listening on [%s]:%s.",
              conf->bind_addr, conf->bind_port);
 
-    struct pollfd fds[MAX_CONN] = {0};
+    struct pollfd fds[MAX_PEERS] = {0};
     int nfds = 1;
     fds[0].fd = sock;
-    fds[0].events = POLLIN; // FIXME: |POLLPRI ?
+    fds[0].events = POLL_EVENTS;
+    struct list_item peer_list = LIST_ITEM_INIT(peer_list);
 
-    bool server_end = false, compress_array = false;
+    bool server_end = false;
     do {
         log_debug("Waiting to poll...");
         if (poll(fds, nfds, -1) < 0) {
@@ -219,7 +294,7 @@ void server_run(const struct config *conf)
             if (fds[i].revents == 0)
                 continue;
 
-            if (!BITS_CHK(fds[i].revents, POLLIN)) {
+            if (!BITS_CHK(fds[i].revents, POLL_EVENTS)) {
                 log_error("Unexpected revents: %#x", fds[i].revents);
                 server_end = true;
                 break;
@@ -230,7 +305,7 @@ void server_run(const struct config *conf)
                 log_warning("Peer closed connection. fd=%d", i);
 
             if (fds[i].fd == sock) {
-                if (!server_accept_all(sock, fds, &nfds)) {
+                if (!server_accept_all(sock, &peer_list)) {
                     server_end = true;
                     break;
                 }
@@ -238,27 +313,23 @@ void server_run(const struct config *conf)
             else {
                 log_debug("Data available on fd %d.", fds[i].fd);
 
-                bool conn_close = server_handle_data(&fds[i]);
+                struct peer *p = peer_find_by_fd(&peer_list, fds[i].fd);
+                if (!p) {
+                    log_fatal("Cannot handle data for unregister peer fd=%d.", fds[i].fd);
+                    server_end = true;
+                    break;
+                }
+
+                bool conn_close = server_handle_data(p);
                 if (conn_close) {
-                    server_conn_close(fds[i].fd);
-                    fds[i].fd = -1;
-                    compress_array = true;
+                    server_conn_close(p);
+                    peer_unregister(p);
                 }
 
             }  /* End readable data */
         } /* End loop poll fds */
 
-        /* FIXME: can't we make this smarter ? */
-        if (compress_array) {
-            compress_array = false;
-            for (int i = 0; i < nfds; i++) {
-                if (fds[i].fd == -1) {
-                    for(int j = i; j < nfds; j++)
-                        fds[j].fd = fds[j+1].fd;
-                    nfds--;
-                }
-            }
-        }
+        nfds = pollfds_update(fds, &peer_list);
 
     } while (server_end == false);
 
