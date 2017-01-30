@@ -7,10 +7,11 @@ configure_file(input : 'config.h.in',
 
 main_sources = [
     'main.c',
-    'utils/safe.c',
-    'options.c',
     'log.c',
+    'options.c',
     'server.c',
+    'signals.c',
+    'utils/safe.c',
 ]
 
 main_exe = executable(

@@ -59,12 +59,14 @@ int main ()
         assert(rule[i] == tmp->val);
         i++;
     }
+    assert(i == 4);
     i = 3;
     while ((it = it->prev) != &list) { // backward
         struct something* tmp = cont(it, struct something, item);
         assert(rule[i] == tmp->val);
         i--;
     }
+    assert(i == -1);
 
     /* List delete/remove/pop */
     struct list_item * first = list.next;

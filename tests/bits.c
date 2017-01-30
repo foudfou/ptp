@@ -1,6 +1,6 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
-#include "utils/bit.h"
+#include "utils/bits.h"
 
 #define VAL1 (1U << 4)
 #define VAL2 (1U << 6)

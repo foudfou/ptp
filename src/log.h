@@ -13,6 +13,7 @@
 
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <syslog.h>
 
 #define LOG_TIME_FORMAT "%Y-%m-%dT%H:%M:%S"

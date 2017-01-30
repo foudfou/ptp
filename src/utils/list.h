@@ -85,7 +85,9 @@ static inline void list_delete_last(struct list_item* list)
 }
 
 /**
- * Iterate over a list
+ * Iterate forward over a list.
+ *
+ * CAUTION: Doesn't work if the list is modified inside the loop.
  */
 #define list_for(it, list) \
     while ((it = it->next) != (list))

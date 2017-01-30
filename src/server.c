@@ -8,14 +8,16 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include "utils/bit.h"
+#include "utils/bits.h"
 #include "utils/cont.h"
 #include "utils/list.h"
+#include "utils/safe.h"
 #include "config.h"
 #include "log.h"
+#include "signals.h"
 #include "server.h"
 
-#define SECOND 1000
+// FIXME: low for testing purpose.
 #define SERVER_BUFLEN 10
 #define POLL_EVENTS POLLIN|POLLPRI
 
@@ -107,10 +109,14 @@ static int server_init(const char bind_addr[], const char bind_port[])
     return listendfd;
 }
 
-static int server_shutdown(int sock)
+static bool server_shutdown(int sock)
 {
+    if (close(sock) == -1) {
+        log_perror("Failed close: %s.", errno);
+        return false;
+    }
     log_info("Stopping server.");
-    return close(sock);
+    return true;
 }
 
 static struct peer*
@@ -130,6 +136,7 @@ peer_register(struct list_item *peers, int conn,
     peer->fd = conn;
     strcpy(peer->host, host);
     strcpy(peer->service, service);
+    list_init(&(peer->item));
     list_append(peers, &(peer->item));
     log_debug("Peer [%s]:%s registered (fd=%d).", host, service, conn);
 
@@ -155,18 +162,17 @@ peer_find_by_fd(struct list_item *peers, const int fd)
     return p;
 }
 
-static void
-peer_unregister(struct peer *peer)
+static void peer_unregister(struct peer *peer)
 {
     log_debug("Unregistering peer [%s]:%s.", peer->host, peer->service);
     list_delete(&peer->item);
-    free(peer);
+    safe_free(peer);
 }
 
 /**
  * Drain all incoming connections
  */
-static bool server_accept_all(const int listenfd, struct list_item *peers)
+static bool peer_accept_all(const int listenfd, struct list_item *peers)
 {
     struct sockaddr_storage peer_addr = {0};
     socklen_t peer_addr_len = sizeof(peer_addr);
@@ -197,13 +203,34 @@ static bool server_accept_all(const int listenfd, struct list_item *peers)
     return fail ? false : true;
 }
 
-static int server_conn_close(const struct peer *peer)
+static bool peer_conn_close(struct peer *peer)
 {
+    bool ret = true;
     log_info("Closing connection with peer [%s]:%s.", peer->host, peer->service);
-    return close(peer->fd);
+    if (close(peer->fd) == -1) {
+        log_perror("Failed closed for peer: %s.", errno);
+        ret = false;
+    }
+    peer_unregister(peer);
+    return ret;
 }
 
-bool server_handle_data(const struct peer *peer)
+static bool peer_conn_close_all(struct list_item *peers)
+{
+    int fail = 0;
+
+    struct peer *p;
+    struct list_item * it = peers;
+    while (it->prev != peers) {
+        p = cont(it->next, struct peer, item);
+        if (!peer_conn_close(p))
+            fail++;
+    }
+
+    return fail ? false : true;
+}
+
+static bool server_handle_data(const struct peer *peer)
 {
     bool conn_close = false;
 
@@ -281,6 +308,13 @@ void server_run(const struct config *conf)
 
     bool server_end = false;
     do {
+        if (BITS_CHK(sig_events, EV_SIGINT)) {
+            BITS_CLR(sig_events, EV_SIGINT);
+            log_info("Caught SIGINT. Shutting down.");
+            server_end = true;
+            break;
+        }
+
         log_debug("Waiting to poll...");
         if (poll(fds, nfds, -1) < 0) {
             if (errno == EINTR)
@@ -302,7 +336,7 @@ void server_run(const struct config *conf)
             }
 
             if (fds[i].fd == sock) {
-                if (server_accept_all(sock, &peer_list))
+                if (peer_accept_all(sock, &peer_list))
                     continue;
                 else {
                     server_end = true;
@@ -314,15 +348,16 @@ void server_run(const struct config *conf)
 
             struct peer *p = peer_find_by_fd(&peer_list, fds[i].fd);
             if (!p) {
-                log_fatal("Cannot handle data for unregister peer fd=%d.", fds[i].fd);
+                log_fatal("Could not handle data for unregister peer fd=%d.", fds[i].fd);
                 server_end = true;
                 break;
             }
 
-            bool conn_close = server_handle_data(p);
-            if (conn_close) {
-                server_conn_close(p);
-                peer_unregister(p);
+            bool peer_disconnect = server_handle_data(p);
+            if (peer_disconnect && !peer_conn_close(p)) {
+                log_fatal("Could not close connection of peer fd=%d.", fds[i].fd);
+                server_end = true;
+                break;
             }
 
         } /* End loop poll fds */
@@ -331,5 +366,6 @@ void server_run(const struct config *conf)
 
     } while (server_end == false);
 
+    peer_conn_close_all(&peer_list);
     server_shutdown(sock);
 }
