@@ -131,7 +131,7 @@ peer_register(struct list_item *peers, int conn,
     strcpy(peer->host, host);
     strcpy(peer->service, service);
     list_append(peers, &(peer->item));
-    log_debug("Peer [%s]:%s registered.", host, service);
+    log_debug("Peer [%s]:%s registered (fd=%d).", host, service, conn);
 
     return peer;
 }
@@ -229,7 +229,8 @@ bool server_handle_data(const struct peer *peer)
     int resp = send(peer->fd, buf, slen, MSG_NOSIGNAL);
     if (resp < 0) {
         if (errno == EPIPE)
-            log_info("Peer [%s]:%s  disconnected.", peer->host, peer->service);
+            log_info("Peer [%s]:%s disconnected while sending.",
+                     peer->host, peer->service);
         else
             log_perror("Failed send: %s.", errno);
         conn_close = true;
@@ -300,33 +301,30 @@ void server_run(const struct config *conf)
                 break;
             }
 
-            // FIXME: consistency with server_handle_data
-            if (BITS_CHK(fds[i].revents, (POLLERR | POLLHUP)))
-                log_warning("Peer closed connection. fd=%d", i);
-
             if (fds[i].fd == sock) {
-                if (!server_accept_all(sock, &peer_list)) {
+                if (server_accept_all(sock, &peer_list))
+                    continue;
+                else {
                     server_end = true;
                     break;
                 }
             }
-            else {
-                log_debug("Data available on fd %d.", fds[i].fd);
 
-                struct peer *p = peer_find_by_fd(&peer_list, fds[i].fd);
-                if (!p) {
-                    log_fatal("Cannot handle data for unregister peer fd=%d.", fds[i].fd);
-                    server_end = true;
-                    break;
-                }
+            log_debug("Data available on fd %d.", fds[i].fd);
 
-                bool conn_close = server_handle_data(p);
-                if (conn_close) {
-                    server_conn_close(p);
-                    peer_unregister(p);
-                }
+            struct peer *p = peer_find_by_fd(&peer_list, fds[i].fd);
+            if (!p) {
+                log_fatal("Cannot handle data for unregister peer fd=%d.", fds[i].fd);
+                server_end = true;
+                break;
+            }
 
-            }  /* End readable data */
+            bool conn_close = server_handle_data(p);
+            if (conn_close) {
+                server_conn_close(p);
+                peer_unregister(p);
+            }
+
         } /* End loop poll fds */
 
         nfds = pollfds_update(fds, &peer_list);
