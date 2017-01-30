@@ -1,3 +1,4 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <errno.h>
 #include <pthread.h>
 #include <stdio.h>

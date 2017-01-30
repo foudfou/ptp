@@ -1,3 +1,4 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <errno.h>
 #include <fcntl.h>
 #include <netdb.h>
