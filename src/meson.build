@@ -15,7 +15,7 @@ main_sources = [
 ]
 
 main_exe = executable(
-    'server', main_sources,
+    meson.project_name(), main_sources,
     c_args : ['-D_XOPEN_SOURCE=700L', '-D_DEFAULT_SOURCE'],
     link_args : ['-lrt', '-lpthread']
 )
