@@ -412,7 +412,7 @@ void server_run(const struct config *conf)
 
             struct peer *p = peer_find_by_fd(&peer_list, fds[i].fd);
             if (!p) {
-                log_fatal("Could not handle data for unregister peer fd=%d.", fds[i].fd);
+                log_fatal("Unregistered peer fd=%d.", fds[i].fd);
                 server_end = true;
                 break;
             }
@@ -427,7 +427,7 @@ void server_run(const struct config *conf)
 
         nfds = pollfds_update(fds, &peer_list);
 
-    } while (server_end == false);
+    } while (!server_end);
 
     peer_conn_close_all(&peer_list);
     server_shutdown(sock);
