@@ -22,6 +22,8 @@
 #define SERVER_BUFLEN 10
 #define POLL_EVENTS POLLIN|POLLPRI
 
+enum conn_ret {CONN_OK, CONN_CLOSED};
+
 struct peer {
     struct list_item item;
     int              fd;
@@ -29,6 +31,37 @@ struct peer {
     char             service[NI_MAXSERV];
 };
 
+static int sock_geterr(int fd) {
+   int err = 1;
+   socklen_t len = sizeof err;
+   if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (char *)&err, &len) == -1)
+       log_perror("Failed getsockopt: %s.", errno);
+   if (err)
+      errno = err;              // set errno to the socket SO_ERROR
+   return err;
+}
+
+/**
+ * Endeavor to close a socket cleanly.
+ * http://stackoverflow.com/a/12730776/421846
+ */
+static bool sock_close(int fd) {      // *not* the Windows closesocket()
+   if (fd < 0) {
+       log_error("sock_close() got negative sock.");
+       return false;
+   }
+
+   sock_geterr(fd);    // first clear any errors, which can cause close to fail
+   if (shutdown(fd, SHUT_RDWR) < 0) // secondly, terminate the 'reliable' delivery
+       if (errno != ENOTCONN && errno != EINVAL) // SGI causes EINVAL
+           log_perror("Failed shutdown: %s.", errno);
+   if (close(fd) < 0) {         // finally call close()
+       log_perror("Failed close: %s.", errno);
+       return false;
+   }
+
+   return true;
+}
 
 static int server_sock_setnonblock(int sock) {
     int flags = fcntl(sock, F_GETFL, 0);
@@ -92,7 +125,7 @@ static int server_init(const char bind_addr[], const char bind_port[])
         if (bind(listendfd, it->ai_addr, it->ai_addrlen) == 0)
             break;
 
-        close(listendfd);
+        sock_close(listendfd);
     }
 
     if (!it) {
@@ -112,10 +145,8 @@ static int server_init(const char bind_addr[], const char bind_port[])
 
 static bool server_shutdown(int sock)
 {
-    if (close(sock) == -1) {
-        log_perror("Failed close: %s.", errno);
+    if (!sock_close(sock))
         return false;
-    }
     log_info("Stopping server.");
     return true;
 }
@@ -172,43 +203,71 @@ static void peer_unregister(struct peer *peer)
 
 /**
  * Drain all incoming connections
+ *
+ * Returns 0 on success, -1 on error, 1 when max_peers reached.
  */
-static bool peer_accept_all(const int listenfd, struct list_item *peers)
+static int server_accept_all(const int listenfd, struct list_item *peers,
+                             const int nfds, const struct config *conf)
 {
     struct sockaddr_storage peer_addr = {0};
     socklen_t peer_addr_len = sizeof(peer_addr);
-    int conn;
-    int fail = 0;
+    int conn = -1;
+    int fail = 0, skipped = 0;
+    int npeer = nfds;
     do {
-        // TODO: refuse conn if > MAX_PEERS
-
         conn = accept(listenfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
         if (conn < 0) {
             if (errno != EWOULDBLOCK) {
                 log_perror("Failed server_conn_accept: %s.", errno);
-                return false;
+                return -1;
             }
             break;
         }
         log_debug("Incoming connection...");
 
+        /* Close the connection nicely when max_peers reached. Another approach
+           would be to close the listening socket and reopen it when we're
+           ready, which would result in ECONNREFUSED on the client side. */
+        if ((size_t)npeer > conf->max_peers) {
+            log_error("Can't accept new connections: maximum number of peers"
+                      " reached (%d/%zd). conn=%d", npeer - 1, conf->max_peers, conn);
+            char *msg = "Too many connections. Try later...\n";
+            send(conn, msg, strlen(msg), 0);
+            sock_close(conn);
+            skipped++;
+            continue;
+        }
+
         struct peer *p = peer_register(peers, conn, &peer_addr, &peer_addr_len);
         if (!p) {
-            fail++;
+            log_error("Failed to register peer fd=%d."
+                      " Trying to close connection gracefully.", conn);
+            if (sock_close(conn))
+                skipped++;
+            else { // we have more open connections than actually registered...
+                log_fatal("Failed to close connection fd=%d. INCONSISTENT STATE");
+                fail++;
+            }
             continue;
         }
         log_info("Accepted connection from peer [%s]:%s.", p->host, p->service);
+        npeer++;
 
     } while (conn != -1);
 
-    return fail ? false : true;
+    if (fail)
+        return -1;
+    else if (skipped)
+        return 1;
+    else
+        return 0;
 }
 
 static bool peer_conn_close(struct peer *peer)
 {
     bool ret = true;
     log_info("Closing connection with peer [%s]:%s.", peer->host, peer->service);
-    if (close(peer->fd) == -1) {
+    if (!sock_close(peer->fd)) {
         log_perror("Failed closed for peer: %s.", errno);
         ret = false;
     }
@@ -216,24 +275,20 @@ static bool peer_conn_close(struct peer *peer)
     return ret;
 }
 
-static bool peer_conn_close_all(struct list_item *peers)
+static int peer_conn_close_all(struct list_item *peers)
 {
     int fail = 0;
-
-    struct peer *p;
-    struct list_item * it = peers;
-    while (it->prev != peers) {
-        p = cont(it->next, struct peer, item);
+    while (!list_is_empty(peers)) {
+        struct peer *p = cont(peers->prev, struct peer, item);
         if (!peer_conn_close(p))
             fail++;
     }
-
-    return fail ? false : true;
+    return fail;
 }
 
-static bool server_handle_data(const struct peer *peer)
+static int server_handle_data(const struct peer *peer)
 {
-    bool conn_close = false;
+    enum conn_ret ret = CONN_OK;
 
     char buf[SERVER_BUFLEN];
     memset(buf, 0, SERVER_BUFLEN);
@@ -241,14 +296,14 @@ static bool server_handle_data(const struct peer *peer)
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
             log_perror("Failed recv: %s", errno);
-            conn_close = true;
+            ret = CONN_CLOSED;
         }
         goto end;
     }
 
     if (slen == 0) {
         log_info("Peer [%s]:%s closed connection.", peer->host, peer->service);
-        conn_close = true;
+        ret = CONN_CLOSED;
         goto end;
     }
     log_debug("Received %d bytes.", slen);
@@ -261,12 +316,12 @@ static bool server_handle_data(const struct peer *peer)
                      peer->host, peer->service);
         else
             log_perror("Failed send: %s.", errno);
-        conn_close = true;
+        ret = CONN_CLOSED;
         goto end;
     }
 
   end:
-    return conn_close;
+    return ret;
 }
 
 static int pollfds_update(struct pollfd fds[], struct list_item *peer_list)
@@ -276,6 +331,8 @@ static int pollfds_update(struct pollfd fds[], struct list_item *peer_list)
     list_for(it, peer_list) {
         struct peer *p = cont(it, struct peer, item);
         fds[npeer].fd = p->fd;
+        /* TODO: we will have to add POLLOUT when all data haven't been written
+           in one loop, and probably have 1 inbuf and 1 outbuf. */
         fds[npeer].events = POLL_EVENTS;
         npeer++;
     }
@@ -290,6 +347,11 @@ static int pollfds_update(struct pollfd fds[], struct list_item *peer_list)
  *
  * Initially inspired from
  * https://www.ibm.com/support/knowledgecenter/en/ssw_i5_54/rzab6/poll.htm
+ *
+ * TODO: we could use a thread pool with pipes for dispatching heavy tasks (?)
+ * http://people.clarkson.edu/~jmatthew/cs644.archive/cs644.fa2001/proj/locksmith/code/ExampleTest/threadpool.c
+ * http://stackoverflow.com/a/6954584/421846
+ * https://github.com/Pithikos/C-Thread-Pool/blob/master/thpool.c
  */
 void server_run(const struct config *conf)
 {
@@ -338,7 +400,7 @@ void server_run(const struct config *conf)
             }
 
             if (fds[i].fd == sock) {
-                if (peer_accept_all(sock, &peer_list))
+                if (server_accept_all(sock, &peer_list, nfds, conf) >= 0)
                     continue;
                 else {
                     server_end = true;
@@ -355,8 +417,7 @@ void server_run(const struct config *conf)
                 break;
             }
 
-            bool peer_disconnect = server_handle_data(p);
-            if (peer_disconnect && !peer_conn_close(p)) {
+            if (server_handle_data(p) == CONN_CLOSED && !peer_conn_close(p)) {
                 log_fatal("Could not close connection of peer fd=%d.", fds[i].fd);
                 server_end = true;
                 break;
