@@ -211,7 +211,8 @@ static void peer_unregister(struct peer *peer)
 }
 
 /* FIXME: we'll need proper de-/serialization soon ! */
-static bool peer_msg_send(int fd, enum tlv_type typ, const char *msg, size_t msg_len)
+static bool peer_msg_send(const struct peer *peer, enum tlv_type typ,
+                          const char *msg, size_t msg_len)
 {
     char buf[msg_len+8];
     char *p = buf;
@@ -219,7 +220,7 @@ static bool peer_msg_send(int fd, enum tlv_type typ, const char *msg, size_t msg
     *(uint32_t*)(p+4) = htonl(msg_len);
     memcpy(p+8, msg, msg_len);
 
-    int resp = send(fd, msg, 54, MSG_NOSIGNAL);
+    int resp = send(peer->fd, msg, msg_len, MSG_NOSIGNAL);
     if (resp < 0) {
         if (errno == EPIPE)
             log_info("Peer fd=%u disconnected while sending.");
@@ -261,9 +262,8 @@ static int peer_conn_accept_all(const int listenfd, struct list_item *peers,
         if ((size_t)npeer > conf->max_peers) {
             log_error("Can't accept new connections: maximum number of peers"
                       " reached (%d/%zd). conn=%d", npeer - 1, conf->max_peers, conn);
-            const char err[] = "Too many connections. Try later.";
-            size_t err_len = strlen(err);
-            peer_msg_send(conn, TLV_TYPE_ERROR, err, err_len);
+            const char err[] = "Too many connections. Please try later...\n";
+            send(conn, err, strlen(msg), 0);
             sock_close(conn);
             skipped++;
             continue;
@@ -359,7 +359,7 @@ static int peer_conn_handle_data(struct peer *peer)
            (RSET64FE*64). But how about we just close the connection. */
         const char err[] = "Could not parse chunk.";
         size_t err_len = strlen(err);
-        if (!peer_msg_send(peer->fd, TLV_TYPE_ERROR, err, err_len)) {
+        if (!peer_msg_send(peer, TLV_TYPE_ERROR, err, err_len)) {
             log_info("Notified peer [%s]:%s of error state.",
                      peer->host, peer->service);
             ret = CONN_CLOSED;
