@@ -25,3 +25,4 @@ Clang may wrongly [complain for missing field initializers](https://llvm.org/bug
 * [Linux kernel](https://www.kernel.org/) by the Linux community
 * [nanomsg](https://github.com/nanomsg/nanomsg) by Martin Sustrik
 * [FreeBSD](http://www.FreeBSD.org/) bits by Niels Provos
+* [Nadeem Abdul Hamid's P2P Programming Framework](http://cs.berry.edu/~nhamid/p2p/framework-python.html)

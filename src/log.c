@@ -90,6 +90,15 @@ void log_perror(const char *fmt, const int errnum)
     log_msg(LOG_ERR, fmt, errtxt);
 }
 
+void log_debug_hex(const char buf[], const size_t len)
+{
+    char hex[2*len+1];
+    for (size_t i = 0; i < len; i++)
+        sprintf(hex + 2*i, "%02x", buf[i]); // no format string vuln
+    hex[2*len] = '\0';
+    log_debug("input: %s", hex);
+}
+
 void *log_queue_consumer(void *data)
 {
     (void)data;

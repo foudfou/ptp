@@ -37,20 +37,20 @@ typedef enum {
 } logtype_t;
 
 struct lookup_table {
-        int id;
-        const char *name;
+    int id;
+    const char *name;
 };
 
 typedef struct lookup_table lookup_table_t;
 
 static const lookup_table_t log_severities[] = {
-        { LOG_UPTO(LOG_CRIT),    "critical" },
-        { LOG_UPTO(LOG_ERR),     "error" },
-        { LOG_UPTO(LOG_WARNING), "warning" },
-        { LOG_UPTO(LOG_NOTICE),  "notice" },
-        { LOG_UPTO(LOG_INFO),    "info" },
-        { LOG_UPTO(LOG_DEBUG),   "debug" },
-        { 0, NULL }
+    { LOG_UPTO(LOG_CRIT),    "critical" },
+    { LOG_UPTO(LOG_ERR),     "error" },
+    { LOG_UPTO(LOG_WARNING), "warning" },
+    { LOG_UPTO(LOG_NOTICE),  "notice" },
+    { LOG_UPTO(LOG_INFO),    "info" },
+    { LOG_UPTO(LOG_DEBUG),   "debug" },
+    { 0, NULL }
 };
 
 void (*log_msg)(int, const char *, ...);
@@ -65,6 +65,7 @@ void log_stream_msg(int prio, const char *fmt, ...);
  * Provide a *single* `%s` placeholder for the error text in @fmt.
  */
 void log_perror(const char *fmt, const int errnum);
+void log_debug_hex(const char buf[], const size_t len);
 
 bool log_init(int type, int logmask);
 bool log_shutdown(int logtype);

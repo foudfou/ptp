@@ -16,6 +16,7 @@
 #include "config.h"
 #include "log.h"
 #include "signals.h"
+#include "proto.h"
 #include "server.h"
 
 // FIXME: low for testing purpose.
@@ -25,10 +26,11 @@
 enum conn_ret {CONN_OK, CONN_CLOSED};
 
 struct peer {
-    struct list_item item;
-    int              fd;
-    char             host[NI_MAXHOST];
-    char             service[NI_MAXSERV];
+    struct list_item    item;
+    int                 fd;
+    char                host[NI_MAXHOST];
+    char                service[NI_MAXSERV];
+    struct proto_parser parser;
 };
 
 static int sock_geterr(int fd) {
@@ -165,9 +167,15 @@ peer_register(struct list_item *peers, int conn,
     }
 
     struct peer *peer = malloc(sizeof(struct peer));
+    if (!peer) {
+        log_perror("Failed malloc: %s.", errno);
+        return NULL;
+    }
+
     peer->fd = conn;
     strcpy(peer->host, host);
     strcpy(peer->service, service);
+    proto_parser_init(&peer->parser);
     list_init(&(peer->item));
     list_append(peers, &(peer->item));
     log_debug("Peer [%s]:%s registered (fd=%d).", host, service, conn);
@@ -197,8 +205,30 @@ peer_find_by_fd(struct list_item *peers, const int fd)
 static void peer_unregister(struct peer *peer)
 {
     log_debug("Unregistering peer [%s]:%s.", peer->host, peer->service);
+    proto_parser_terminate(&peer->parser);
     list_delete(&peer->item);
     safe_free(peer);
+}
+
+/* FIXME: we'll need proper de-/serialization soon ! */
+static bool peer_msg_send(int fd, enum tlv_type typ, const char *msg, size_t msg_len)
+{
+    char buf[msg_len+8];
+    char *p = buf;
+    memcpy(p, tlv_type_get_name(typ), 4);
+    *(uint32_t*)(p+4) = htonl(msg_len);
+    memcpy(p+8, msg, msg_len);
+
+    int resp = send(fd, msg, 54, MSG_NOSIGNAL);
+    if (resp < 0) {
+        if (errno == EPIPE)
+            log_info("Peer fd=%u disconnected while sending.");
+        else
+            log_perror("Failed send: %s.", errno);
+        return false;
+    }
+
+    return true;
 }
 
 /**
@@ -206,8 +236,8 @@ static void peer_unregister(struct peer *peer)
  *
  * Returns 0 on success, -1 on error, 1 when max_peers reached.
  */
-static int server_accept_all(const int listenfd, struct list_item *peers,
-                             const int nfds, const struct config *conf)
+static int peer_conn_accept_all(const int listenfd, struct list_item *peers,
+                                const int nfds, const struct config *conf)
 {
     struct sockaddr_storage peer_addr = {0};
     socklen_t peer_addr_len = sizeof(peer_addr);
@@ -231,8 +261,9 @@ static int server_accept_all(const int listenfd, struct list_item *peers,
         if ((size_t)npeer > conf->max_peers) {
             log_error("Can't accept new connections: maximum number of peers"
                       " reached (%d/%zd). conn=%d", npeer - 1, conf->max_peers, conn);
-            char *msg = "Too many connections. Try later...\n";
-            send(conn, msg, strlen(msg), 0);
+            const char err[] = "Too many connections. Try later.";
+            size_t err_len = strlen(err);
+            peer_msg_send(conn, TLV_TYPE_ERROR, err, err_len);
             sock_close(conn);
             skipped++;
             continue;
@@ -286,7 +317,7 @@ static int peer_conn_close_all(struct list_item *peers)
     return fail;
 }
 
-static int server_handle_data(const struct peer *peer)
+static int peer_conn_handle_data(struct peer *peer)
 {
     enum conn_ret ret = CONN_OK;
 
@@ -308,16 +339,32 @@ static int server_handle_data(const struct peer *peer)
     }
     log_debug("Received %d bytes.", slen);
 
-    /* Echo back */
-    int resp = send(peer->fd, buf, slen, MSG_NOSIGNAL);
-    if (resp < 0) {
-        if (errno == EPIPE)
-            log_info("Peer [%s]:%s disconnected while sending.",
-                     peer->host, peer->service);
-        else
-            log_perror("Failed send: %s.", errno);
-        ret = CONN_CLOSED;
+    if (peer->parser.stage == TLV_STAGE_ERROR) {
+        log_debug_hex(buf, slen);
         goto end;
+    }
+
+    if (proto_parse(&peer->parser, buf, slen)) {
+        log_debug("Successful parsing of chunk.");
+        if (peer->parser.stage == TLV_STAGE_NONE) {
+            log_info("Got msg %s from peer [%s]:%s.",
+                     tlv_type_get_name(peer->parser.msg_type),
+                     peer->host, peer->service);
+        }
+    }
+    else {
+        log_debug("Failed parsing of chunk.");
+        /* TODO: how do we get out of the error state ? We could send a
+           TLV_TYPE_ERROR, then watch for a special TLV_TYPE_RESET msg
+           (RSET64FE*64). But how about we just close the connection. */
+        const char err[] = "Could not parse chunk.";
+        size_t err_len = strlen(err);
+        if (!peer_msg_send(peer->fd, TLV_TYPE_ERROR, err, err_len)) {
+            log_info("Notified peer [%s]:%s of error state.",
+                     peer->host, peer->service);
+            ret = CONN_CLOSED;
+            goto end;
+        }
     }
 
   end:
@@ -380,7 +427,7 @@ void server_run(const struct config *conf)
         }
 
         log_debug("Waiting to poll...");
-        if (poll(fds, nfds, -1) < 0) {
+        if (poll(fds, nfds, -1) < 0) {  // event_wait
             if (errno == EINTR)
                 continue;
             else {
@@ -390,6 +437,7 @@ void server_run(const struct config *conf)
         }
 
         for (int i = 0; i < nfds; i++) {
+            // event_get_next
             if (fds[i].revents == 0)
                 continue;
 
@@ -400,7 +448,7 @@ void server_run(const struct config *conf)
             }
 
             if (fds[i].fd == sock) {
-                if (server_accept_all(sock, &peer_list, nfds, conf) >= 0)
+                if (peer_conn_accept_all(sock, &peer_list, nfds, conf) >= 0)
                     continue;
                 else {
                     server_end = true;
@@ -410,6 +458,7 @@ void server_run(const struct config *conf)
 
             log_debug("Data available on fd %d.", fds[i].fd);
 
+            // event_dispatch
             struct peer *p = peer_find_by_fd(&peer_list, fds[i].fd);
             if (!p) {
                 log_fatal("Unregistered peer fd=%d.", fds[i].fd);
@@ -417,7 +466,7 @@ void server_run(const struct config *conf)
                 break;
             }
 
-            if (server_handle_data(p) == CONN_CLOSED && !peer_conn_close(p)) {
+            if (peer_conn_handle_data(p) == CONN_CLOSED && !peer_conn_close(p)) {
                 log_fatal("Could not close connection of peer fd=%d.", fds[i].fd);
                 server_end = true;
                 break;

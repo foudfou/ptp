@@ -9,6 +9,7 @@ main_sources = [
     'main.c',
     'log.c',
     'options.c',
+    'proto.c',
     'server.c',
     'signals.c',
     'utils/safe.c',
