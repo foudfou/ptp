@@ -54,8 +54,6 @@ int rbtree_validate(struct rbtree_node *root)
         return 0;
 }
 
-#define LEN(ary)  (sizeof(ary) / sizeof(ary[0]))
-
 #define FOO_INIT(color, parent, left, right, key)    \
     {{(color), (parent), {(left), (right)}}, (key)};
 
