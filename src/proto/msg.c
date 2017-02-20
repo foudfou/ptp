@@ -40,7 +40,7 @@ static bool proto_msg_type_parse(const char buf[], enum proto_msg_type *otyp)
 {
     const proto_msg_type_name *tok = proto_msg_type_names;
     while (tok->name) {
-        if (strncmp(tok->name, buf, 4) == 0) break;
+        if (strncmp(tok->name, buf, PROTO_MSG_FIELD_TYPE_LEN) == 0) break;
         tok++;
     }
     if (!tok->name) {
@@ -53,7 +53,7 @@ static bool proto_msg_type_parse(const char buf[], enum proto_msg_type *otyp)
 
 static void proto_msg_len_parse(const char buf[], size_t pos, union u32 *len)
 {
-    memcpy(len->db, buf + pos, 4);
+    memcpy(len->db, buf + pos, PROTO_MSG_FIELD_LENGTH_LEN);
     *len = u32_ntoh(*len);
 }
 
@@ -76,7 +76,7 @@ bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const si
         }
 
         case PROTO_MSG_STAGE_TYPE: {
-            if (len < 4) {
+            if (len < PROTO_MSG_FIELD_TYPE_LEN) {
                 log_error("Message too short.");
                 parser->stage = PROTO_MSG_STAGE_ERROR;
                 break;
@@ -89,13 +89,13 @@ bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const si
             }
 
             log_debug("  msg_type=%u", parser->msg_type);
-            offset += 4;
+            offset += PROTO_MSG_FIELD_TYPE_LEN;
             parser->stage = PROTO_MSG_STAGE_LEN;
             break;
         }
 
         case PROTO_MSG_STAGE_LEN: {
-            if (len - offset < 4) {
+            if (len - offset < PROTO_MSG_FIELD_LENGTH_LEN) {
                 log_error("Message too short.");
                 parser->stage = PROTO_MSG_STAGE_ERROR;
                 break;
@@ -104,7 +104,7 @@ bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const si
             parser->msg_len.dd = 0;
             proto_msg_len_parse(buf, offset, &parser->msg_len);
             log_debug("  msg_len=%"PRIu32, parser->msg_len.dd);
-            offset += 4;
+            offset += PROTO_MSG_FIELD_LENGTH_LEN;
             parser->stage = PROTO_MSG_STAGE_DATA;
             break;
         }

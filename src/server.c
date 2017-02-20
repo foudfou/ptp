@@ -213,12 +213,14 @@ static void peer_unregister(struct peer *peer)
 static bool peer_msg_send(const struct peer *peer, enum proto_msg_type typ,
                           const char *msg, union u32 msg_len)
 {
-    size_t buf_len = msg_len.dd + 8;
+    size_t buf_len = msg_len.dd + PROTO_MSG_FIELD_TYPE_LEN + PROTO_MSG_FIELD_LENGTH_LEN;
     char buf[buf_len];
-    char *p = buf;
-    memcpy(p, proto_msg_type_get_name(typ), 4);
-    memcpy(p+4, u32_hton(msg_len).db, 4);
-    memcpy(p+8, msg, (size_t)msg_len.dd);
+    char *bufp = buf;
+    memcpy(bufp, proto_msg_type_get_name(typ), PROTO_MSG_FIELD_LENGTH_LEN);
+    bufp += PROTO_MSG_FIELD_TYPE_LEN
+    memcpy(bufp, u32_hton(msg_len).db, PROTO_MSG_FIELD_LENGTH_LEN);
+    bufp += PROTO_MSG_FIELD_LENGTH_LEN
+    memcpy(bufp, msg, (size_t)msg_len.dd);
 
     int resp = send(peer->fd, buf, buf_len, MSG_NOSIGNAL);
     if (resp < 0) {

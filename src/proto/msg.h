@@ -16,6 +16,9 @@
 #include "proto/iobuf.h"
 #include "proto/serialization.h"
 
+#define PROTO_MSG_FIELD_TYPE_LEN    4
+#define PROTO_MSG_FIELD_LENGTH_LEN  4
+
 enum proto_msg_stage {
     PROTO_MSG_STAGE_NONE,
     PROTO_MSG_STAGE_ERROR,
