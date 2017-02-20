@@ -16,7 +16,7 @@
 #include "config.h"
 #include "log.h"
 #include "signals.h"
-#include "proto.h"
+#include "proto/msg.h"
 #include "server.h"
 
 // FIXME: low for testing purpose.
@@ -26,11 +26,11 @@
 enum conn_ret {CONN_OK, CONN_CLOSED};
 
 struct peer {
-    struct list_item    item;
-    int                 fd;
-    char                host[NI_MAXHOST];
-    char                service[NI_MAXSERV];
-    struct proto_parser parser;
+    struct list_item        item;
+    int                     fd;
+    char                    host[NI_MAXHOST];
+    char                    service[NI_MAXSERV];
+    struct proto_msg_parser parser;
 };
 
 static int sock_geterr(int fd) {
@@ -175,7 +175,7 @@ peer_register(struct list_item *peers, int conn,
     peer->fd = conn;
     strcpy(peer->host, host);
     strcpy(peer->service, service);
-    proto_parser_init(&peer->parser);
+    proto_msg_parser_init(&peer->parser);
     list_init(&(peer->item));
     list_append(peers, &(peer->item));
     log_debug("Peer [%s]:%s registered (fd=%d).", host, service, conn);
@@ -205,17 +205,17 @@ peer_find_by_fd(struct list_item *peers, const int fd)
 static void peer_unregister(struct peer *peer)
 {
     log_debug("Unregistering peer [%s]:%s.", peer->host, peer->service);
-    proto_parser_terminate(&peer->parser);
+    proto_msg_parser_terminate(&peer->parser);
     list_delete(&peer->item);
     safe_free(peer);
 }
 
-static bool peer_msg_send(const struct peer *peer, enum tlv_type typ,
+static bool peer_msg_send(const struct peer *peer, enum proto_msg_type typ,
                           const char *msg, size_t msg_len)
 {
     char buf[msg_len+8];
     char *p = buf;
-    memcpy(p, tlv_type_get_name(typ), 4);
+    memcpy(p, proto_msg_type_get_name(typ), 4);
     *(uint32_t*)(p+4) = htonl(msg_len);
     memcpy(p+8, msg, msg_len);
 
@@ -262,7 +262,7 @@ static int peer_conn_accept_all(const int listenfd, struct list_item *peers,
             log_error("Can't accept new connections: maximum number of peers"
                       " reached (%d/%zd). conn=%d", npeer - 1, conf->max_peers, conn);
             const char err[] = "Too many connections. Please try later...\n";
-            send(conn, err, strlen(msg), 0);
+            send(conn, err, strlen(err), 0);
             sock_close(conn);
             skipped++;
             continue;
@@ -338,19 +338,19 @@ static int peer_conn_handle_data(struct peer *peer)
     }
     log_debug("Received %d bytes.", slen);
 
-    if (peer->parser.stage == TLV_STAGE_ERROR) {
+    if (peer->parser.stage == PROTO_MSG_STAGE_ERROR) {
         log_debug_hex(buf, slen);
         goto end;
     }
 
-    if (!proto_parse(&peer->parser, buf, slen)) {
+    if (!proto_msg_parse(&peer->parser, buf, slen)) {
         log_debug("Failed parsing of chunk.");
         /* TODO: how do we get out of the error state ? We could send a
-           TLV_TYPE_ERROR, then watch for a special TLV_TYPE_RESET msg
-           (RSET64FE*64). But how about we just close the connection. */
+           PROTO_MSG_TYPE_ERROR, then watch for a special PROTO_MSG_TYPE_RESET
+           msg (RSET64FE*64). But how about we just close the connection. */
         const char err[] = "Could not parse chunk.";
         size_t err_len = strlen(err);
-        if (!peer_msg_send(peer, TLV_TYPE_ERROR, err, err_len)) {
+        if (!peer_msg_send(peer, PROTO_MSG_TYPE_ERROR, err, err_len)) {
             log_info("Notified peer [%s]:%s of error state.",
                      peer->host, peer->service);
             ret = CONN_CLOSED;
@@ -359,9 +359,9 @@ static int peer_conn_handle_data(struct peer *peer)
     }
     log_debug("Successful parsing of chunk.");
 
-    if (peer->parser.stage == TLV_STAGE_NONE) {
+    if (peer->parser.stage == PROTO_MSG_STAGE_NONE) {
         log_info("Got msg %s from peer [%s]:%s.",
-                 tlv_type_get_name(peer->parser.msg_type),
+                 proto_msg_type_get_name(peer->parser.msg_type),
                  peer->host, peer->service);
     }
 
