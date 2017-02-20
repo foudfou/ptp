@@ -210,7 +210,6 @@ static void peer_unregister(struct peer *peer)
     safe_free(peer);
 }
 
-/* FIXME: we'll need proper de-/serialization soon ! */
 static bool peer_msg_send(const struct peer *peer, enum tlv_type typ,
                           const char *msg, size_t msg_len)
 {
@@ -344,15 +343,7 @@ static int peer_conn_handle_data(struct peer *peer)
         goto end;
     }
 
-    if (proto_parse(&peer->parser, buf, slen)) {
-        log_debug("Successful parsing of chunk.");
-        if (peer->parser.stage == TLV_STAGE_NONE) {
-            log_info("Got msg %s from peer [%s]:%s.",
-                     tlv_type_get_name(peer->parser.msg_type),
-                     peer->host, peer->service);
-        }
-    }
-    else {
+    if (!proto_parse(&peer->parser, buf, slen)) {
         log_debug("Failed parsing of chunk.");
         /* TODO: how do we get out of the error state ? We could send a
            TLV_TYPE_ERROR, then watch for a special TLV_TYPE_RESET msg
@@ -363,8 +354,15 @@ static int peer_conn_handle_data(struct peer *peer)
             log_info("Notified peer [%s]:%s of error state.",
                      peer->host, peer->service);
             ret = CONN_CLOSED;
-            goto end;
         }
+        goto end;
+    }
+    log_debug("Successful parsing of chunk.");
+
+    if (peer->parser.stage == TLV_STAGE_NONE) {
+        log_info("Got msg %s from peer [%s]:%s.",
+                 tlv_type_get_name(peer->parser.msg_type),
+                 peer->host, peer->service);
     }
 
   end:

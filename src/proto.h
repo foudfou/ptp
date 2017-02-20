@@ -31,6 +31,8 @@ static const tlv_type_name tlv_type_names[] = {
     { 0, NULL }
 };
 
+/* TODO: this is probably the skeleton of a de-/serialization framework. See
+   http://stackoverflow.com/a/6002598/421846 */
 struct proto_iobuf {
     char     *buf;
     size_t    pos;
