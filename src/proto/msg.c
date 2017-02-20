@@ -1,5 +1,4 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#include <arpa/inet.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -52,12 +51,10 @@ static bool proto_msg_type_parse(const char buf[], enum proto_msg_type *otyp)
     return true;
 }
 
-static bool proto_msg_len_parse(const char buf[], size_t pos, uint32_t *len)
+static void proto_msg_len_parse(const char buf[], size_t pos, union u32 *len)
 {
-    uint32_t raw32;
-    memcpy(&raw32, buf + pos, 4);
-    *len = ntohl(raw32);
-    return true;
+    memcpy(len->db, buf + pos, 4);
+    *len = u32_ntoh(*len);
 }
 
 bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const size_t len)
@@ -104,15 +101,9 @@ bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const si
                 break;
             }
 
-            parser->msg_len = 0;
-            if (!proto_msg_len_parse(buf, offset, &parser->msg_len)) {
-                log_warning("Ignoring further input.");
-                parser->stage = PROTO_MSG_STAGE_ERROR;
-                break;
-            }
-
-
-            log_debug("  msg_len=%u", parser->msg_len);
+            parser->msg_len.dd = 0;
+            proto_msg_len_parse(buf, offset, &parser->msg_len);
+            log_debug("  msg_len=%"PRIu32, parser->msg_len.dd);
             offset += 4;
             parser->stage = PROTO_MSG_STAGE_DATA;
             break;
@@ -141,11 +132,11 @@ bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const si
 
             /* We check for the length of actually received data after having
                copied it for fear of losing some. */
-            if (parser->msg_data.pos > parser->msg_len) {
+            if (parser->msg_data.pos > parser->msg_len.dd) {
                 log_warning("Received more data than expected.");
                 parser->stage = PROTO_MSG_STAGE_ERROR;
             }
-            if (parser->msg_data.pos == parser->msg_len)
+            if (parser->msg_data.pos == parser->msg_len.dd)
                 parser->stage = PROTO_MSG_STAGE_NONE;
 
             goto while_end; // we've got all we need from this chunk

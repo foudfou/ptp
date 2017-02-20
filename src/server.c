@@ -211,15 +211,16 @@ static void peer_unregister(struct peer *peer)
 }
 
 static bool peer_msg_send(const struct peer *peer, enum proto_msg_type typ,
-                          const char *msg, size_t msg_len)
+                          const char *msg, union u32 msg_len)
 {
-    char buf[msg_len+8];
+    size_t buf_len = msg_len.dd + 8;
+    char buf[buf_len];
     char *p = buf;
     memcpy(p, proto_msg_type_get_name(typ), 4);
-    *(uint32_t*)(p+4) = htonl(msg_len);
-    memcpy(p+8, msg, msg_len);
+    memcpy(p+4, u32_hton(msg_len).db, 4);
+    memcpy(p+8, msg, (size_t)msg_len.dd);
 
-    int resp = send(peer->fd, msg, msg_len, MSG_NOSIGNAL);
+    int resp = send(peer->fd, buf, buf_len, MSG_NOSIGNAL);
     if (resp < 0) {
         if (errno == EPIPE)
             log_info("Peer fd=%u disconnected while sending.");
@@ -349,10 +350,14 @@ static int peer_conn_handle_data(struct peer *peer)
            PROTO_MSG_TYPE_ERROR, then watch for a special PROTO_MSG_TYPE_RESET
            msg (RSET64FE*64). But how about we just close the connection. */
         const char err[] = "Could not parse chunk.";
-        size_t err_len = strlen(err);
-        if (!peer_msg_send(peer, PROTO_MSG_TYPE_ERROR, err, err_len)) {
+        union u32 err_len = {strlen(err)};
+        if (peer_msg_send(peer, PROTO_MSG_TYPE_ERROR, err, err_len)) {
             log_info("Notified peer [%s]:%s of error state.",
                      peer->host, peer->service);
+        }
+        else {
+            log_warning("Failed to notify peer [%s]:%s of error state.",
+                        peer->host, peer->service);
             ret = CONN_CLOSED;
         }
         goto end;

@@ -14,6 +14,7 @@ lib_sources = [
     'options.c',
     'proto/iobuf.c',
     'proto/msg.c',
+    'proto/serialization.c',
     'server.c',
     'signals.c',
     'utils/safe.c',

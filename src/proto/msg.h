@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include "proto/iobuf.h"
+#include "proto/serialization.h"
 
 enum proto_msg_stage {
     PROTO_MSG_STAGE_NONE,
@@ -47,7 +48,7 @@ struct proto_msg_parser {
     bool                 send;
     enum proto_msg_stage stage;
     enum proto_msg_type  msg_type;
-    uint32_t             msg_len;
+    union u32            msg_len;
     struct iobuf         msg_data; /* holds only the data field */
 };
 

@@ -8,6 +8,7 @@ tests_lib = [
     ['bstree', 'bstree.c'],
     ['rbtree', 'rbtree.c'],
     ['aatree', 'aatree.c'],
+    ['serialization', 'serialization.c'],
 ]
 
 foreach t : tests_lib
