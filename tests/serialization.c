@@ -1,10 +1,10 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <arpa/inet.h>
 #include <assert.h>
-#include "proto/serialization.h"
-
 #include <stdio.h>
 #include <string.h>
+#include "proto/serialization.h"
+
 int main ()
 {
     union u32 ul = {0x11223344};
