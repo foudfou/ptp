@@ -61,6 +61,9 @@ int log_stream_setlogmask(int mask)
   return oldmask;
 }
 
+/**
+ * Messages over LOG_MSG_LEN are truncated.
+ */
 void log_stream_msg(int prio, const char *fmt, ...)
 {
   if (!(LOG_MASK(prio) & log_ctx.fmask))
@@ -69,16 +72,20 @@ void log_stream_msg(int prio, const char *fmt, ...)
   char time[LOG_MSG_PREFIX_LEN] = {0};
   log_time(time);
 
-  char buf[LOG_MSG_LEN+1] = {0};
+  char buf[LOG_MSG_LEN] = {0};
   va_list arglist;
   va_start(arglist, fmt);
   int written = snprintf(buf, LOG_MSG_LEN, "%s [%s] ", time,
                          log_level_prefix(prio));
+  /* From vsnprintf(3): a return value of size or more means that the output
+     was truncated. */
   written += vsnprintf(buf + written, LOG_MSG_LEN - written, fmt, arglist);
-  buf[written]    = '\n';
-  buf[LOG_MSG_LEN] = '\0';
   va_end(arglist);
 
+  size_t nl_pos = written < LOG_MSG_LEN ? written : LOG_MSG_LEN - 1;
+  buf[nl_pos] = '\n';
+
+  /* The ending '\0' will be added by the receiving end. */
   if (mq_send(log_ctx.mqw, buf, LOG_MSG_LEN, 0) < 0)
       perror("mq_send log_mq");
 }
@@ -96,14 +103,14 @@ void log_debug_hex(const char buf[], const size_t len)
     for (size_t i = 0; i < len; i++)
         sprintf(hex + 2*i, "%02x", buf[i]); // no format string vuln
     hex[2*len] = '\0';
-    log_debug("input: %s", hex);
+    log_debug("%s", hex);
 }
 
 void *log_queue_consumer(void *data)
 {
     (void)data;
 
-    char buf[LOG_MSG_LEN + 1];
+    char buf[LOG_MSG_LEN+1];
     int must_stop = 0;
 
     do {
