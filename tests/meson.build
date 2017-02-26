@@ -9,11 +9,14 @@ tests_lib = [
     ['rbtree', 'rbtree.c'],
     ['aatree', 'aatree.c'],
     ['serialization', 'serialization.c'],
+    ['kad', 'kad.c'],
 ]
 
 foreach t : tests_lib
   exe = executable(t.get(0), t.get(1),
                    include_directories : inc,
+                   # propagated for inclusion of .c files in tests.
+                   c_args : lib_cargs,
                    link_with : lib_exe,
   )
   test(t.get(0), exe)

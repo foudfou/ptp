@@ -16,6 +16,7 @@
 #include "config.h"
 #include "log.h"
 #include "signals.h"
+#include "proto/kad.h"
 #include "proto/msg.h"
 #include "server.h"
 
@@ -407,6 +408,8 @@ static int pollfds_update(struct pollfd fds[], struct list_item *peer_list)
  */
 void server_run(const struct config *conf)
 {
+    kad_guid node_id = kad_init();
+
     int sock = server_init(conf->bind_addr, conf->bind_port);
     if (sock < 0) {
         log_fatal("Could not start server. Aborting.");
