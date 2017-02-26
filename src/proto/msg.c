@@ -4,7 +4,6 @@
 #include <string.h>
 #include "config.h"
 #include "log.h"
-#include "utils/safe.h"
 #include "proto/msg.h"
 
 void proto_msg_parser_init(struct proto_msg_parser *parser)
@@ -19,7 +18,7 @@ void proto_msg_parser_init(struct proto_msg_parser *parser)
 
 void proto_msg_parser_terminate(struct proto_msg_parser *parser)
 {
-    safe_free(parser->msg_data.buf);
+    iobuf_reset(&parser->msg_data);
 }
 
 const char *proto_msg_type_get_name(const enum proto_msg_type typ)
@@ -110,25 +109,10 @@ bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const si
         }
 
         case PROTO_MSG_STAGE_DATA: {
-            size_t data_len = len - offset;
-
-            log_debug("  msg_data_pos=%zu, data_len=%zu, msg_data size=%zu",
-                      parser->msg_data.pos, data_len,
-                      parser->msg_data.nchunks * PROTO_IO_CHUNK);
-            if ((parser->msg_data.pos + data_len >
-                 parser->msg_data.nchunks * PROTO_IO_CHUNK)
-                && !iobuf_grow(&parser->msg_data)) {
+            if (!iobuf_append(&parser->msg_data, buf + offset, len - offset)) {
                 proto_msg_parser_terminate(parser);
                 return false;
             }
-            log_debug("  msg_data_pos=%zu, data_len=%zu, msg_data size=%zu",
-                      parser->msg_data.pos, data_len,
-                      parser->msg_data.nchunks * PROTO_IO_CHUNK);
-
-            memcpy(parser->msg_data.buf + parser->msg_data.pos, buf + offset,
-                   data_len);
-            parser->msg_data.pos += data_len;
-            log_debug_hex(parser->msg_data.buf, parser->msg_data.pos);
 
             /* We check for the length of actually received data after having
                copied it for fear of losing some. */
