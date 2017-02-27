@@ -3,9 +3,9 @@
 #include <stddef.h>
 #include <string.h>
 #include <sys/types.h>
-#include "safe.h"
+#include "safer.h"
 
-bool safe_strcpy(char *dst, const char *src, size_t size)
+bool strcpy_safer(char *dst, const char *src, size_t size)
 {
     if (strlen(src) + 1 > size)
         return false;

@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include "log.h"
 #include "utils/cont.h"
-#include "utils/safe.h"
+#include "utils/safer.h"
 #include "proto/kad.h"
 
 kad_guid kad_generate_id()
@@ -53,10 +53,10 @@ void kad_shutdown(struct kad_ctx * ctx)
             struct kad_node *node =
                 cont(bucket.prev, struct kad_node, item);
             list_delete(bucket.prev);
-            safe_free(node);
+            free_safer(node);
         }
     }
-    safe_free(ctx);
+    free_safer(ctx);
 }
 
 static inline size_t kad_bucket_count(const struct list_item *bucket)
@@ -185,6 +185,6 @@ bool kad_node_delete(struct kad_ctx *ctx, const kad_guid node_id)
     }
 
     list_delete(&node->item);
-    safe_free(node);
+    free_safer(node);
     return true;
 }

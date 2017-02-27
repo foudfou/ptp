@@ -18,7 +18,7 @@ lib_sources = [
     'proto/serialization.c',
     'server.c',
     'signals.c',
-    'utils/safe.c',
+    'utils/safer.c',
 ]
 
 cc = meson.get_compiler('c')

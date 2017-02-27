@@ -12,7 +12,7 @@
 #include "utils/bits.h"
 #include "utils/cont.h"
 #include "utils/list.h"
-#include "utils/safe.h"
+#include "utils/safer.h"
 #include "config.h"
 #include "log.h"
 #include "signals.h"
@@ -208,7 +208,7 @@ static void peer_unregister(struct peer *peer)
     log_debug("Unregistering peer [%s]:%s.", peer->host, peer->service);
     proto_msg_parser_terminate(&peer->parser);
     list_delete(&peer->item);
-    safe_free(peer);
+    free_safer(peer);
 }
 
 static bool peer_msg_send(const struct peer *peer, enum proto_msg_type typ,

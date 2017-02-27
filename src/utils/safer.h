@@ -1,16 +1,16 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#ifndef SAFE_H
-#define SAFE_H
+#ifndef SAFER_H
+#define SAFER_H
 
 #include <stdbool.h>
 #include <stdlib.h>
 
-#define safe_free(p) do {                       \
+#define free_safer(p) do {                      \
         free(p);                                \
         p = NULL;                               \
     } while(0)
 
-#define safe_fclose(fid) do {                   \
+#define fclose_safer(fid) do {                  \
         fclose(fid);                            \
         fid = NULL;                             \
     } while(0)
@@ -23,6 +23,6 @@
     void assert_compilation(char x[1 - (!(isTrue))])
 
 // http://blog.liw.fi/posts/strncpy/
-bool safe_strcpy(char *dst, const char *src, size_t size);
+bool strcpy_safer(char *dst, const char *src, size_t size);
 
-#endif /* SAFE_H */
+#endif /* SAFER_H */

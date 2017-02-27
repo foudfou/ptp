@@ -2,7 +2,7 @@
 #include <errno.h>
 #include <string.h>
 #include "log.h"
-#include "utils/safe.h"
+#include "utils/safer.h"
 #include "proto/iobuf.h"
 
 /**
@@ -37,7 +37,7 @@ static bool iobuf_grow(struct iobuf *buf, const size_t len)
 
 void iobuf_reset(struct iobuf *buf)
 {
-    safe_free(buf->buf);
+    free_safer(buf->buf);
     buf->pos  = 0;
     buf->capa = 0;
 }

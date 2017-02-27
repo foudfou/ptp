@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/resource.h>
-#include "utils/safe.h"
+#include "utils/safer.h"
 #include "options.h"
 #include "config.h"
 
@@ -59,7 +59,7 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
 
         switch (c) {
         case 'a':
-            if (!safe_strcpy(conf->bind_addr, optarg, NI_MAXHOST)) {
+            if (!strcpy_safer(conf->bind_addr, optarg, NI_MAXHOST)) {
                 fprintf(stderr, "Wrong value for --listen.\n");
                 return 1;
             }
@@ -106,7 +106,7 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
             break;
 
         case 'p':
-            if (!safe_strcpy(conf->bind_port, optarg, NI_MAXSERV)) {
+            if (!strcpy_safer(conf->bind_port, optarg, NI_MAXSERV)) {
                 fprintf(stderr, "Wrong value for --port.\n");
                 return 1;
             }
