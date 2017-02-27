@@ -105,7 +105,7 @@ static int server_init(const char bind_addr[], const char bind_port[])
     struct addrinfo hints, *addrs;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_socktype = SOCK_STREAM; // FIXME: UDP!
     hints.ai_flags    = AI_PASSIVE;
     if (getaddrinfo(bind_addr, bind_port, &hints, &addrs)) {
         log_perror("Failed getaddrinfo: %s.", errno);
@@ -320,7 +320,7 @@ static int peer_conn_close_all(struct list_item *peers)
     return fail;
 }
 
-static int peer_conn_handle_data(struct peer *peer)
+static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *dht)
 {
     enum conn_ret ret = CONN_OK;
 
@@ -371,6 +371,35 @@ static int peer_conn_handle_data(struct peer *peer)
         log_info("Got msg %s from peer [%s]:%s.",
                  proto_msg_type_get_name(peer->parser.msg_type),
                  peer->host, peer->service);
+        // FIXME: how to link peer/kad_node ?
+
+        const kad_guid node_id = {0}; // FIXME: extract from message.
+        int rv = kad_node_update(dht, node_id);
+        if (rv < 0) {
+            log_error("Failed to update kad_node (id=%"PRIx64").", node_id);
+            goto end;
+        }
+        else if (rv > 0) { // insert needed
+            struct kad_node *least_recent = kad_node_can_insert(dht, node_id);
+            if (!least_recent) {
+                if (!kad_node_insert(dht, node_id, peer->host, peer->service)) {
+                    log_error("Failed to insert kad_node (id=%"PRIx64").",
+                              node_id);
+                    goto end;
+                }
+            }
+            else {
+
+                /* peer_msg_send(PING, ...); */
+                /* FIXME: record PING for later insert... */
+
+            }
+        }
+        else {
+            // bucket updated, nothing to do.
+        }
+
+        // TODO: call handlers here.
     }
 
   end:
@@ -408,7 +437,7 @@ static int pollfds_update(struct pollfd fds[], struct list_item *peer_list)
  */
 void server_run(const struct config *conf)
 {
-    kad_guid node_id = kad_init();
+    struct kad_ctx *dht = kad_init();
 
     int sock = server_init(conf->bind_addr, conf->bind_port);
     if (sock < 0) {
@@ -474,7 +503,8 @@ void server_run(const struct config *conf)
                 break;
             }
 
-            if (peer_conn_handle_data(p) == CONN_CLOSED && !peer_conn_close(p)) {
+            if (peer_conn_handle_data(p, dht) == CONN_CLOSED &&
+                !peer_conn_close(p)) {
                 log_fatal("Could not close connection of peer fd=%d.", fds[i].fd);
                 server_end = true;
                 break;
