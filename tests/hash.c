@@ -9,13 +9,13 @@ static const unsigned int KEY_MAX_LENGTH = 1024;
 
 /*  Define a hash type. */
 struct stoi {
-    struct list_item item;
+    struct list_item  item;
     const char       *key;
-    int              val;
+    int               val;
 };
 
 /* We MUST provide our own hash function. See hash.h.
- * Here is djb2 reported by Dan Bernstein in comp.lang.c */
+   Here is djb2 reported by Dan Bernstein in comp.lang.c. */
 static inline uint32_t stoi_hash(const char *str)
 {
     unsigned long hash = 5381;
