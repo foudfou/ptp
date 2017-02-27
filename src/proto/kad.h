@@ -4,11 +4,13 @@
 #include "proto/serialization.h"
 
 /* #define KAD_GUID_SPACE 64 */
+/* #define KAD_K_CONST    8 */
 
 /* typedef union u64 kad_guid; */
 
 /* TESTING: BEGIN */
 #define KAD_GUID_SPACE 4
+#define KAD_K_CONST    2
 
 struct uint4 {
     uint8_t hi : 4;

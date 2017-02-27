@@ -4,14 +4,14 @@
 
 int main ()
 {
-    size_t bkt_idx = kad_node_id_to_bucket(
-        (kad_guid){.dd = 0x0}, (kad_guid){.dd = 0x1}, KAD_GUID_SPACE);
+    size_t bkt_idx = kad_buckets_hash(
+        (kad_guid){.dd = 0x0}, (kad_guid){.dd = 0x1});
     assert(bkt_idx == 0);
-    bkt_idx = kad_node_id_to_bucket(
-        (kad_guid){.dd = 0x1}, (kad_guid){.dd = 0x1}, KAD_GUID_SPACE);
+    bkt_idx = kad_buckets_hash(
+        (kad_guid){.dd = 0x1}, (kad_guid){.dd = 0x1});
     assert(bkt_idx == 0);
-    bkt_idx = kad_node_id_to_bucket(
-        (kad_guid){.dd = 0x8}, (kad_guid){.dd = 0x1}, KAD_GUID_SPACE);
+    bkt_idx = kad_buckets_hash(
+        (kad_guid){.dd = 0x8}, (kad_guid){.dd = 0x1});
     assert(bkt_idx == 3);
 
 

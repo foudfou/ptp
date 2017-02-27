@@ -7,8 +7,10 @@
  * distance in the tree.
  */
 #include <stdlib.h>
-#include <time.h>
+#include <sys/time.h>
+#include <unistd.h>
 #include "log.h"
+#include "utils/list.h"
 #include "proto/kad.h"
 
 /* [Kademlia] For each 0 ≤ i < 160, every node keeps a list of (IP address, UDP
@@ -20,25 +22,31 @@ bucket 1 has nodes of distance 2..4
 bucket 2 has nodes of distance 4..8
 bucket 3 has nodes of distance 8..16
 Each bucket will hold up to k active nodes. */
-static size_t kad_node_id_to_bucket(kad_guid self_id, kad_guid peer_id,
-                                    size_t kad_routes_len)
+static size_t kad_buckets_hash(kad_guid self_id, kad_guid peer_id)
 {
     kad_guid dist = { .dd = self_id.dd ^ peer_id.dd };
     size_t bucket_idx = 0;
-    while (bucket_idx < kad_routes_len && dist.dd >= (1 << (bucket_idx + 1)))
+    while (bucket_idx < KAD_GUID_SPACE && dist.dd >= (1ULL << (bucket_idx + 1)))
         bucket_idx++;
     return bucket_idx;
 }
 
 kad_guid kad_init()
 {
-    srandom(time(NULL));
+    struct timeval time;
+    gettimeofday(&time, NULL);
+    srandom(((time.tv_sec * 1000) + (time.tv_usec / 1000)) * getpid());
+
     /* Although the node_id should be assigned by the network, it seems a
        common practice to have peers generate a random id themselves. */
     kad_guid node_id = kad_generate_id();
     log_debug("node_id=%"PRIx64, node_id.dd);
 
-    kad_guid kad_routes[KAD_GUID_SPACE];
+    /* The routing table is implemented as hash table: an array of lists of at
+       most KAD_K_CONST (buckets). Instead of using a generic hash table
+       implementation, we build a specialized one for specific operations on
+       each list. */
+    struct list_item kad_buckets[KAD_GUID_SPACE];
 
     return node_id;
 }
