@@ -47,14 +47,16 @@ static inline void list_insert(struct list_item* at, struct list_item* new)
 /**
  * Insert an item at the beginning of a list.
  */
-static inline void list_prepend(struct list_item* list, struct list_item* item) {
+static inline void list_prepend(struct list_item* list, struct list_item* item)
+{
     list_insert(list->next, item);
 }
 
 /**
  * Insert an item at the end of a list.
  */
-static inline void list_append(struct list_item* list, struct list_item* item) {
+static inline void list_append(struct list_item* list, struct list_item* item)
+{
     list_insert(list, item);
 }
 
