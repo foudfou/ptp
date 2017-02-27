@@ -7,20 +7,31 @@
 
 /**
  * For now, we only grow the buffer. But we could also iobuf_resize() instead.
+ *
+ * There might be relunctance using realloc(3)
+ * (http://www.iso-9899.info/wiki/Why_not_realloc) although it's quite
+ * efficient actually
+ * (http://blog.httrack.com/blog/2014/04/05/a-story-of-realloc-and-laziness/).
  */
-static bool iobuf_grow(struct iobuf *buf)
+static bool iobuf_grow(struct iobuf *buf, const size_t len)
 {
+    size_t needed = buf->pos + len;
+
     size_t capa = buf->capa;
     if (capa < IOBUF_SIZE_INITIAL)
         capa = IOBUF_SIZE_INITIAL;
-    else
+
+    while (capa < needed)
         capa *= IOBUF_SIZE_FACTOR;
-    buf->buf = realloc(buf->buf, capa);
-    if (!buf->buf) {
+
+    void *realloced = realloc(buf->buf, capa);
+    if (!realloced) {
         log_perror("Failed realloc: %s.", errno);
         return false;
     }
+    buf->buf = realloced;
     buf->capa = capa;
+
     return true;
 }
 
@@ -34,7 +45,7 @@ void iobuf_reset(struct iobuf *buf)
 bool iobuf_append(struct iobuf *buf, const char *data, const size_t len)
 {
     log_debug("  buf_pos=%zu, len=%zu, capa=%zu", buf->pos, len, buf->capa);
-    if ((buf->pos + len > buf->capa) && !iobuf_grow(buf))
+    if ((buf->pos + len > buf->capa) && !iobuf_grow(buf, len))
         return false;
     log_debug("  buf_pos=%zu, len=%zu, capa=%zu", buf->pos, len, buf->capa);
 
