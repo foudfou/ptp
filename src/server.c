@@ -21,11 +21,17 @@
 #include "server.h"
 
 // FIXME: low for testing purpose.
-#define SERVER_BUFLEN 10
+#define SERVER_TCP_BUFLEN 10
+#define SERVER_UDP_BUFLEN 1400
 #define POLL_EVENTS POLLIN|POLLPRI
 
 enum conn_ret {CONN_OK, CONN_CLOSED};
 
+/**
+ * A "peer" is a client/server listening on a TCP port that implements some
+ * specific protocol (msg). A "node" is a client/server listening on a UDP port
+ * implementing the distributed hash table protocol (kad).
+ */
 struct peer {
     struct list_item        item;
     int                     fd;
@@ -97,15 +103,20 @@ static int server_sock_setopts(int sock, const int family) {
 /**
  * Returns the listening socket fd, or -1 if failure.
  */
-static int server_init(const char bind_addr[], const char bind_port[])
+static int
+socket_init(const int socktype, const char bind_addr[], const char bind_port[])
 {
-    int listendfd = -1;
+    int sockfd = -1;
+    if (socktype != SOCK_STREAM && socktype != SOCK_DGRAM) {
+        log_error("Server init with unsupported socket type.");
+        return sockfd;
+    }
 
     // getaddrinfo for host
     struct addrinfo hints, *addrs;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family   = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM; // FIXME: UDP!
+    hints.ai_socktype = socktype;
     hints.ai_flags    = AI_PASSIVE;
     if (getaddrinfo(bind_addr, bind_port, &hints, &addrs)) {
         log_perror("Failed getaddrinfo: %s.", errno);
@@ -115,20 +126,20 @@ static int server_init(const char bind_addr[], const char bind_port[])
     // socket and bind
     struct addrinfo *it;
     for (it = addrs; it; it=it->ai_next) {
-        listendfd = socket(it->ai_family, it->ai_socktype, it->ai_protocol);
-        if (listendfd == -1)
+        sockfd = socket(it->ai_family, it->ai_socktype, it->ai_protocol);
+        if (sockfd == -1)
             continue;
 
-        if (server_sock_setopts(listendfd, it->ai_family))
+        if (server_sock_setopts(sockfd, it->ai_family))
             return -1;
 
-        if (server_sock_setnonblock(listendfd))
+        if (server_sock_setnonblock(sockfd))
             return -1;
 
-        if (bind(listendfd, it->ai_addr, it->ai_addrlen) == 0)
+        if (bind(sockfd, it->ai_addr, it->ai_addrlen) == 0)
             break;
 
-        sock_close(listendfd);
+        sock_close(sockfd);
     }
 
     if (!it) {
@@ -138,19 +149,19 @@ static int server_init(const char bind_addr[], const char bind_port[])
 
     freeaddrinfo(addrs);
 
-    if (listen(listendfd, 32)) {
+    if (socktype == SOCK_STREAM && listen(sockfd, 32)) {
         log_perror("Failed listen: %s.", errno);
         return -1;
     }
 
-    return listendfd;
+    return sockfd;
 }
 
-static bool server_shutdown(int sock)
+static bool socket_shutdown(int sock)
 {
     if (!sock_close(sock))
         return false;
-    log_info("Stopping server.");
+    log_info("Socket closed.");
     return true;
 }
 
@@ -324,9 +335,9 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *dht)
 {
     enum conn_ret ret = CONN_OK;
 
-    char buf[SERVER_BUFLEN];
-    memset(buf, 0, SERVER_BUFLEN);
-    ssize_t slen = recv(peer->fd, buf, SERVER_BUFLEN, 0);
+    char buf[SERVER_TCP_BUFLEN];
+    memset(buf, 0, SERVER_TCP_BUFLEN);
+    ssize_t slen = recv(peer->fd, buf, SERVER_TCP_BUFLEN, 0);
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
             log_perror("Failed recv: %s", errno);
@@ -371,45 +382,63 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *dht)
         log_info("Got msg %s from peer [%s]:%s.",
                  proto_msg_type_get_name(peer->parser.msg_type),
                  peer->host, peer->service);
-        // FIXME: how to link peer/kad_node ?
-
-        const kad_guid node_id = {0}; // FIXME: extract from message.
-        int rv = kad_node_update(dht, node_id);
-        if (rv < 0) {
-            log_error("Failed to update kad_node (id=%"PRIx64").", node_id);
-            goto end;
-        }
-        else if (rv > 0) { // insert needed
-            struct kad_node *least_recent = kad_node_can_insert(dht, node_id);
-            if (!least_recent) {
-                if (!kad_node_insert(dht, node_id, peer->host, peer->service)) {
-                    log_error("Failed to insert kad_node (id=%"PRIx64").",
-                              node_id);
-                    goto end;
-                }
-            }
-            else {
-
-                /* peer_msg_send(PING, ...); */
-                /* FIXME: record PING for later insert... */
-
-            }
-        }
-        else {
-            // bucket updated, nothing to do.
-        }
-
-        // TODO: call handlers here.
+        // TODO: call tcp handlers here.
     }
 
   end:
     return ret;
 }
 
-static int pollfds_update(struct pollfd fds[], struct list_item *peer_list)
+static bool node_handle_data(int sock, struct kad_ctx *dht)
+{
+    char buf[SERVER_UDP_BUFLEN];
+    memset(buf, 0, SERVER_UDP_BUFLEN);
+    struct sockaddr_storage node_addr;
+    socklen_t node_addr_len = sizeof(struct sockaddr_storage);
+    ssize_t slen = recvfrom(sock, buf, SERVER_UDP_BUFLEN, 0,
+                            (struct sockaddr *)&node_addr, &node_addr_len);
+    if (slen < 0) {
+        if (errno != EWOULDBLOCK) {
+            log_perror("Failed recv: %s", errno);
+            return false;
+        }
+        goto end;
+    }
+    log_debug("Received %d bytes.", slen);
+
+    /* const kad_guid node_id = {0}; // FIXME: extract from message. */
+    /* int rv = kad_node_update(dht, node_id); */
+    /* if (rv < 0) { */
+    /*     log_error("Failed to update kad_node (id=%"PRIx64").", node_id); */
+    /*     goto end; */
+    /* } */
+    /* else if (rv > 0) { // insert needed */
+    /*     struct kad_node *least_recent = kad_node_can_insert(dht, node_id); */
+    /*     if (!least_recent) { */
+    /*         if (!kad_node_insert(dht, node_id, node->host, node->service)) { */
+    /*             log_error("Failed to insert kad_node (id=%"PRIx64").", */
+    /*                       node_id); */
+    /*             goto end; */
+    /*         } */
+    /*     } */
+    /*     else { */
+    /*         /\* kad_node_send(PING, ...); *\/ */
+    /*         /\* kad_node_recv(with_timeout, ...); *\/ */
+    /*     } */
+    /* } */
+    /* else { */
+    /*     // bucket updated, nothing to do. */
+    /* } */
+
+  end:
+    return true;
+}
+
+static int pollfds_update(struct pollfd fds[], const int nlisten,
+                          struct list_item *peer_list)
 {
     struct list_item * it = peer_list;
-    int npeer = 1;
+    int npeer = nlisten;
     list_for(it, peer_list) {
         struct peer *p = cont(it, struct peer, item);
         fds[npeer].fd = p->fd;
@@ -437,21 +466,29 @@ static int pollfds_update(struct pollfd fds[], struct list_item *peer_list)
  */
 void server_run(const struct config *conf)
 {
-    struct kad_ctx *dht = kad_init();
-
-    int sock = server_init(conf->bind_addr, conf->bind_port);
-    if (sock < 0) {
-        log_fatal("Could not start server. Aborting.");
+    int sock_tcp = socket_init(SOCK_STREAM, conf->bind_addr, conf->bind_port);
+    if (sock_tcp < 0) {
+        log_fatal("Failed to start tcp socket. Aborting.");
         return;
     }
-    log_info("Server started and listening on [%s]:%s.",
+    int sock_udp = socket_init(SOCK_DGRAM, conf->bind_addr, conf->bind_port);
+    if (sock_udp < 0) {
+        log_fatal("Could to start udp socket. Aborting.");
+        return;
+    }
+    log_info("Server started. Listening on [%s]:%s tcp and udp.",
              conf->bind_addr, conf->bind_port);
 
-    struct pollfd fds[conf->max_peers];
+    struct kad_ctx *dht = kad_init();
+
+    int nlisten = 2;
+    struct pollfd fds[nlisten+conf->max_peers];
     memset(fds, 0, sizeof(fds));
-    int nfds = 1;
-    fds[0].fd = sock;
+    fds[0].fd = sock_udp;
     fds[0].events = POLL_EVENTS;
+    fds[1].fd = sock_tcp;
+    fds[1].events = POLL_EVENTS;
+    int nfds = nlisten;
     struct list_item peer_list = LIST_ITEM_INIT(peer_list);
 
     bool server_end = false;
@@ -484,8 +521,13 @@ void server_run(const struct config *conf)
                 break;
             }
 
-            if (fds[i].fd == sock) {
-                if (peer_conn_accept_all(sock, &peer_list, nfds, conf) >= 0)
+            if (fds[i].fd == sock_udp) {
+                node_handle_data(sock_udp, dht);
+                continue;
+            }
+
+            if (fds[i].fd == sock_tcp) {
+                if (peer_conn_accept_all(sock_tcp, &peer_list, nfds, conf) >= 0)
                     continue;
                 else {
                     server_end = true;
@@ -512,10 +554,13 @@ void server_run(const struct config *conf)
 
         } /* End loop poll fds */
 
-        nfds = pollfds_update(fds, &peer_list);
+        nfds = pollfds_update(fds, nlisten, &peer_list);
 
     } while (!server_end);
 
     peer_conn_close_all(&peer_list);
-    server_shutdown(sock);
+
+    socket_shutdown(sock_tcp);
+    socket_shutdown(sock_udp);
+    log_info("Server stopped.");
 }
