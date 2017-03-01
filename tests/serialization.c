@@ -3,7 +3,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
-#include "proto/serialization.h"
+#include "net/serialization.h"
 
 int main ()
 {

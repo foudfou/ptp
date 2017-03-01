@@ -16,8 +16,8 @@
 #include "config.h"
 #include "log.h"
 #include "signals.h"
-#include "proto/kad.h"
-#include "proto/msg.h"
+#include "net/kad.h"
+#include "net/msg.h"
 #include "server.h"
 
 // FIXME: low for testing purpose.

@@ -4,7 +4,7 @@
 #include <string.h>
 #include "config.h"
 #include "log.h"
-#include "proto/msg.h"
+#include "net/msg.h"
 
 void proto_msg_parser_init(struct proto_msg_parser *parser)
 {

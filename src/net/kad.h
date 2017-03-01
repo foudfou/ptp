@@ -4,7 +4,7 @@
 #include <netdb.h>
 #include <time.h>
 #include "utils/list.h"
-#include "proto/serialization.h"
+#include "net/serialization.h"
 
 /* #define KAD_GUID_SPACE 64 */
 /* #define KAD_K_CONST    8 */

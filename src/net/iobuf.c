@@ -2,8 +2,8 @@
 #include <errno.h>
 #include <string.h>
 #include "log.h"
+#include "net/iobuf.h"
 #include "utils/safer.h"
-#include "proto/iobuf.h"
 
 /**
  * For now, we only grow the buffer. But we could also iobuf_resize() instead.
