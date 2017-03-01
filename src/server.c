@@ -86,7 +86,7 @@ static int server_sock_setnonblock(int sock) {
     return 0;
 }
 
-static int server_sock_setopts(int sock, const int family) {
+static int server_sock_setopts(int sock, const int family, const int socktype) {
     const int so_false = 0, so_true = 1;
     if ((setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&so_true,
                    sizeof(so_true)) < 0) ||
@@ -95,6 +95,14 @@ static int server_sock_setopts(int sock, const int family) {
                    sizeof(so_true)) < 0)) {
         log_perror("Failed setsockopt: %s.", errno);
         return errno;
+    }
+
+    if (socktype == SOCK_DGRAM) {
+        int n = 1024 * 1024;
+        setsockopt(sock, SOL_SOCKET, SO_RCVBUF, &n, sizeof(n));
+        socklen_t len = sizeof(n);
+        if (getsockopt(sock, SOL_SOCKET, SO_RCVBUF, &n, &len) != -1)
+            log_debug("UDP socket SO_RCVBUF=%d", n);
     }
 
     return 0;
@@ -130,7 +138,7 @@ socket_init(const int socktype, const char bind_addr[], const char bind_port[])
         if (sockfd == -1)
             continue;
 
-        if (server_sock_setopts(sockfd, it->ai_family))
+        if (server_sock_setopts(sockfd, it->ai_family, it->ai_socktype))
             return -1;
 
         if (server_sock_setnonblock(sockfd))
