@@ -11,7 +11,7 @@
 #include "log.h"
 
 #define LOG_QUEUE_NAME     "/" PACKAGE_NAME "_log"
-#define MSG_STOP           "/exit"
+#define LOG_MSG_STOP           "##exit"
 #define LOG_MSG_PREFIX_LEN 56
 
 static struct log_ctx_t {
@@ -120,7 +120,7 @@ void *log_queue_consumer(void *data)
         }
 
         buf[bytes_read] = '\0';
-        if (!strncmp(buf, MSG_STOP, strlen(MSG_STOP)))
+        if (!strncmp(buf, LOG_MSG_STOP, strlen(LOG_MSG_STOP)))
             must_stop = 1;
         else
             fputs(buf, log_ctx.flog);
@@ -142,7 +142,7 @@ bool log_queue_shutdown()
 
     char buf[LOG_MSG_LEN + 1];
     memset(buf, 0, LOG_MSG_LEN + 1);
-    strcpy(buf, MSG_STOP);
+    strcpy(buf, LOG_MSG_STOP);
     if (mq_send(log_ctx.mqw, buf, LOG_MSG_LEN, 0) < 0)
         perror("mq_send STOP");
 

@@ -26,5 +26,5 @@ int main(int argc, char *argv[])
 
     log_shutdown(conf.logtype);
 
-    return 0;
+    return EXIT_SUCCESS;
 }
