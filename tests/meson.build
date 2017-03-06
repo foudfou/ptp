@@ -10,6 +10,7 @@ tests_lib = [
     ['aatree', 'aatree.c'],
     ['serialization', 'serialization.c'],
     ['kad', 'kad.c'],
+    ['kad_rpc', 'kad_rpc.c'],
 ]
 
 foreach t : tests_lib

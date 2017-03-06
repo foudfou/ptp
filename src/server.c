@@ -17,6 +17,7 @@
 #include "log.h"
 #include "signals.h"
 #include "net/kad.h"
+#include "net/kad_rpc.h"
 #include "net/msg.h"
 #include "server.h"
 
@@ -413,6 +414,17 @@ static bool node_handle_data(int sock, struct kad_ctx *dht)
         goto end;
     }
     log_debug("Received %d bytes.", slen);
+
+    char host[NI_MAXHOST], service[NI_MAXSERV];
+    int rv = getnameinfo((struct sockaddr *) &node_addr, node_addr_len,
+                         host, NI_MAXHOST, service, NI_MAXSERV,
+                         NI_NUMERICHOST | NI_NUMERICSERV);
+    if (rv) {
+        log_error("Failed to getnameinfo: %s.", gai_strerror(rv));
+        return false;
+    }
+
+    kad_rpc_parse(host, service, buf, (size_t)slen);
 
     /* const kad_guid node_id = {0}; // FIXME: extract from message. */
     /* int rv = kad_node_update(dht, node_id); */

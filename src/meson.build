@@ -13,6 +13,7 @@ lib_sources = [
     'log.c',
     'net/iobuf.c',
     'net/kad.c',
+    'net/kad_rpc.c',
     'net/msg.c',
     'net/serialization.c',
     'options.c',
