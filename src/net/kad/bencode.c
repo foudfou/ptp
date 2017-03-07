@@ -1,14 +1,11 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <ctype.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include "log.h"
 #include "net/kad/bencode.h"
 
 #define BENC_PARSER_STACK_MAX    32
-#define BENC_PARSER_ERR_MSG_MAX 256
-#define BENC_PARSER_STR_MAX     256
 
 #define POINTER_OFFSET(beg, end) (((end) - (beg)) / sizeof(*beg))
 
@@ -39,9 +36,10 @@ struct benc_parser {
     const char     *cur;        /* pointer to current char in buffer */
     const char     *end;        /* pointer to end of buffer */
     bool            err;
-    char            err_msg[BENC_PARSER_ERR_MSG_MAX];
+    char            err_msg[KAD_RPC_STR_MAX];
     enum benc_mark  stack[BENC_PARSER_STACK_MAX];
     size_t          stack_off;
+    enum kad_rpc_msg_field msg_field;
 };
 
 enum benc_val_type {
@@ -58,7 +56,7 @@ struct benc_val {
         long long      i;
         struct {
             /* TODO: use an iobuf instead ? */
-            char       p[BENC_PARSER_STR_MAX];
+            char       p[KAD_RPC_STR_MAX];
             size_t     len;
         } s;
     };
@@ -124,7 +122,7 @@ static bool benc_parse_str(struct benc_parser *p, struct benc_val *val)
     }
     while (*p->cur != ':');
 
-    if (val->s.len > BENC_PARSER_STR_MAX) {
+    if (val->s.len > KAD_RPC_STR_MAX) {
             sprintf(p->err_msg, "String too long at %zu.",
                     (size_t)POINTER_OFFSET(p->beg, p->cur));
             p->err = true;
@@ -188,18 +186,20 @@ static bool benc_stack_pop(struct benc_parser *p, size_t n)
  *
  * "e" list: error code (int), error msg (str).
  */
-static bool benc_msg_put(struct kad_rpc_msg *msg, const struct benc_val *val,
-                         const enum benc_cont emit)
+static bool benc_msg_put(struct benc_parser *p, const enum benc_cont emit,
+                         struct kad_rpc_msg *msg, const struct benc_val *val)
 {
     (void)msg; // FIXME:
 
     switch (emit) {
     case BENC_CONT_DICT_KEY: {
         log_debug("dict_key: %.*s", val->s.len, val->s.p);
+        p->msg_field = lookup_by_name(kad_rpc_msg_field_names, val->s.p, 1);
         break;
     }
 
     case BENC_CONT_DICT_VAL: {
+// TODO: check p->msg_field
         if (val->t == BENC_VAL_INT)
             log_debug("dict_val int: %lld", val->i);
         else if (val->t == BENC_VAL_STR)
@@ -219,7 +219,13 @@ static bool benc_msg_put(struct kad_rpc_msg *msg, const struct benc_val *val,
         break;
     }
 
+    case BENC_CONT_DICT_START:
+    case BENC_CONT_LIST_START:
+        // ignored
+        break;
+
     default:
+        log_warning("Unsupported value for emit=%d", emit);
         break;
     }
 
@@ -364,7 +370,7 @@ bool benc_decode(struct kad_rpc_msg *msg, const char buf[], const size_t slen)
 
         if (parser.err ||
             !benc_syntax_apply(&parser, &val, mark, &emit) ||
-            !benc_msg_put(msg, &val, emit)) {
+            !benc_msg_put(&parser, emit, msg, &val)) {
             log_error(parser.err_msg);  // TODO: send reply
             ret = false;
             goto cleanup;

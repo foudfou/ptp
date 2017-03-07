@@ -1,9 +1,9 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#include "net/kad/rpc.h"
-
+#include "log.h"
 #include "utils/u64.h"
 #include "net/kad/bencode.h"
 #include "net/kad/rpc.h"
+#include <string.h>
 
 bool kad_rpc_parse(const char host[], const char service[],
                    const char buf[], const size_t slen)

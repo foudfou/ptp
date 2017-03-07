@@ -21,35 +21,6 @@ void proto_msg_parser_terminate(struct proto_msg_parser *parser)
     iobuf_reset(&parser->msg_data);
 }
 
-const char *proto_msg_type_get_name(const enum proto_msg_type typ)
-{
-    const proto_msg_type_name *tok = proto_msg_type_names;
-    while (tok->name) {
-        if (tok->id == typ) break;
-        tok++;
-    }
-    if (!tok->name) {
-        log_error("Unknow message type.");
-        return NULL;
-    }
-    return tok->name;
-}
-
-static bool proto_msg_type_parse(const char buf[], enum proto_msg_type *otyp)
-{
-    const proto_msg_type_name *tok = proto_msg_type_names;
-    while (tok->name) {
-        if (strncmp(tok->name, buf, PROTO_MSG_FIELD_TYPE_LEN) == 0) break;
-        tok++;
-    }
-    if (!tok->name) {
-        log_error("Message type not found.");
-        return false;
-    }
-    *otyp = tok->id;
-    return true;
-}
-
 static void proto_msg_len_parse(const char buf[], size_t pos, union u32 *len)
 {
     memcpy(len->db, buf + pos, PROTO_MSG_FIELD_LENGTH_LEN);
@@ -81,7 +52,9 @@ bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const si
                 break;
             }
 
-            if (!proto_msg_type_parse(buf, &parser->msg_type)) {
+            parser->msg_type = lookup_by_name(proto_msg_type_names, buf,
+                                              PROTO_MSG_FIELD_TYPE_LEN);
+            if (!parser->msg_type) {
                 log_warning("Ignoring further input.");
                 parser->stage = PROTO_MSG_STAGE_ERROR;
                 break;

@@ -14,6 +14,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include "net/iobuf.h"
+#include "utils/misc.h"
 #include "utils/u64.h"
 
 #define PROTO_MSG_FIELD_TYPE_LEN    4
@@ -34,12 +35,7 @@ enum proto_msg_type {
     PROTO_MSG_TYPE_QUERY,
 };
 
-typedef struct {
-    enum proto_msg_type  id;
-    const char          *name;
-} proto_msg_type_name;
-
-static const proto_msg_type_name proto_msg_type_names[] = {
+static const lookup_entry proto_msg_type_names[] = {
     { PROTO_MSG_TYPE_ERROR,  "ERRO" },
     { PROTO_MSG_TYPE_NAME,   "NAME" },
     { PROTO_MSG_TYPE_QUERY,  "QERY" },
@@ -55,7 +51,6 @@ struct proto_msg_parser {
     struct iobuf         msg_data; /* holds only the data field */
 };
 
-const char *proto_msg_type_get_name(const enum proto_msg_type typ);
 
 void proto_msg_parser_init(struct proto_msg_parser *parser);
 void proto_msg_parser_terminate(struct proto_msg_parser *parser);

@@ -7,10 +7,10 @@
  */
 
 #include <stdbool.h>
-#include <stdlib.h>
-
-#include "net/iobuf.h"
 #include "net/kad/dht.h"
+#include "utils/misc.h"
+
+#define KAD_RPC_STR_MAX 256
 
 enum kad_rpc_type {
     KAD_RPC_TYPE_NONE,
@@ -44,10 +44,34 @@ struct kad_rpc_msg {
     kad_guid                 node_id; /* from {a,r} dict: id_str */
     enum kad_rpc_type        type; /* y {q,r,e} */
     unsigned long long       err_code;
-    struct iobuf             err_msg;
+    char                     err_msg[KAD_RPC_STR_MAX];
     enum kad_rpc_type        meth; /* q {"ping","find_node"} */
     kad_guid                 target; /* from {a,r} dict: target, nodes */
     struct kad_rpc_node_info nodes[KAD_K_CONST]; /* from {a,r} dict: target, nodes */
+};
+
+enum kad_rpc_msg_field {
+    KAD_RPC_MSG_FIELD_NONE,
+    KAD_RPC_MSG_FIELD_TX_ID,
+    KAD_RPC_MSG_FIELD_NODE_ID,
+    KAD_RPC_MSG_FIELD_TYPE,
+    KAD_RPC_MSG_FIELD_ERR_CODE,
+    KAD_RPC_MSG_FIELD_ERR_MSG,
+    KAD_RPC_MSG_FIELD_METH,
+    KAD_RPC_MSG_FIELD_TARGET,
+    KAD_RPC_MSG_FIELD_NODES,
+};
+
+static const lookup_entry kad_rpc_msg_field_names[] = {
+    { KAD_RPC_MSG_FIELD_TX_ID,    "t" },
+    { KAD_RPC_MSG_FIELD_NODE_ID,  "id" },
+    { KAD_RPC_MSG_FIELD_TYPE,     "y" },
+    { KAD_RPC_MSG_FIELD_ERR_CODE, "" },
+    { KAD_RPC_MSG_FIELD_ERR_MSG,  "" },
+    { KAD_RPC_MSG_FIELD_METH,     "q" },
+    { KAD_RPC_MSG_FIELD_TARGET,   "target" },
+    { KAD_RPC_MSG_FIELD_NODES,    "nodes" },
+    { 0,                          NULL },
 };
 
 bool kad_rpc_parse(const char host[], const char service[],

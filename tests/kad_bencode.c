@@ -74,17 +74,17 @@ int main ()
     /* slen = strlen(buf); */
     /* assert(!benc_decode(&msg, buf, slen)); */
 
-    // error
+    // error {"t":"aa", "y":"e", "e":[201, "A Generic Error Ocurred"]}
     strcpy(buf, "d1:eli201e23:A Generic Error Ocurrede1:t2:aa1:y1:ee");
     slen = strlen(buf);
     assert(benc_decode(&msg, buf, slen));
 
-    // ping query
+    // ping query {"t":"aa", "y":"q", "q":"ping", "a":{"id":"abcdefghij0123456789"}}
     strcpy(buf, "d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
     slen = strlen(buf);
     assert(benc_decode(&msg, buf, slen));
 
-    // ping response
+    // ping response {"t":"aa", "y":"r", "r": {"id":"mnopqrstuvwxyz123456"}}
     strcpy(buf, "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re");
     slen = strlen(buf);
     assert(benc_decode(&msg, buf, slen));

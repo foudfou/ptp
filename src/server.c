@@ -4,7 +4,6 @@
 #include <netdb.h>
 #include <netinet/in.h>
 #include <poll.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -237,7 +236,7 @@ static bool peer_msg_send(const struct peer *peer, enum proto_msg_type typ,
     size_t buf_len = msg_len.dd + PROTO_MSG_FIELD_TYPE_LEN + PROTO_MSG_FIELD_LENGTH_LEN;
     char buf[buf_len];
     char *bufp = buf;
-    memcpy(bufp, proto_msg_type_get_name(typ), PROTO_MSG_FIELD_LENGTH_LEN);
+    memcpy(bufp, lookup_by_id(proto_msg_type_names, typ), PROTO_MSG_FIELD_LENGTH_LEN);
     bufp += PROTO_MSG_FIELD_TYPE_LEN;
     memcpy(bufp, u32_hton(msg_len).db, PROTO_MSG_FIELD_LENGTH_LEN);
     bufp += PROTO_MSG_FIELD_LENGTH_LEN;
@@ -390,7 +389,7 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *dht)
 
     if (peer->parser.stage == PROTO_MSG_STAGE_NONE) {
         log_info("Got msg %s from peer [%s]:%s.",
-                 proto_msg_type_get_name(peer->parser.msg_type),
+                 lookup_by_id(proto_msg_type_names, peer->parser.msg_type),
                  peer->host, peer->service);
         // TODO: call tcp handlers here.
     }

@@ -19,6 +19,7 @@ lib_sources = [
     'options.c',
     'server.c',
     'signals.c',
+    'utils/misc.c',
     'utils/safer.c',
     'utils/u64.c',
 ]
