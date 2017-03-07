@@ -16,8 +16,8 @@
 #include "config.h"
 #include "log.h"
 #include "signals.h"
-#include "net/kad.h"
-#include "net/kad_rpc.h"
+#include "net/kad/dht.h"
+#include "net/kad/rpc.h"
 #include "net/msg.h"
 #include "server.h"
 

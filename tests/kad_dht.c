@@ -1,6 +1,6 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
-#include "net/kad.c"      // testing static functions
+#include "net/kad/dht.c"      // testing static functions
 
 int main ()
 {

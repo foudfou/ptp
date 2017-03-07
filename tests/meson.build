@@ -9,8 +9,8 @@ tests_lib = [
     ['rbtree', 'rbtree.c'],
     ['aatree', 'aatree.c'],
     ['u64', 'u64.c'],
-    ['kad', 'kad.c'],
-    ['kad_rpc', 'kad_rpc.c'],
+    ['kad_bencode', 'kad_bencode.c'],
+    ['kad_dht', 'kad_dht.c'],
 ]
 
 foreach t : tests_lib

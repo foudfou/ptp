@@ -14,7 +14,7 @@
 #include "log.h"
 #include "utils/cont.h"
 #include "utils/safer.h"
-#include "net/kad.h"
+#include "net/kad/dht.h"
 
 kad_guid kad_generate_id()
 {
