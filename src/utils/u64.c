@@ -1,5 +1,5 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#include "serialization.h"
+#include "u64.h"
 
 union u32 u32_hton(union u32 in)
 {

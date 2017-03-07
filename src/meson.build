@@ -15,11 +15,11 @@ lib_sources = [
     'net/kad.c',
     'net/kad_rpc.c',
     'net/msg.c',
-    'net/serialization.c',
     'options.c',
     'server.c',
     'signals.c',
     'utils/safer.c',
+    'utils/u64.c',
 ]
 
 cc = meson.get_compiler('c')

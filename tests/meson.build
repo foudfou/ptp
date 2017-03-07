@@ -8,7 +8,7 @@ tests_lib = [
     ['bstree', 'bstree.c'],
     ['rbtree', 'rbtree.c'],
     ['aatree', 'aatree.c'],
-    ['serialization', 'serialization.c'],
+    ['u64', 'u64.c'],
     ['kad', 'kad.c'],
     ['kad_rpc', 'kad_rpc.c'],
 ]
