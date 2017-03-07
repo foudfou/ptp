@@ -31,3 +31,4 @@ Don't bother.
 * [FreeBSD](http://www.FreeBSD.org/) bits by Niels Provos
 * [Nadeem Abdul Hamid's P2P Programming Framework](http://cs.berry.edu/~nhamid/p2p/framework-python.html)
 * [Jakob Jenkov's P2P Tutorial](http://tutorials.jenkov.com/p2p/disorganized-network.html)
+* [BitTorrent](http://www.bittorrent.org/beps/bep_0005.html)
