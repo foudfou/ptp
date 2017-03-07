@@ -342,6 +342,7 @@ static int peer_conn_close_all(struct list_item *peers)
 
 static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *dht)
 {
+    (void)dht; // FIXME:
     enum conn_ret ret = CONN_OK;
 
     char buf[SERVER_TCP_BUFLEN];
@@ -400,6 +401,7 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *dht)
 
 static bool node_handle_data(int sock, struct kad_ctx *dht)
 {
+    (void)dht; // FIXME:
     char buf[SERVER_UDP_BUFLEN];
     memset(buf, 0, SERVER_UDP_BUFLEN);
     struct sockaddr_storage node_addr;

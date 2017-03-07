@@ -13,9 +13,9 @@ int main ()
     struct kad_rpc_parser parser;
     kad_rpc_parser_init(&parser, buf, slen);
 
-    long long val;
+    struct kad_rpc_val val;
     assert(kad_rpc_parse_int(&parser, &val));
-    assert(val == -300);
+    assert(val.i == -300);
 
     strcpy(buf, "i3.14e");
     slen = strlen(buf);
@@ -32,27 +32,27 @@ int main ()
     strcpy(buf, "4:spam");
     slen = strlen(buf);
     kad_rpc_parser_init(&parser, buf, slen);
-    char str[KAD_RPC_PARSER_STR_MAX];
-    size_t len = 0;
-    assert(kad_rpc_parse_str(&parser, str, &len));
-    assert(len == 4);
-    assert(strncmp(str, "spam", len) == 0);
+    assert(kad_rpc_parse_str(&parser, &val));
+    assert(val.s.len == 4);
+    assert(strncmp(val.s.p, "spam", val.s.len) == 0);
     assert(*parser.cur == '\0');
     assert(POINTER_OFFSET(parser.beg, parser.cur) == 6);
 
     strcpy(buf, "2:\x11\x22");
     slen = strlen(buf);
     kad_rpc_parser_init(&parser, buf, slen);
-    assert(kad_rpc_parse_str(&parser, str, &len));
-    assert(len == 2);
-    assert(strncmp(str, "\x11\x22", len) == 0);
+    assert(kad_rpc_parse_str(&parser, &val));
+    assert(val.s.len == 2);
+    assert(strncmp(val.s.p, "\x11\x22", val.s.len) == 0);
     assert(POINTER_OFFSET(parser.beg, parser.cur) == 4);
 
     strcpy(buf, "65535:anything");  // overflow
     slen = strlen(buf);
     kad_rpc_parser_init(&parser, buf, slen);
-    assert(!kad_rpc_parse_str(&parser, str, &len));
+    assert(!kad_rpc_parse_str(&parser, &val));
     assert(parser.err);
+
+    kad_rpc_parser_terminate(&parser);
 
 
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
@@ -88,7 +88,8 @@ int main ()
     assert(kad_rpc_parse("127.0.0.1", "43999", buf, slen));
 
     // find_node query
-    strcpy(buf, "d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe");
+    strcpy(buf, "d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e"
+           "1:q9:find_node1:t2:aa1:y1:qe");
     slen = strlen(buf);
     assert(kad_rpc_parse("127.0.0.1", "43999", buf, slen));
 
@@ -98,7 +99,6 @@ int main ()
     assert(kad_rpc_parse("127.0.0.1", "43999", buf, slen));
 
     log_shutdown(LOG_TYPE_STDOUT);
-
 
 
     return 0;
