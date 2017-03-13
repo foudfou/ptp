@@ -7,8 +7,8 @@ configure_file(input : 'config.h.in',
                output : 'config.h',
                configuration : conf)
 
-# A lib is a simple solution to let our test executables build against most of
-# the code, that is except main.o.
+# A dyn lib is a simple solution to let our test executables build against most
+# of the code, that is except main.o.
 lib_sources = [
     'log.c',
     'net/iobuf.c',
@@ -19,7 +19,6 @@ lib_sources = [
     'options.c',
     'server.c',
     'signals.c',
-    'utils/misc.c',
     'utils/safer.c',
     'utils/u64.c',
 ]

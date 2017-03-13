@@ -1,7 +1,7 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include <string.h>
-#include "utils/misc.h"
+#include "utils/lookup.h"
 
 enum smth {
     SMTH_NONE,
