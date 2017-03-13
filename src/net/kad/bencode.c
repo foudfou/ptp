@@ -186,26 +186,84 @@ static bool benc_stack_pop(struct benc_parser *p, size_t n)
  *
  * "e" list: error code (int), error msg (str).
  */
-static bool benc_msg_put(struct benc_parser *p, const enum benc_cont emit,
-                         struct kad_rpc_msg *msg, const struct benc_val *val)
+static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
+                          const enum benc_cont emit, const struct benc_val *val)
 {
     (void)msg; // FIXME:
 
     switch (emit) {
     case BENC_CONT_DICT_KEY: {
         log_debug("dict_key: %.*s", val->s.len, val->s.p);
-        p->msg_field = lookup_by_name(kad_rpc_msg_field_names, val->s.p, 1);
+        p->msg_field = lookup_by_name(kad_rpc_msg_field_names, val->s.p, 2);
         break;
     }
 
     case BENC_CONT_DICT_VAL: {
-// TODO: check p->msg_field
         if (val->t == BENC_VAL_INT)
             log_debug("dict_val int: %lld", val->i);
         else if (val->t == BENC_VAL_STR)
             log_debug("dict_val str: %.*s", val->s.len, val->s.p);
         else
             log_debug("dict_val unsupported: %d", val->t);
+
+        if (p->msg_field == KAD_RPC_MSG_FIELD_TX_ID) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message tx_id not a string.");
+                return false;
+            }
+            strncpy(msg->tx_id, val->s.p, val->s.len);
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODE_ID) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message node_id not a string.");
+                return false;
+            }
+            msg->node_id = (kad_guid){ .dd = *(val->s.p + val->s.len)}; // FIXME:
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_TYPE) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message type not a string.");
+                return false;
+            }
+            msg->type = lookup_by_name(kad_rpc_type_names, val->s.p, 1);
+            if (msg->type == KAD_RPC_TYPE_NONE) {
+                log_error("Unknown message type '%c'.", *val->s.p);
+                return false;
+            }
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_ERR_CODE) {
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_ERR_MSG) {
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_METH) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message method not a string.");
+                return false;
+            }
+            msg->meth = lookup_by_name(kad_rpc_meth_names, val->s.p, 10);
+            if (msg->meth == KAD_RPC_METH_NONE) {
+                log_error("Unknown message method '%.*s'.", val->s.len, val->s.p);
+                return false;
+            }
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_TARGET) {
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES) {
+        }
+
+        else {
+//            log_error("Unsupported message field: %d.", p->msg_field);
+//            return false;
+        }
+
+        p->msg_field = KAD_RPC_MSG_FIELD_NONE;
         break;
     }
 
@@ -219,8 +277,10 @@ static bool benc_msg_put(struct benc_parser *p, const enum benc_cont emit,
         break;
     }
 
-    case BENC_CONT_DICT_START:
     case BENC_CONT_LIST_START:
+    case BENC_CONT_LIST_END:
+    case BENC_CONT_DICT_START:
+    case BENC_CONT_DICT_END:
         // ignored
         break;
 
@@ -370,7 +430,7 @@ bool benc_decode(struct kad_rpc_msg *msg, const char buf[], const size_t slen)
 
         if (parser.err ||
             !benc_syntax_apply(&parser, &val, mark, &emit) ||
-            !benc_msg_put(&parser, emit, msg, &val)) {
+            !benc_msg_push(&parser, msg, emit, &val)) {
             log_error(parser.err_msg);  // TODO: send reply
             ret = false;
             goto cleanup;

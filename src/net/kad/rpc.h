@@ -8,7 +8,7 @@
 
 #include <stdbool.h>
 #include "net/kad/dht.h"
-#include "utils/misc.h"
+#include "utils/lookup.h"
 
 #define KAD_RPC_STR_MAX 256
 
@@ -19,10 +19,23 @@ enum kad_rpc_type {
     KAD_RPC_TYPE_RESPONSE,
 };
 
+static const lookup_entry kad_rpc_type_names[] = {
+    { KAD_RPC_TYPE_ERROR,    "e" },
+    { KAD_RPC_TYPE_QUERY,    "q" },
+    { KAD_RPC_TYPE_RESPONSE, "r" },
+    { 0,                     NULL },
+};
+
 enum kad_rpc_meth {
     KAD_RPC_METH_NONE,
     KAD_RPC_METH_PING,
     KAD_RPC_METH_FIND_NODE,
+};
+
+static const lookup_entry kad_rpc_meth_names[] = {
+    { KAD_RPC_METH_PING,      "ping" },
+    { KAD_RPC_METH_FIND_NODE, "find_node" },
+    { 0,                      NULL },
 };
 
 struct kad_rpc_node_info {
@@ -45,7 +58,7 @@ struct kad_rpc_msg {
     enum kad_rpc_type        type; /* y {q,r,e} */
     unsigned long long       err_code;
     char                     err_msg[KAD_RPC_STR_MAX];
-    enum kad_rpc_type        meth; /* q {"ping","find_node"} */
+    enum kad_rpc_meth        meth; /* q {"ping","find_node"} */
     kad_guid                 target; /* from {a,r} dict: target, nodes */
     struct kad_rpc_node_info nodes[KAD_K_CONST]; /* from {a,r} dict: target, nodes */
 };

@@ -14,7 +14,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include "net/iobuf.h"
-#include "utils/misc.h"
+#include "utils/lookup.h"
 #include "utils/u64.h"
 
 #define PROTO_MSG_FIELD_TYPE_LEN    4
