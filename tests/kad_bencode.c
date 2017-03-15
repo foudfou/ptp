@@ -1,6 +1,7 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include "net/kad/bencode.c"        // testing static functions
+#include "net/kad/rpc.h"
 
 #define BENC_PARSER_BUF_MAX 1400
 
@@ -55,7 +56,7 @@ int main ()
     benc_parser_terminate(&parser);
 
 
-    assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_DEBUG)));
+    assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
 
     struct kad_rpc_msg msg = {0};
 
@@ -96,9 +97,18 @@ int main ()
     assert(benc_decode(&msg, buf, slen));
 
     // find_node response
-    strcpy(buf, "d1:rd2:id20:0123456789abcdefghij5:nodes9:def456...e1:t2:aa1:y1:re");
+    strcpy(buf, "d1:rd2:id20:0123456789abcdefghij5:nodesl"
+           "20:abcdefghij012345678913:192.168.168.15:12120"
+           "20:mnopqrstuvwxyz12345613:192.168.168.25:12121e"
+           "e1:t2:aa1:y1:re");
     slen = strlen(buf);
     assert(benc_decode(&msg, buf, slen));
+
+    // bogus find_node response
+    strcpy(buf, "d1:rd2:id20:0123456789abcdefghij5:nodesl"
+           "4:abcd13:192.168.168.15:12120ee1:t2:aa1:y1:re");
+    slen = strlen(buf);
+    assert(!benc_decode(&msg, buf, slen));
 
     log_shutdown(LOG_TYPE_STDOUT);
 

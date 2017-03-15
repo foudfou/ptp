@@ -6,11 +6,9 @@
 #include <time.h>
 #include "utils/list.h"
 
-/* #define KAD_GUID_BYTE_SPACE 8 */
-/* #define KAD_K_CONST         8 */
-#define KAD_GUID_BYTE_SPACE 2
+#define KAD_GUID_BYTE_SPACE 20
 #define KAD_GUID_SPACE      8*KAD_GUID_BYTE_SPACE
-#define KAD_K_CONST         2
+#define KAD_K_CONST         8
 
 /* Byte arrays are not affected by endian issues.
    http://stackoverflow.com/a/4523537/421846 */
@@ -34,18 +32,6 @@ struct kad_ctx {
        at the end, or we update nodes and move them to the end. */
     struct list_item buckets[KAD_GUID_SPACE];
 };
-
-/**
- * Returns the guid as a string, which THE CONSUMER MUST FREE.
- */
-static inline char *kad_guid_hex(const kad_guid *id)
-{
-    char *str = malloc(2*KAD_GUID_BYTE_SPACE+1);
-    for (size_t i = 0; i < KAD_GUID_BYTE_SPACE; i++)
-        sprintf(str + 2*i, "%02x", id->b[i]); // no format string vuln
-    str[2*KAD_GUID_BYTE_SPACE] = '\0';
-    return str;
-}
 
 struct kad_ctx *kad_init();
 void kad_shutdown(struct kad_ctx *);

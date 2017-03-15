@@ -176,6 +176,21 @@ static bool benc_stack_pop(struct benc_parser *p, size_t n)
     return true;
 }
 
+static bool
+cpy_id(unsigned char *id, const struct benc_val *val, const size_t max)
+{
+    if (val->t != BENC_VAL_STR) {
+        log_error("Message node id not a string.");
+        return false;
+    }
+    if (max && val->s.len != max) {
+        log_error("Message node id has wrong length (%zu).", val->s.len);
+        return false;
+    }
+    memcpy(id, val->s.p, val->s.len);
+    return true;
+}
+
 /**
  * "t" transaction id: 2 chars.
  * "y" message type: "q" for query, "r" for response, or "e" for error.
@@ -189,8 +204,6 @@ static bool benc_stack_pop(struct benc_parser *p, size_t n)
 static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
                           const enum benc_cont emit, const struct benc_val *val)
 {
-    (void)msg; // FIXME:
-
     switch (emit) {
     case BENC_CONT_DICT_KEY: {
         log_debug("dict_key: %.*s", val->s.len, val->s.p);
@@ -199,27 +212,17 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
     }
 
     case BENC_CONT_DICT_VAL: {
-        if (val->t == BENC_VAL_INT)
-            log_debug("dict_val int: %lld", val->i);
-        else if (val->t == BENC_VAL_STR)
-            log_debug("dict_val str: %.*s", val->s.len, val->s.p);
-        else
-            log_debug("dict_val unsupported: %d", val->t);
-
         if (p->msg_field == KAD_RPC_MSG_FIELD_TX_ID) {
             if (val->t != BENC_VAL_STR) {
                 log_error("Message tx_id not a string.");
                 return false;
             }
-            strncpy(msg->tx_id, val->s.p, val->s.len);
+            cpy_id(msg->tx_id, val, KAD_RPC_MSG_TX_ID_LEN);
         }
 
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODE_ID) {
-            if (val->t != BENC_VAL_STR) {
-                log_error("Message node_id not a string.");
-                return false;
-            }
-            msg->node_id = (kad_guid){ .dd = *(val->s.p + val->s.len)}; // FIXME:
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODE_ID &&
+                 !cpy_id(msg->node_id.b, val, KAD_GUID_BYTE_SPACE)) {
+            return false;
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_TYPE) {
@@ -234,12 +237,6 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
             }
         }
 
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_ERR_CODE) {
-        }
-
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_ERR_MSG) {
-        }
-
         else if (p->msg_field == KAD_RPC_MSG_FIELD_METH) {
             if (val->t != BENC_VAL_STR) {
                 log_error("Message method not a string.");
@@ -252,10 +249,9 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
             }
         }
 
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_TARGET) {
-        }
-
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES) {
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_TARGET &&
+                 !cpy_id(msg->target.b, val, KAD_GUID_BYTE_SPACE)) {
+            return false;
         }
 
         else {
@@ -268,12 +264,60 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
     }
 
     case BENC_CONT_LIST_ELT: {
-        if (val->t == BENC_VAL_INT)
-            log_debug("list_elt int: %lld", val->i);
-        else if (val->t == BENC_VAL_STR)
-            log_debug("list_elt str: %.*s", val->s.len, val->s.p);
-        else
-            log_debug("list_elt unsupported: %d", val->t);
+        if (p->msg_field == KAD_RPC_MSG_FIELD_ERR) {
+            if (val->t == BENC_VAL_INT) {
+                if (msg->err_code) {
+                    log_error("Message err_code already set.");
+                    return false;
+                }
+                msg->err_code = val->i;
+            }
+            else if (val->t == BENC_VAL_STR) {
+                if (strlen(msg->err_msg) != 0) {
+                    log_error("Message err_msg already set.");
+                    return false;
+                }
+                memcpy(msg->err_msg, val->s.p, val->s.len);
+                msg->err_msg[val->s.len] = '\0';
+
+            }
+            else {
+                log_error("Unsupported message type for error field.");
+                return false;
+            }
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
+            if (!cpy_id(msg->nodes[msg->nodes_len].id.b, val,
+                        KAD_GUID_BYTE_SPACE))
+                return false;
+            p->msg_field = KAD_RPC_MSG_FIELD_NODES_HOST;
+        }
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_HOST) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message nodes_host not a string.");
+                return false;
+            }
+            memcpy(msg->nodes[msg->nodes_len].host, val->s.p, val->s.len);
+            msg->nodes[msg->nodes_len].host[val->s.len] = '\0';
+            p->msg_field = KAD_RPC_MSG_FIELD_NODES_SERVICE;
+        }
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_SERVICE) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message nodes_service not a string.");
+                return false;
+            }
+            memcpy(msg->nodes[msg->nodes_len].service, val->s.p, val->s.len);
+            msg->nodes[msg->nodes_len].service[val->s.len] = '\0';
+            msg->nodes_len++;
+            p->msg_field = KAD_RPC_MSG_FIELD_NODES_ID;
+        }
+
+        else {
+//            log_error("Unsupported message list element");
+//            return false;
+        }
+
         break;
     }
 
@@ -437,12 +481,17 @@ bool benc_decode(struct kad_rpc_msg *msg, const char buf[], const size_t slen)
         }
     }
 
+    /* if (!benc_msg_check(msg))  { */
+    /*     log_error("Invalid message."); */
+    /*     ret = false; */
+    /*     goto cleanup; */
+    /* } */
+
     if (parser.stack_off > 0) {
         log_error("Invalid input: unclosed containers.");
         ret = false;
         goto cleanup;
     }
-    log_debug("__PARSE SUCCESSFUL__");
 
   cleanup:
     benc_parser_terminate(&parser);

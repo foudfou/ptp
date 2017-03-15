@@ -14,6 +14,7 @@
 
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <syslog.h>
 
@@ -65,7 +66,18 @@ void log_stream_msg(int prio, const char *fmt, ...);
  * Provide a *single* `%s` placeholder for the error text in @fmt.
  */
 void log_perror(const char *fmt, const int errnum);
-void log_debug_hex(const char buf[], const size_t len);
+
+/**
+ * Returns an id as a string, which THE CONSUMER MUST FREE.
+ */
+static inline char *fmt_hex(const unsigned char *id, const size_t len)
+{
+    char *str = malloc(2*len+1);
+    for (size_t i = 0; i < len; i++)
+        sprintf(str + 2*i, "%02x", *(id + i)); // no format string vuln
+    str[2*len] = '\0';
+    return str;
+}
 
 bool log_init(int type, int logmask);
 bool log_shutdown(int logtype);

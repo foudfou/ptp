@@ -5,6 +5,7 @@
 #include "config.h"
 #include "log.h"
 #include "net/msg.h"
+#include "utils/safer.h"
 
 void proto_msg_parser_init(struct proto_msg_parser *parser)
 {
@@ -27,7 +28,8 @@ static void proto_msg_len_parse(const char buf[], size_t pos, union u32 *len)
     *len = u32_ntoh(*len);
 }
 
-bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const size_t len)
+bool proto_msg_parse(struct proto_msg_parser *parser,
+                     const char buf[], const size_t len)
 {
     parser->recv = true;
     size_t offset = 0;
@@ -40,9 +42,10 @@ bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const si
         }
 
         case PROTO_MSG_STAGE_ERROR: {
-            log_debug_hex(buf, len);
+            char *bufx = fmt_hex((unsigned char*)buf, len);
+            log_debug("Proto msg error. buf=%s", bufx);
+            free_safer(bufx);
             return false;
-            break;
         }
 
         case PROTO_MSG_STAGE_TYPE: {
@@ -103,7 +106,6 @@ bool proto_msg_parse(struct proto_msg_parser *parser, const char buf[], const si
         default:
             log_error("Parser in unknown state.");
             return false;
-            break;
         }
     } while_end:
 

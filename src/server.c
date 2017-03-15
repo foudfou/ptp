@@ -363,7 +363,9 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *dht)
     log_debug("Received %d bytes.", slen);
 
     if (peer->parser.stage == PROTO_MSG_STAGE_ERROR) {
-        log_debug_hex(buf, slen);
+        char *bufx = fmt_hex(buf, slen);
+        log_error("Parsing error. buf=%s", bufx);
+        free_safer(bufx);
         goto end;
     }
 

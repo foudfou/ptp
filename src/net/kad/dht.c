@@ -38,7 +38,7 @@ struct kad_ctx *kad_init()
     /* Although the node_id should be assigned by the network, it seems a
        common practice to have peers generate a random id themselves. */
     kad_generate_id(&ctx->self_id);
-    char *id = kad_guid_hex(&ctx->self_id);
+    char *id = fmt_hex(ctx->self_id.b, KAD_GUID_BYTE_SPACE);
     log_debug("node_id=%s", id);
     free_safer(id);
     for (size_t i = 0; i < KAD_GUID_SPACE; i++)
@@ -200,7 +200,7 @@ bool kad_node_delete(struct kad_ctx *ctx, const kad_guid *node_id)
 {
     struct kad_node *node = kad_node_get(ctx, node_id, NULL);
     if (!node) {
-        char *id = kad_guid_hex(node_id);
+        char *id = fmt_hex(node_id->b, KAD_GUID_BYTE_SPACE);
         log_error("Unknown node (id=%s).", id);
         free_safer(id);
         return false;
