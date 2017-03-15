@@ -12,14 +12,15 @@
 #include <time.h>
 #include <unistd.h>
 #include "log.h"
+#include "utils/bits.h"
 #include "utils/cont.h"
 #include "utils/safer.h"
 #include "net/kad/dht.h"
 
-kad_guid kad_generate_id()
+void kad_generate_id(kad_guid *uid)
 {
-    /* return (kad_guid){ .dw[0] = random(), .dw[1] = random() }; */
-    return (kad_guid){ .dd = random() };
+    for (int i = 0; i < KAD_GUID_SPACE; i++)
+        uid->b[i] = (unsigned char)random();
 }
 
 struct kad_ctx *kad_init()
@@ -36,9 +37,10 @@ struct kad_ctx *kad_init()
     }
     /* Although the node_id should be assigned by the network, it seems a
        common practice to have peers generate a random id themselves. */
-    ctx->self_id = kad_generate_id();
-    log_debug("node_id=%"PRIx64, ctx->self_id.dd);
-
+    kad_generate_id(&ctx->self_id);
+    char *id = kad_guid_hex(&ctx->self_id);
+    log_debug("node_id=%s", id);
+    free_safer(id);
     for (size_t i = 0; i < KAD_GUID_SPACE; i++)
         list_init(&ctx->buckets[i]);
 
@@ -77,29 +79,47 @@ bucket 1 has nodes of distance 2..4
 bucket 2 has nodes of distance 4..8
 bucket 3 has nodes of distance 8..16
 Each bucket will hold up to k active nodes. */
-static inline size_t kad_bucket_hash(kad_guid self_id, kad_guid peer_id)
+static inline size_t kad_bucket_hash(const kad_guid *self_id,
+                                     const kad_guid *peer_id)
 {
-    kad_guid dist = { .dd = self_id.dd ^ peer_id.dd };
-    size_t bucket_idx = 0;
-    while (bucket_idx < KAD_GUID_SPACE && dist.dd >= (1ULL << (bucket_idx + 1)))
-        bucket_idx++;
+    kad_guid dist = {0};
+    size_t bucket_idx = KAD_GUID_SPACE;
+    for (int i = 0; i < KAD_GUID_BYTE_SPACE; ++i) {
+        dist.b[i] = self_id->b[i] ^ peer_id->b[i];
+
+        for (int j = 0; j < 8; ++j) {
+            bucket_idx--;
+            if (BITS_CHK(dist.b[i], (1U << (7 - j))))
+                goto guid_end;
+        }
+    }
+  guid_end:
     return bucket_idx;
 }
+
+static inline bool kad_guid_eq(const kad_guid *ida, const kad_guid *idb)
+{
+    for (int i = 0; i < KAD_GUID_BYTE_SPACE; i++)
+        if (ida->b[i] != idb->b[i])
+            return false;
+    return true;
+}
+
 
 /**
  * Retrieves a node from its guid. Possibly sets @bkt_idx to the bucket index
  * of the given node.
  */
 static inline struct kad_node*
-kad_node_get(struct kad_ctx *ctx, const kad_guid node_id, size_t *bkt_idx)
+kad_node_get(struct kad_ctx *ctx, const kad_guid *node_id, size_t *bkt_idx)
 {
-    *bkt_idx = kad_bucket_hash(ctx->self_id, node_id);
+    *bkt_idx = kad_bucket_hash(&ctx->self_id, node_id);
     const struct list_item *kad_bucket = &ctx->buckets[*bkt_idx];
     const struct list_item *it = kad_bucket;
     struct kad_node *found;
     list_for(it, kad_bucket) {
         found = cont(it, struct kad_node, item);
-        if (found->id.dd == node_id.dd)
+        if (kad_guid_eq(&found->id, node_id))
             return found;
     }
     return NULL;
@@ -108,7 +128,7 @@ kad_node_get(struct kad_ctx *ctx, const kad_guid node_id, size_t *bkt_idx)
 /**
  * Return 0 on success, -1 on failure, 1 when node unknown.
  */
-int kad_node_update(struct kad_ctx *ctx, const kad_guid node_id)
+int kad_node_update(struct kad_ctx *ctx, const kad_guid *node_id)
 {
     size_t bkt_idx;
     struct kad_node *node = kad_node_get(ctx, node_id, &bkt_idx);
@@ -133,9 +153,9 @@ int kad_node_update(struct kad_ctx *ctx, const kad_guid node_id)
  * Assumes unknown node, i.e. kad_node_update() did not succeed.
  */
 struct kad_node *kad_node_can_insert(struct kad_ctx *ctx,
-                                     const kad_guid node_id)
+                                     const kad_guid *node_id)
 {
-    size_t bkt_idx = kad_bucket_hash(ctx->self_id, node_id);
+    size_t bkt_idx = kad_bucket_hash(&ctx->self_id, node_id);
     struct list_item *bucket = &ctx->buckets[bkt_idx];
     size_t count = kad_bucket_count(bucket);
     if (count == KAD_K_CONST)
@@ -150,7 +170,7 @@ struct kad_node *kad_node_can_insert(struct kad_ctx *ctx,
  * Assumes unknown node and corresponding bucket not full,
  * i.e. kad_node_can_insert() succeeded.
  */
-bool kad_node_insert(struct kad_ctx *ctx, const kad_guid node_id,
+bool kad_node_insert(struct kad_ctx *ctx, const kad_guid *node_id,
                      const char host[], const char service[])
 {
     struct timespec time;
@@ -165,8 +185,8 @@ bool kad_node_insert(struct kad_ctx *ctx, const kad_guid node_id,
         return false;
     }
 
-    size_t bkt_idx = kad_bucket_hash(ctx->self_id, node_id);
-    node->id = node_id;
+    size_t bkt_idx = kad_bucket_hash(&ctx->self_id, node_id);
+    node->id = *node_id;
     strcpy(node->host, host);
     strcpy(node->service, service);
     node->last_seen = time.tv_sec;
@@ -176,11 +196,13 @@ bool kad_node_insert(struct kad_ctx *ctx, const kad_guid node_id,
     return true;
 }
 
-bool kad_node_delete(struct kad_ctx *ctx, const kad_guid node_id)
+bool kad_node_delete(struct kad_ctx *ctx, const kad_guid *node_id)
 {
     struct kad_node *node = kad_node_get(ctx, node_id, NULL);
     if (!node) {
-        log_error("Unknown node (id=%"PRIx64").", node_id.dd);
+        char *id = kad_guid_hex(node_id);
+        log_error("Unknown node (id=%s).", id);
+        free_safer(id);
         return false;
     }
 

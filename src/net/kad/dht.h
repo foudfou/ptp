@@ -2,26 +2,19 @@
 #define KAD_H
 
 #include <netdb.h>
+#include <stdio.h>
 #include <time.h>
 #include "utils/list.h"
-#include "utils/u64.h"
 
-/* #define KAD_GUID_SPACE 64 */
-/* #define KAD_K_CONST    8 */
+/* #define KAD_GUID_BYTE_SPACE 8 */
+/* #define KAD_K_CONST         8 */
+#define KAD_GUID_BYTE_SPACE 2
+#define KAD_GUID_SPACE      8*KAD_GUID_BYTE_SPACE
+#define KAD_K_CONST         2
 
-/* typedef union u64 kad_guid; */
-
-/* TESTING: BEGIN */
-#define KAD_GUID_SPACE 4
-#define KAD_K_CONST    2
-
-struct uint4 {
-    uint8_t hi : 4;
-    uint8_t dd : 4;
-};
-
-typedef struct uint4 kad_guid;
-/* TESTING: END */
+/* Byte arrays are not affected by endian issues.
+   http://stackoverflow.com/a/4523537/421846 */
+typedef struct { unsigned char b[KAD_GUID_BYTE_SPACE]; } kad_guid;
 
 /* Nodes (DHT) are not peers (network). */
 struct kad_node {
@@ -42,6 +35,18 @@ struct kad_ctx {
     struct list_item buckets[KAD_GUID_SPACE];
 };
 
+/**
+ * Returns the guid as a string, which THE CONSUMER MUST FREE.
+ */
+static inline char *kad_guid_hex(const kad_guid *id)
+{
+    char *str = malloc(2*KAD_GUID_BYTE_SPACE+1);
+    for (size_t i = 0; i < KAD_GUID_BYTE_SPACE; i++)
+        sprintf(str + 2*i, "%02x", id->b[i]); // no format string vuln
+    str[2*KAD_GUID_BYTE_SPACE] = '\0';
+    return str;
+}
+
 struct kad_ctx *kad_init();
 void kad_shutdown(struct kad_ctx *);
 
@@ -58,11 +63,11 @@ void kad_shutdown(struct kad_ctx *);
  * So the proper sequence is to kad_node_update(), then kad_node_can_insert(),
  * and then [FIXME: when exactly] kad_node_insert().
  */
-int kad_node_update(struct kad_ctx *ctx, const kad_guid node_id);
+int kad_node_update(struct kad_ctx *ctx, const kad_guid *node_id);
 struct kad_node *kad_node_can_insert(struct kad_ctx *ctx,
-                                     const kad_guid node_id);
-bool kad_node_insert(struct kad_ctx *ctx, const kad_guid node_id,
+                                     const kad_guid *node_id);
+bool kad_node_insert(struct kad_ctx *ctx, const kad_guid *node_id,
                      const char host[], const char service[]);
-bool kad_node_delete(struct kad_ctx *ctx, const kad_guid node_id);
+bool kad_node_delete(struct kad_ctx *ctx, const kad_guid *node_id);
 
 #endif /* KAD_H */
