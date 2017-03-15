@@ -1,6 +1,6 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#ifndef SERIALIZATION_H
-#define SERIALIZATION_H
+#ifndef U64_H
+#define U64_H
 
 #include <stdint.h>
 #include <inttypes.h>  // for PRIu64
@@ -25,4 +25,4 @@ union u32 u32_ntoh(union u32 in);
 union u64 u64_hton(union u64 in);
 union u64 u64_ntoh(union u64 in);
 
-#endif /* SERIALIZATION_H */
+#endif /* U64_H */
