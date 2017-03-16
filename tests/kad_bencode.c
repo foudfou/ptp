@@ -68,33 +68,40 @@ int main ()
     // ok: void dict
     strcpy(buf, "de");
     slen = strlen(buf);
+    memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
 
     /* // fail: syntax */
     /* strcpy(buf, "dede"); */
     /* slen = strlen(buf); */
+    /* memset(&msg, 0, sizeof(msg)); */
     /* assert(!benc_decode(&msg, buf, slen)); */
 
     // error {"t":"aa", "y":"e", "e":[201, "A Generic Error Ocurred"]}
     strcpy(buf, "d1:eli201e23:A Generic Error Ocurrede1:t2:aa1:y1:ee");
     slen = strlen(buf);
+    memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
 
     // ping query {"t":"aa", "y":"q", "q":"ping", "a":{"id":"abcdefghij0123456789"}}
     strcpy(buf, "d1:ad2:id20:abcdefghij0123456789e1:q4:ping1:t2:aa1:y1:qe");
     slen = strlen(buf);
+    memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
 
     // ping response {"t":"aa", "y":"r", "r": {"id":"mnopqrstuvwxyz123456"}}
     strcpy(buf, "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa1:y1:re");
     slen = strlen(buf);
+    memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
 
     // find_node query
     strcpy(buf, "d1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e"
            "1:q9:find_node1:t2:aa1:y1:qe");
     slen = strlen(buf);
+    memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
+//    kad_rpc_msg_log(&msg);
 
     // find_node response
     strcpy(buf, "d1:rd2:id20:0123456789abcdefghij5:nodesl"
@@ -102,12 +109,15 @@ int main ()
            "20:mnopqrstuvwxyz12345613:192.168.168.25:12121e"
            "e1:t2:aa1:y1:re");
     slen = strlen(buf);
+    memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
+//    kad_rpc_msg_log(&msg);
 
     // bogus find_node response
     strcpy(buf, "d1:rd2:id20:0123456789abcdefghij5:nodesl"
            "4:abcd13:192.168.168.15:12120ee1:t2:aa1:y1:re");
     slen = strlen(buf);
+    memset(&msg, 0, sizeof(msg));
     assert(!benc_decode(&msg, buf, slen));
 
     log_shutdown(LOG_TYPE_STDOUT);

@@ -42,7 +42,7 @@ bool proto_msg_parse(struct proto_msg_parser *parser,
         }
 
         case PROTO_MSG_STAGE_ERROR: {
-            char *bufx = fmt_hex((unsigned char*)buf, len);
+            char *bufx = log_fmt_hex(LOG_DEBUG, (unsigned char*)buf, len);
             log_debug("Proto msg error. buf=%s", bufx);
             free_safer(bufx);
             return false;

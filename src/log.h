@@ -68,16 +68,10 @@ void log_stream_msg(int prio, const char *fmt, ...);
 void log_perror(const char *fmt, const int errnum);
 
 /**
- * Returns an id as a string, which THE CONSUMER MUST FREE.
+ * If prio is met, returns an id as a string, which THE CONSUMER MUST FREE.
+ * Otherwise returns NULL.
  */
-static inline char *fmt_hex(const unsigned char *id, const size_t len)
-{
-    char *str = malloc(2*len+1);
-    for (size_t i = 0; i < len; i++)
-        sprintf(str + 2*i, "%02x", *(id + i)); // no format string vuln
-    str[2*len] = '\0';
-    return str;
-}
+char *log_fmt_hex(const int prio, const unsigned char *id, const size_t len);
 
 bool log_init(int type, int logmask);
 bool log_shutdown(int logtype);

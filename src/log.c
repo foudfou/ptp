@@ -10,7 +10,7 @@
 #include "log.h"
 
 #define LOG_QUEUE_NAME     "/" PACKAGE_NAME "_log"
-#define LOG_MSG_STOP           "##exit"
+#define LOG_MSG_STOP       "##exit"
 #define LOG_MSG_PREFIX_LEN 56
 
 static struct log_ctx_t {
@@ -94,6 +94,18 @@ void log_perror(const char *fmt, const int errnum)
     char errtxt[LOG_ERR_LEN];
     strerror_r(errnum, errtxt, LOG_ERR_LEN);
     log_msg(LOG_ERR, fmt, errtxt);
+}
+
+char *log_fmt_hex(const int prio, const unsigned char *id, const size_t len)
+{
+    if (!(LOG_MASK(prio) & log_ctx.fmask))
+        return NULL;
+
+    char *str = malloc(2*len+1);
+    for (size_t i = 0; i < len; i++)
+        sprintf(str + 2*i, "%02x", *(id + i)); // no format string vuln
+    str[2*len] = '\0';
+    return str;
 }
 
 void *log_queue_consumer(void *data)
