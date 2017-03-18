@@ -8,6 +8,7 @@
 
 #include <stdbool.h>
 #include "net/kad/dht.h"
+#include "utils/list.h"
 #include "utils/lookup.h"
 
 #define KAD_RPC_STR_MAX       256
@@ -58,6 +59,9 @@ struct kad_rpc_node_info {
  * message must fit into an UDP buffer: no application flow control), every
  * awaited value should fit into well-defined fields. So we don't bother to
  * serialize lists and dicts for now.
+ *
+ * Although we have all mechanics to build a bstree with dict_key as the key,
+ * and struct benc_val as data, it's more convenient to avoid malloc(3).
  */
 struct kad_rpc_msg {
     unsigned char            tx_id[KAD_RPC_MSG_TX_ID_LEN]; /* t */
@@ -95,8 +99,16 @@ static const lookup_entry kad_rpc_msg_field_names[] = {
     { 0,                          NULL },
 };
 
-bool kad_rpc_parse(const char host[], const char service[],
-                   const char buf[], const size_t slen);
+struct kad_ctx {
+    struct kad_dht   *dht;
+    struct list_item  queries;
+};
+
+bool kad_rpc_init(struct kad_ctx *kctx);
+void kad_rpc_terminate(struct kad_ctx *ctx);
+
+bool kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
+                    const char buf[], const size_t slen);
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg);
 
 #endif /* KAD_RPC_H */

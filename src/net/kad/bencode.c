@@ -202,6 +202,8 @@ void log_debug_val(const struct benc_val *val)
 }
 
 /**
+ * Populates @msg with @emit'ed @val'ue.
+ *
  * "t" transaction id: 2 chars.
  * "y" message type: "q" for query, "r" for response, or "e" for error.
  *
@@ -499,12 +501,6 @@ bool benc_decode(struct kad_rpc_msg *msg, const char buf[], const size_t slen)
             goto cleanup;
         }
     }
-
-    /* if (!benc_msg_check(msg))  { */
-    /*     log_error("Invalid message."); */
-    /*     ret = false; */
-    /*     goto cleanup; */
-    /* } */
 
     if (parser.stack_off > 0) {
         log_error("Invalid input: unclosed containers.");

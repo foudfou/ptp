@@ -23,7 +23,7 @@ struct kad_node {
     time_t           last_seen;
 };
 
-struct kad_ctx {
+struct kad_dht {
     kad_guid         self_id;
     /* The routing table is implemented as hash table: an array of lists
        (buckets) of at most KAD_K_CONST. Instead of using a generic hash table
@@ -33,8 +33,8 @@ struct kad_ctx {
     struct list_item buckets[KAD_GUID_SPACE];
 };
 
-struct kad_ctx *kad_init();
-void kad_shutdown(struct kad_ctx *);
+struct kad_dht *kad_dht_init();
+void kad_dht_terminate(struct kad_dht * dht);
 
 /**
  * « When a Kademlia node receives any message (re- quest or reply) from
@@ -49,11 +49,11 @@ void kad_shutdown(struct kad_ctx *);
  * So the proper sequence is to kad_node_update(), then kad_node_can_insert(),
  * and then [FIXME: when exactly] kad_node_insert().
  */
-int kad_node_update(struct kad_ctx *ctx, const kad_guid *node_id);
-struct kad_node *kad_node_can_insert(struct kad_ctx *ctx,
+int kad_node_update(struct kad_dht *dht, const kad_guid *node_id);
+struct kad_node *kad_node_can_insert(struct kad_dht *dht,
                                      const kad_guid *node_id);
-bool kad_node_insert(struct kad_ctx *ctx, const kad_guid *node_id,
+bool kad_node_insert(struct kad_dht *dht, const kad_guid *node_id,
                      const char host[], const char service[]);
-bool kad_node_delete(struct kad_ctx *ctx, const kad_guid *node_id);
+bool kad_node_delete(struct kad_dht *dht, const kad_guid *node_id);
 
 #endif /* KAD_H */

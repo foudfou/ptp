@@ -101,7 +101,6 @@ int main ()
     slen = strlen(buf);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
-//    kad_rpc_msg_log(&msg);
 
     // find_node response
     strcpy(buf, "d1:rd2:id20:0123456789abcdefghij5:nodesl"
@@ -111,7 +110,6 @@ int main ()
     slen = strlen(buf);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
-//    kad_rpc_msg_log(&msg);
 
     // bogus find_node response
     strcpy(buf, "d1:rd2:id20:0123456789abcdefghij5:nodesl"

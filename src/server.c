@@ -15,7 +15,6 @@
 #include "config.h"
 #include "log.h"
 #include "signals.h"
-#include "net/kad/dht.h"
 #include "net/kad/rpc.h"
 #include "net/msg.h"
 #include "server.h"
@@ -339,9 +338,9 @@ static int peer_conn_close_all(struct list_item *peers)
     return fail;
 }
 
-static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *dht)
+static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *kctx)
 {
-    (void)dht; // FIXME:
+    (void)kctx; // FIXME:
     enum conn_ret ret = CONN_OK;
 
     char buf[SERVER_TCP_BUFLEN];
@@ -400,9 +399,8 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *dht)
     return ret;
 }
 
-static bool node_handle_data(int sock, struct kad_ctx *dht)
+static bool node_handle_data(int sock, struct kad_ctx *kctx)
 {
-    (void)dht; // FIXME:
     char buf[SERVER_UDP_BUFLEN];
     memset(buf, 0, SERVER_UDP_BUFLEN);
     struct sockaddr_storage node_addr;
@@ -427,18 +425,18 @@ static bool node_handle_data(int sock, struct kad_ctx *dht)
         return false;
     }
 
-    kad_rpc_parse(host, service, buf, (size_t)slen);
+    kad_rpc_handle(kctx, host, service, buf, (size_t)slen);
 
     /* const kad_guid node_id = {0}; // FIXME: extract from message. */
-    /* int rv = kad_node_update(dht, node_id); */
+    /* int rv = kad_node_update(kctx, node_id); */
     /* if (rv < 0) { */
     /*     log_error("Failed to update kad_node (id=%"PRIx64").", node_id); */
     /*     goto end; */
     /* } */
     /* else if (rv > 0) { // insert needed */
-    /*     struct kad_node *least_recent = kad_node_can_insert(dht, node_id); */
+    /*     struct kad_node *least_recent = kad_node_can_insert(kctx, node_id); */
     /*     if (!least_recent) { */
-    /*         if (!kad_node_insert(dht, node_id, node->host, node->service)) { */
+    /*         if (!kad_node_insert(kctx, node_id, node->host, node->service)) { */
     /*             log_error("Failed to insert kad_node (id=%"PRIx64").", */
     /*                       node_id); */
     /*             goto end; */
@@ -502,7 +500,8 @@ void server_run(const struct config *conf)
     log_info("Server started. Listening on [%s]:%s tcp and udp.",
              conf->bind_addr, conf->bind_port);
 
-    struct kad_ctx *dht = kad_init();
+    struct kad_ctx kctx = {0};
+    kad_rpc_init(&kctx);
 
     int nlisten = 2;
     struct pollfd fds[nlisten+conf->max_peers];
@@ -545,7 +544,7 @@ void server_run(const struct config *conf)
             }
 
             if (fds[i].fd == sock_udp) {
-                node_handle_data(sock_udp, dht);
+                node_handle_data(sock_udp, &kctx);
                 continue;
             }
 
@@ -568,7 +567,7 @@ void server_run(const struct config *conf)
                 break;
             }
 
-            if (peer_conn_handle_data(p, dht) == CONN_CLOSED &&
+            if (peer_conn_handle_data(p, &kctx) == CONN_CLOSED &&
                 !peer_conn_close(p)) {
                 log_fatal("Could not close connection of peer fd=%d.", fds[i].fd);
                 server_end = true;
@@ -582,6 +581,8 @@ void server_run(const struct config *conf)
     } while (!server_end);
 
     peer_conn_close_all(&peer_list);
+
+    kad_rpc_terminate(&kctx);
 
     socket_shutdown(sock_tcp);
     socket_shutdown(sock_udp);
