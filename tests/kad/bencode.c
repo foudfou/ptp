@@ -2,11 +2,9 @@
 #include <assert.h>
 #include "net/kad/bencode.c"        // testing static functions
 #include "net/kad/rpc.h"
-#include "kad_tests.h"
+#include "data.h"
 
 #define BENC_PARSER_BUF_MAX 1400
-
-#include <limits.h>
 
 int main ()
 {
