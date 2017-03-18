@@ -31,6 +31,28 @@ bool kad_rpc_msg_validate(const struct kad_rpc_msg *msg)
     return true;  /* TODO: should we validate beforehand ? */
 }
 
+struct kad_rpc_msg *
+kad_rpc_query_find(struct kad_ctx *ctx, const unsigned char tx_id[])
+{
+    struct kad_rpc_msg *m;
+    struct list_item * it = &ctx->queries;
+    list_for(it, &ctx->queries) {
+        m = cont(it, struct kad_rpc_msg, item);
+        for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; ++i) {
+            if (m->tx_id[i] != tx_id[i])
+                continue;
+            break;
+        }
+    }
+
+    if (it == &ctx->queries) {
+        log_warning("Query (tx_id=TODO:) not found.");
+        return NULL;
+    }
+
+    return m;
+}
+
 bool kad_rpc_handle(struct kad_ctx *ctx,
                     const char host[], const char service[],
                     const char buf[], const size_t slen)
@@ -66,7 +88,12 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
 
     case KAD_RPC_TYPE_RESPONSE: {
         log_debug("Got msg response");
-        // TODO: find response in ctx->queries
+        struct kad_rpc_msg *query = kad_rpc_query_find(ctx, msg->tx_id);
+        if (!query)
+            return false;
+
+        list_delete(&query->item);
+        free_safer(query);
         break;
     }
 

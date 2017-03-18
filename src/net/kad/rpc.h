@@ -66,9 +66,9 @@ static const lookup_entry kad_rpc_msg_field_names[] = {
 
 /**
  * We diverge here from the BitTorrent spec where a compact node info is
- * node_id (20B) + IP (4B) + port (2B). A node info comprises 3 strings. Which
- * implies that node infos are encoded in lists: ["id1", "host1", "service1",
- * "id2", "host2", "service3", ...].
+ * node_id (20B) + IP (4B) + port (2B), assuming ip4. A node info comprises 3
+ * strings. Which implies that node infos are encoded in lists: ["id1",
+ * "host1", "service1", "id2", "host2", "service3", ...].
  */
 struct kad_rpc_node_info {
     kad_guid id;
@@ -85,7 +85,8 @@ struct kad_rpc_node_info {
  * serialize lists and dicts for now.
  *
  * Although we have all mechanics to build a bstree with dict_key as the key,
- * and struct benc_val as data, it's more convenient to avoid malloc(3).
+ * and struct benc_val as data, it seems more convenient to avoid malloc(3) at
+ * this stage.
  */
 struct kad_rpc_msg {
     struct list_item         item;
