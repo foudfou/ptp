@@ -13,8 +13,6 @@
 #include <unistd.h>
 #include "log.h"
 #include "utils/bits.h"
-#include "utils/cont.h"
-#include "utils/safer.h"
 #include "net/kad/dht.h"
 
 void kad_generate_id(kad_guid *uid)
@@ -52,12 +50,7 @@ void kad_dht_terminate(struct kad_dht * dht)
 {
     for (int i = 0; i < KAD_GUID_SPACE; i++) {
         struct list_item *bucket = &dht->buckets[i];
-        while (!list_is_empty(bucket)) {
-            struct kad_node *node =
-                cont(bucket->prev, struct kad_node, item);
-            list_delete(bucket->prev);
-            free_safer(node);
-        }
+        list_free_all(bucket, struct kad_node, item);
     }
     free_safer(dht);
 }

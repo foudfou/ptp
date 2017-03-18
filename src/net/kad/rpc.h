@@ -40,41 +40,6 @@ static const lookup_entry kad_rpc_meth_names[] = {
     { 0,                      NULL },
 };
 
-/**
- * We diverge here from the BitTorrent spec where a compact node info is
- * node_id (20B) + IP (4B) + port (2B). A node info comprises 3 strings. Which
- * implies that node infos are encoded in lists: ["id1", "host1", "service1",
- * "id2", "host2", "service3", ...].
- */
-struct kad_rpc_node_info {
-    kad_guid id;
-    char     host[NI_MAXHOST];
-    char     service[NI_MAXSERV];
-};
-
-/**
- * Naive flattened dictionary for all possible messages.
- *
- * The protocol being relatively tiny, data size considered limited (a Kad
- * message must fit into an UDP buffer: no application flow control), every
- * awaited value should fit into well-defined fields. So we don't bother to
- * serialize lists and dicts for now.
- *
- * Although we have all mechanics to build a bstree with dict_key as the key,
- * and struct benc_val as data, it's more convenient to avoid malloc(3).
- */
-struct kad_rpc_msg {
-    unsigned char            tx_id[KAD_RPC_MSG_TX_ID_LEN]; /* t */
-    kad_guid                 node_id; /* from {a,r} dict: id_str */
-    enum kad_rpc_type        type; /* y {q,r,e} */
-    unsigned long long       err_code;
-    char                     err_msg[KAD_RPC_STR_MAX];
-    enum kad_rpc_meth        meth; /* q {"ping","find_node"} */
-    kad_guid                 target; /* from {a,r} dict: target, nodes */
-    struct kad_rpc_node_info nodes[KAD_K_CONST]; /* from {a,r} dict: target, nodes */
-    size_t                   nodes_len;
-};
-
 enum kad_rpc_msg_field {
     KAD_RPC_MSG_FIELD_NONE,
     KAD_RPC_MSG_FIELD_TX_ID,
@@ -99,9 +64,45 @@ static const lookup_entry kad_rpc_msg_field_names[] = {
     { 0,                          NULL },
 };
 
+/**
+ * We diverge here from the BitTorrent spec where a compact node info is
+ * node_id (20B) + IP (4B) + port (2B). A node info comprises 3 strings. Which
+ * implies that node infos are encoded in lists: ["id1", "host1", "service1",
+ * "id2", "host2", "service3", ...].
+ */
+struct kad_rpc_node_info {
+    kad_guid id;
+    char     host[NI_MAXHOST];
+    char     service[NI_MAXSERV];
+};
+
+/**
+ * Naive flattened dictionary for all possible messages.
+ *
+ * The protocol being relatively tiny, data size considered limited (a Kad
+ * message must fit into an UDP buffer: no application flow control), every
+ * awaited value should fit into well-defined fields. So we don't bother to
+ * serialize lists and dicts for now.
+ *
+ * Although we have all mechanics to build a bstree with dict_key as the key,
+ * and struct benc_val as data, it's more convenient to avoid malloc(3).
+ */
+struct kad_rpc_msg {
+    struct list_item         item;
+    unsigned char            tx_id[KAD_RPC_MSG_TX_ID_LEN]; /* t */
+    kad_guid                 node_id; /* from {a,r} dict: id_str */
+    enum kad_rpc_type        type; /* y {q,r,e} */
+    unsigned long long       err_code;
+    char                     err_msg[KAD_RPC_STR_MAX];
+    enum kad_rpc_meth        meth; /* q {"ping","find_node"} */
+    kad_guid                 target; /* from {a,r} dict: target, nodes */
+    struct kad_rpc_node_info nodes[KAD_K_CONST]; /* from {a,r} dict: target, nodes */
+    size_t                   nodes_len;
+};
+
 struct kad_ctx {
     struct kad_dht   *dht;
-    struct list_item  queries;
+    struct list_item  queries; // kad_rcp_msg list
 };
 
 bool kad_rpc_init(struct kad_ctx *kctx);

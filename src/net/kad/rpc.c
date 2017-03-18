@@ -1,4 +1,5 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
+#include <errno.h>
 #include "log.h"
 #include "net/kad/bencode.h"
 #include "utils/safer.h"
@@ -19,7 +20,8 @@ bool kad_rpc_init(struct kad_ctx *ctx)
 void kad_rpc_terminate(struct kad_ctx *ctx)
 {
     kad_dht_terminate(ctx->dht);
-    // TODO: terminate queries
+    struct list_item *query = &ctx->queries;
+    list_free_all(query, struct kad_rpc_msg, item);
     log_debug("DHT terminated.");
 }
 
@@ -34,34 +36,45 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
                     const char buf[], const size_t slen)
 {
     (void)ctx; (void)host; (void)service; // FIXME:
-    struct kad_rpc_msg msg = {0};
-    if (!benc_decode(&msg, buf, slen) ||
-        !kad_rpc_msg_validate(&msg)) {
+
+    struct kad_rpc_msg *msg = malloc(sizeof(struct kad_rpc_msg));
+    if (!msg) {
+        log_perror("Failed malloc: %s.", errno);
+        return false;
+    }
+    memset(msg, 0, sizeof(*msg));
+    list_init(&(msg->item));
+
+    if (!benc_decode(msg, buf, slen) ||
+        !kad_rpc_msg_validate(msg)) {
         log_error("Invalid message.");
         return false;
     }
-    kad_rpc_msg_log(&msg);
+    kad_rpc_msg_log(msg);
 
-    switch (msg.type) {
+    switch (msg->type) {
     case KAD_RPC_TYPE_NONE: {
-        log_debug("Got msg none");
-        break;
+        log_error("Got msg none");
+        free_safer(msg);
+        return false;
     }
 
-    case KAD_RPC_TYPE_QUERY: {
+    case KAD_RPC_TYPE_QUERY: {  /* We'll respond immediately */
         log_debug("Got msg query");
         break;
     }
 
     case KAD_RPC_TYPE_RESPONSE: {
-// we should probably keep track of our queries in a list of sent msgs in ctx…
         log_debug("Got msg response");
+        // TODO: find response in ctx->queries
         break;
     }
 
     default:
         break;
     }
+
+    free_safer(msg);
 
     return true;
 }

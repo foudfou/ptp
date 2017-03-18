@@ -4,11 +4,21 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <time.h>
+#include "utils/cont.h"
 #include "utils/list.h"
+#include "utils/safer.h"
 
 #define KAD_GUID_BYTE_SPACE 20
 #define KAD_GUID_SPACE      8*KAD_GUID_BYTE_SPACE
 #define KAD_K_CONST         8
+
+#define list_free_all(itemp, type, field)                               \
+    while (!list_is_empty(itemp)) {                                     \
+        type *node =                                                    \
+            cont(itemp->prev, type, field);                             \
+        list_delete(itemp->prev);                                       \
+        free_safer(node);                                               \
+    }
 
 /* Byte arrays are not affected by endian issues.
    http://stackoverflow.com/a/4523537/421846 */
@@ -30,7 +40,7 @@ struct kad_dht {
        implementation, we build a specialized one for specific operations on
        each list. List are sorted by construction: either we append new nodes
        at the end, or we update nodes and move them to the end. */
-    struct list_item buckets[KAD_GUID_SPACE];
+    struct list_item buckets[KAD_GUID_SPACE]; // kad_node list
 };
 
 struct kad_dht *kad_dht_init();
