@@ -107,7 +107,7 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
 }
 
 /**
- * Use only for debugging !
+ * For debugging only !
  */
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
 {

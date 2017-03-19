@@ -18,6 +18,10 @@ int main ()
         &(kad_guid){.b = {[KAD_GUID_BYTE_SPACE-1]=0x1}});
     assert(bkt_idx == 3);
 
+    bkt_idx = kad_bucket_hash(
+        &(kad_guid){.b = {[0]=0xff, [1]=0x0}},
+        &(kad_guid){.b = {[0]=0x7f, [1]=0x0}});
+    assert(bkt_idx == KAD_GUID_SPACE-1);
 
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_dht *dht = dht_init();
@@ -34,6 +38,18 @@ int main ()
     assert(dht_delete(dht, &nid1));
     n1 = dht_get(dht, &nid1, NULL);
     assert(!n1);
+
+    // bucket full
+    kad_guid opp;
+    memcpy(opp.b, dht->self_id.b, KAD_GUID_BYTE_SPACE);
+    opp.b[0] ^= 0x80;
+    assert(KAD_K_CONST <= 0xff);  // don't want to overflow next
+    for (int i = 0; i < KAD_K_CONST; ++i) {
+        assert(dht_can_insert(dht, &opp) == NULL);
+        assert(dht_insert(dht, &opp, "don't", "care"));
+        opp.b[KAD_GUID_BYTE_SPACE-1] += 1;
+    }
+    assert(dht_can_insert(dht, &opp) != NULL);
 
     dht_terminate(dht);
     log_shutdown(LOG_TYPE_STDOUT);
