@@ -7,7 +7,7 @@
 
 bool kad_rpc_init(struct kad_ctx *ctx)
 {
-    ctx->dht = kad_dht_init();
+    ctx->dht = dht_init();
     if (!ctx->dht) {
         log_error("Could not initialize dht.");
         return false;
@@ -19,7 +19,7 @@ bool kad_rpc_init(struct kad_ctx *ctx)
 
 void kad_rpc_terminate(struct kad_ctx *ctx)
 {
-    kad_dht_terminate(ctx->dht);
+    dht_terminate(ctx->dht);
     struct list_item *query = &ctx->queries;
     list_free_all(query, struct kad_rpc_msg, item);
     log_debug("DHT terminated.");

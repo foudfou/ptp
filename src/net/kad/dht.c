@@ -15,13 +15,13 @@
 #include "utils/bits.h"
 #include "net/kad/dht.h"
 
-void kad_generate_id(kad_guid *uid)
+static void kad_generate_id(kad_guid *uid)
 {
     for (int i = 0; i < KAD_GUID_SPACE; i++)
         uid->b[i] = (unsigned char)random();
 }
 
-struct kad_dht *kad_dht_init()
+struct kad_dht *dht_init()
 {
     struct timespec time;
     if (clock_gettime(CLOCK_REALTIME, &time) < 0)
@@ -46,7 +46,7 @@ struct kad_dht *kad_dht_init()
     return dht;
 }
 
-void kad_dht_terminate(struct kad_dht * dht)
+void dht_terminate(struct kad_dht * dht)
 {
     for (int i = 0; i < KAD_GUID_SPACE; i++) {
         struct list_item *bucket = &dht->buckets[i];
@@ -99,16 +99,17 @@ static inline bool kad_guid_eq(const kad_guid *ida, const kad_guid *idb)
     return true;
 }
 
-
 /**
  * Retrieves a node from its guid. Possibly sets @bkt_idx to the bucket index
  * of the given node.
  */
 static inline struct kad_node*
-kad_node_get(struct kad_dht *dht, const kad_guid *node_id, size_t *bkt_idx)
+dht_get(struct kad_dht *dht, const kad_guid *node_id, size_t *bkt_idx)
 {
-    *bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
-    const struct list_item *kad_bucket = &dht->buckets[*bkt_idx];
+    size_t bidx = kad_bucket_hash(&dht->self_id, node_id);
+    if (bkt_idx)
+        *bkt_idx = bidx;
+    const struct list_item *kad_bucket = &dht->buckets[bidx];
     const struct list_item *it = kad_bucket;
     struct kad_node *found;
     list_for(it, kad_bucket) {
@@ -122,10 +123,10 @@ kad_node_get(struct kad_dht *dht, const kad_guid *node_id, size_t *bkt_idx)
 /**
  * Return 0 on success, -1 on failure, 1 when node unknown.
  */
-int kad_node_update(struct kad_dht *dht, const kad_guid *node_id)
+int dht_update(struct kad_dht *dht, const kad_guid *node_id)
 {
     size_t bkt_idx;
-    struct kad_node *node = kad_node_get(dht, node_id, &bkt_idx);
+    struct kad_node *node = dht_get(dht, node_id, &bkt_idx);
     if (!node)
         return 1;
     /* TODO: check that ip:port hasn't changed. */
@@ -144,55 +145,65 @@ int kad_node_update(struct kad_dht *dht, const kad_guid *node_id)
 }
 
 /**
- * Assumes unknown node, i.e. kad_node_update() did not succeed.
+ * Check if a node with @node_id can be inserted into the DHT.
+ *
+ * Returns NULL if there is room in the target bucket, or the last node.
+ * Assumes unknown node, i.e. dht_update() did not succeed.
  */
-struct kad_node *kad_node_can_insert(struct kad_dht *dht,
-                                     const kad_guid *node_id)
+struct kad_node *dht_can_insert(struct kad_dht *dht, const kad_guid *node_id)
 {
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
     struct list_item *bucket = &dht->buckets[bkt_idx];
     size_t count = kad_bucket_count(bucket);
     if (count == KAD_K_CONST)
         return cont(bucket->next, struct kad_node, item);
-
     return NULL;
+}
+
+static struct kad_node *
+dht_node_new(const kad_guid *node_id, const char host[], const char service[])
+{
+    struct timespec time;
+    if (clock_gettime(CLOCK_REALTIME, &time) < 0) {
+        log_perror("Failed clock_gettime(): %s", errno);
+        return NULL;
+    }
+
+    struct kad_node *node = malloc(sizeof(struct kad_node));
+    if (!node) {
+        log_perror("Failed malloc: %s.", errno);
+        return NULL;
+    }
+
+    memcpy(node->id.b, node_id->b, KAD_GUID_BYTE_SPACE);
+    strcpy(node->host, host);
+    strcpy(node->service, service);
+    node->last_seen = time.tv_sec;
+    list_init(&(node->item));
+
+    return node;
 }
 
 /**
  * Forcibly inserts a node into the routing table.
  *
  * Assumes unknown node and corresponding bucket not full,
- * i.e. kad_node_can_insert() succeeded.
+ * i.e. dht_can_insert() succeeded.
  */
-bool kad_node_insert(struct kad_dht *dht, const kad_guid *node_id,
-                     const char host[], const char service[])
+bool dht_insert(struct kad_dht *dht, const kad_guid *node_id,
+                const char host[], const char service[])
 {
-    struct timespec time;
-    if (clock_gettime(CLOCK_REALTIME, &time) < 0) {
-        log_perror("Failed clock_gettime(): %s", errno);
+    struct kad_node *node = dht_node_new(node_id, host, service);
+    if (!node)
         return false;
-    }
-
-    struct kad_node *node = malloc(sizeof(struct kad_node));
-    if (!node) {
-        log_perror("Failed malloc: %s.", errno);
-        return false;
-    }
-
-    size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
-    node->id = *node_id;
-    strcpy(node->host, host);
-    strcpy(node->service, service);
-    node->last_seen = time.tv_sec;
-    list_init(&(node->item));
-    list_prepend(&dht->buckets[bkt_idx], &(node->item));
-
+    size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->id);
+    list_prepend(&dht->buckets[bkt_idx], &node->item);
     return true;
 }
 
-bool kad_node_delete(struct kad_dht *dht, const kad_guid *node_id)
+bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
 {
-    struct kad_node *node = kad_node_get(dht, node_id, NULL);
+    struct kad_node *node = dht_get(dht, node_id, NULL);
     if (!node) {
         char *id = log_fmt_hex(LOG_ERR, node_id->b, KAD_GUID_BYTE_SPACE);
         log_error("Unknown node (id=%s).", id);

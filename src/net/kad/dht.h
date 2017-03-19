@@ -1,5 +1,10 @@
-#ifndef KAD_H
-#define KAD_H
+#ifndef DHT_H
+#define DHT_H
+
+/**
+ * The dht is an opaque hash table-like structure. Its internal elements are
+ * not exposed. Possible interactions are limited to insert, delete, update.
+ */
 
 #include <netdb.h>
 #include <stdio.h>
@@ -43,8 +48,8 @@ struct kad_dht {
     struct list_item buckets[KAD_GUID_SPACE]; // kad_node list
 };
 
-struct kad_dht *kad_dht_init();
-void kad_dht_terminate(struct kad_dht * dht);
+struct kad_dht *dht_init();
+void dht_terminate(struct kad_dht * dht);
 
 /**
  * « When a Kademlia node receives any message (re- quest or reply) from
@@ -56,14 +61,14 @@ void kad_dht_terminate(struct kad_dht * dht);
  * seen node responds, it is moved to the tail of the list, and the new
  * sender’s contact is discarded. »
  *
- * So the proper sequence is to kad_node_update(), then kad_node_can_insert(),
- * and then [FIXME: when exactly] kad_node_insert().
+ * So the proper sequence is to dht_update(), then dht_can_insert(),
+ * and then [FIXME: when exactly] dht_insert().
  */
-int kad_node_update(struct kad_dht *dht, const kad_guid *node_id);
-struct kad_node *kad_node_can_insert(struct kad_dht *dht,
-                                     const kad_guid *node_id);
-bool kad_node_insert(struct kad_dht *dht, const kad_guid *node_id,
-                     const char host[], const char service[]);
-bool kad_node_delete(struct kad_dht *dht, const kad_guid *node_id);
+int dht_update(struct kad_dht *dht, const kad_guid *node_id);
+struct kad_node *dht_can_insert(struct kad_dht *dht,
+                                const kad_guid *node_id);
+bool dht_insert(struct kad_dht *dht, const kad_guid *node_id,
+                const char host[], const char service[]);
+bool dht_delete(struct kad_dht *dht, const kad_guid *node_id);
 
-#endif /* KAD_H */
+#endif /* DHT_H */
