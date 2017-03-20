@@ -49,7 +49,7 @@ bool sig_install()
         sigemptyset(&sa.sa_mask);
         sa.sa_flags = sig[i][1];
         if (sigaction(sig[i][0], &sa, NULL) != 0) {
-            log_perror("Failed sigaction: %s", errno);
+            log_perror(LOG_ERR, "Failed sigaction: %s", errno);
             return false;
         }
     }

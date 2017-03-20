@@ -89,11 +89,11 @@ void log_stream_msg(int prio, const char *fmt, ...)
       perror("mq_send log_mq");
 }
 
-void log_perror(const char *fmt, const int errnum)
+void log_perror(const int prio, const char *fmt, const int errnum)
 {
     char errtxt[LOG_ERR_LEN];
     strerror_r(errnum, errtxt, LOG_ERR_LEN);
-    log_msg(LOG_ERR, fmt, errtxt);
+    log_msg(prio, fmt, errtxt);
 }
 
 char *log_fmt_hex(const int prio, const unsigned char *id, const size_t len)

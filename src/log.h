@@ -65,7 +65,7 @@ void log_stream_msg(int prio, const char *fmt, ...);
  *
  * Provide a *single* `%s` placeholder for the error text in @fmt.
  */
-void log_perror(const char *fmt, const int errnum);
+void log_perror(const int prio, const char *fmt, const int errnum);
 
 /**
  * If prio is met, returns an id as a string, which THE CONSUMER MUST FREE.

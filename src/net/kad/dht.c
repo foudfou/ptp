@@ -24,12 +24,12 @@ struct kad_dht *dht_init()
 {
     struct timespec time;
     if (clock_gettime(CLOCK_REALTIME, &time) < 0)
-        log_perror("Failed clock_gettime(): %s", errno);
+        log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
     srandom(time.tv_sec * time.tv_nsec * getpid());
 
     struct kad_dht *dht = malloc(sizeof(struct kad_dht));
     if (!dht) {
-        log_perror("Failed malloc: %s.", errno);
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return NULL;
     }
     /* Although the node_id should be assigned by the network, it seems a
@@ -135,7 +135,7 @@ int dht_update(struct kad_dht *dht, const struct kad_node_info *info)
 
     struct timespec time;
     if (clock_gettime(CLOCK_REALTIME, &time) < 0) {
-        log_perror("Failed clock_gettime(): %s", errno);
+        log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
         return -1;
     }
 
@@ -173,13 +173,13 @@ static struct kad_node *dht_node_new(const struct kad_node_info *info)
 {
     struct timespec time;
     if (clock_gettime(CLOCK_REALTIME, &time) < 0) {
-        log_perror("Failed clock_gettime(): %s", errno);
+        log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
         return NULL;
     }
 
     struct kad_node *node = malloc(sizeof(struct kad_node));
     if (!node) {
-        log_perror("Failed malloc: %s.", errno);
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return NULL;
     }
 

@@ -43,7 +43,7 @@ static int sock_geterr(int fd) {
    int err = 1;
    socklen_t len = sizeof err;
    if (getsockopt(fd, SOL_SOCKET, SO_ERROR, (char *)&err, &len) == -1)
-       log_perror("Failed getsockopt: %s.", errno);
+       log_perror(LOG_ERR, "Failed getsockopt: %s.", errno);
    if (err)
       errno = err;              // set errno to the socket SO_ERROR
    return err;
@@ -62,9 +62,9 @@ static bool sock_close(int fd) {      // *not* the Windows closesocket()
    sock_geterr(fd);    // first clear any errors, which can cause close to fail
    if (shutdown(fd, SHUT_RDWR) < 0) // secondly, terminate the 'reliable' delivery
        if (errno != ENOTCONN && errno != EINVAL) // SGI causes EINVAL
-           log_perror("Failed shutdown: %s.", errno);
+           log_perror(LOG_ERR, "Failed shutdown: %s.", errno);
    if (close(fd) < 0) {         // finally call close()
-       log_perror("Failed close: %s.", errno);
+       log_perror(LOG_ERR, "Failed close: %s.", errno);
        return false;
    }
 
@@ -74,11 +74,11 @@ static bool sock_close(int fd) {      // *not* the Windows closesocket()
 static int server_sock_setnonblock(int sock) {
     int flags = fcntl(sock, F_GETFL, 0);
     if (flags == -1) {
-        log_perror("Failed get fcntl: %s.", errno);
+        log_perror(LOG_ERR, "Failed get fcntl: %s.", errno);
         return errno;
     }
     if (fcntl(sock, F_SETFL, flags |= O_NONBLOCK) == -1) {
-        log_perror("Failed set fcntl: %s.", errno);
+        log_perror(LOG_ERR, "Failed set fcntl: %s.", errno);
         return errno;
     }
 
@@ -92,7 +92,7 @@ static int server_sock_setopts(int sock, const int family, const int socktype) {
         (family == AF_INET6 &&
          setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, (char *)&so_false,
                    sizeof(so_true)) < 0)) {
-        log_perror("Failed setsockopt: %s.", errno);
+        log_perror(LOG_ERR, "Failed setsockopt: %s.", errno);
         return errno;
     }
 
@@ -126,7 +126,7 @@ socket_init(const int socktype, const char bind_addr[], const char bind_port[])
     hints.ai_socktype = socktype;
     hints.ai_flags    = AI_PASSIVE;
     if (getaddrinfo(bind_addr, bind_port, &hints, &addrs)) {
-        log_perror("Failed getaddrinfo: %s.", errno);
+        log_perror(LOG_ERR, "Failed getaddrinfo: %s.", errno);
         return -1;
     }
 
@@ -150,14 +150,14 @@ socket_init(const int socktype, const char bind_addr[], const char bind_port[])
     }
 
     if (!it) {
-        log_perror("Failed connect: %s.", errno);
+        log_perror(LOG_ERR, "Failed connect: %s.", errno);
         return -1;
     }
 
     freeaddrinfo(addrs);
 
     if (socktype == SOCK_STREAM && listen(sockfd, 32)) {
-        log_perror("Failed listen: %s.", errno);
+        log_perror(LOG_ERR, "Failed listen: %s.", errno);
         return -1;
     }
 
@@ -187,7 +187,7 @@ peer_register(struct list_item *peers, int conn,
 
     struct peer *peer = malloc(sizeof(struct peer));
     if (!peer) {
-        log_perror("Failed malloc: %s.", errno);
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return NULL;
     }
 
@@ -246,7 +246,7 @@ static bool peer_msg_send(const struct peer *peer, enum proto_msg_type typ,
         if (errno == EPIPE)
             log_info("Peer fd=%u disconnected while sending.");
         else
-            log_perror("Failed send: %s.", errno);
+            log_perror(LOG_ERR, "Failed send: %s.", errno);
         return false;
     }
 
@@ -270,7 +270,7 @@ static int peer_conn_accept_all(const int listenfd, struct list_item *peers,
         conn = accept(listenfd, (struct sockaddr *)&peer_addr, &peer_addr_len);
         if (conn < 0) {
             if (errno != EWOULDBLOCK) {
-                log_perror("Failed server_conn_accept: %s.", errno);
+                log_perror(LOG_ERR, "Failed server_conn_accept: %s.", errno);
                 return -1;
             }
             break;
@@ -320,7 +320,7 @@ static bool peer_conn_close(struct peer *peer)
     bool ret = true;
     log_info("Closing connection with peer [%s]:%s.", peer->host, peer->service);
     if (!sock_close(peer->fd)) {
-        log_perror("Failed closed for peer: %s.", errno);
+        log_perror(LOG_ERR, "Failed closed for peer: %s.", errno);
         ret = false;
     }
     peer_unregister(peer);
@@ -348,7 +348,7 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *kctx)
     ssize_t slen = recv(peer->fd, buf, SERVER_TCP_BUFLEN, 0);
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
-            log_perror("Failed recv: %s", errno);
+            log_perror(LOG_ERR, "Failed recv: %s", errno);
             ret = CONN_CLOSED;
         }
         goto end;
@@ -409,7 +409,7 @@ static bool node_handle_data(int sock, struct kad_ctx *kctx)
                             (struct sockaddr *)&node_addr, &node_addr_len);
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
-            log_perror("Failed recv: %s", errno);
+            log_perror(LOG_ERR, "Failed recv: %s", errno);
             return false;
         }
         goto end;
@@ -503,7 +503,7 @@ void server_run(const struct config *conf)
             if (errno == EINTR)
                 continue;
             else {
-                log_perror("Failed poll: %s", errno);
+                log_perror(LOG_ERR, "Failed poll: %s", errno);
                 break;
             }
         }

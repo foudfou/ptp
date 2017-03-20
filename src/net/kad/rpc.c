@@ -66,7 +66,7 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
 {
     struct kad_rpc_msg *msg = malloc(sizeof(struct kad_rpc_msg));
     if (!msg) {
-        log_perror("Failed malloc: %s.", errno);
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return false;
     }
     memset(msg, 0, sizeof(*msg));
@@ -84,8 +84,7 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
     struct kad_rpc_node_pair *ins =
         malloc(sizeof(struct kad_rpc_node_pair));
     if (!ins)
-        // FIXME: log_perror should accept prio
-        log_perror("Failed malloc: %s.", errno);
+        log_perror(LOG_WARNING, "Failed malloc: %s.", errno);
     else {
         memset(ins, 0, sizeof(*ins));
         list_init(&(ins->item));

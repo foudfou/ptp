@@ -26,7 +26,7 @@ static bool iobuf_grow(struct iobuf *buf, const size_t len)
 
     void *realloced = realloc(buf->buf, capa);
     if (!realloced) {
-        log_perror("Failed realloc: %s.", errno);
+        log_perror(LOG_ERR, "Failed realloc: %s.", errno);
         return false;
     }
     buf->buf = realloced;
