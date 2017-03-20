@@ -88,7 +88,7 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
     else {
         memset(ins, 0, sizeof(*ins));
         list_init(&(ins->item));
-        memcpy(ins->new.id.b, msg->node_id.b, KAD_GUID_BYTE_SPACE);
+        ins->new.id =  msg->node_id;
         strcpy(ins->new.host, host);
         strcpy(ins->new.service, service);
 

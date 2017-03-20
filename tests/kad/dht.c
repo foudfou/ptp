@@ -43,7 +43,7 @@ int main ()
 
     // bucket full
     struct kad_node_info opp;
-    memcpy(opp.id.b, dht->self_id.b, KAD_GUID_BYTE_SPACE);
+    opp.id = dht->self_id;
     opp.id.b[0] ^= 0x80;
     assert(KAD_K_CONST <= 0xff);  // don't want to overflow next
     for (int i = 0; i < KAD_K_CONST; ++i) {

@@ -29,9 +29,6 @@
 /* Byte arrays are not affected by endian issues.
    http://stackoverflow.com/a/4523537/421846 */
 typedef struct { unsigned char b[KAD_GUID_BYTE_SPACE]; } kad_guid;
-/* FIXME: easier as a straight array:
-   typedef char kad_guid[KAD_GUID_BYTE_SPACE];
- */
 
 struct kad_node_info {
     kad_guid id;
@@ -59,7 +56,7 @@ struct kad_dht {
 static inline void kad_node_info_cpy(struct kad_node_info *dst,
                                      const struct kad_node_info *src)
 {
-    memcpy(dst->id.b, src->id.b, KAD_GUID_BYTE_SPACE);
+    dst->id = src->id;
     strcpy(dst->host, src->host);
     strcpy(dst->service, src->service);
 }
