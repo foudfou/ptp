@@ -65,18 +65,6 @@ static const lookup_entry kad_rpc_msg_field_names[] = {
 };
 
 /**
- * We diverge here from the BitTorrent spec where a compact node info is
- * node_id (20B) + IP (4B) + port (2B), assuming ip4. A node info comprises 3
- * strings. Which implies that node infos are encoded in lists: ["id1",
- * "host1", "service1", "id2", "host2", "service3", ...].
- */
-struct kad_rpc_node_info {
-    kad_guid id;
-    char     host[NI_MAXHOST];
-    char     service[NI_MAXSERV];
-};
-
-/**
  * Naive flattened dictionary for all possible messages.
  *
  * The protocol being relatively tiny, data size considered limited (a Kad
@@ -89,24 +77,37 @@ struct kad_rpc_node_info {
  * this stage.
  */
 struct kad_rpc_msg {
-    struct list_item         item;
-    unsigned char            tx_id[KAD_RPC_MSG_TX_ID_LEN]; /* t */
-    kad_guid                 node_id; /* from {a,r} dict: id_str */
-    enum kad_rpc_type        type; /* y {q,r,e} */
-    unsigned long long       err_code;
-    char                     err_msg[KAD_RPC_STR_MAX];
-    enum kad_rpc_meth        meth; /* q {"ping","find_node"} */
-    kad_guid                 target; /* from {a,r} dict: target, nodes */
-    struct kad_rpc_node_info nodes[KAD_K_CONST]; /* from {a,r} dict: target, nodes */
-    size_t                   nodes_len;
+    struct list_item     item;
+    unsigned char        tx_id[KAD_RPC_MSG_TX_ID_LEN]; /* t */
+    kad_guid             node_id; /* from {a,r} dict: id_str */
+    enum kad_rpc_type    type;  /* y {q,r,e} */
+    unsigned long long   err_code;
+    char                 err_msg[KAD_RPC_STR_MAX];
+    enum kad_rpc_meth    meth;  /* q {"ping","find_node"} */
+    kad_guid             target; /* from {a,r} dict: target, nodes */
+    /*
+     * We diverge here from the BitTorrent spec where a compact node info is
+     * node_id (20B) + IP (4B) + port (2B), assuming ip4. A node info comprises
+     * 3 strings. Which implies that node infos are encoded in lists: ["id1",
+     * "host1", "service1", "id2", "host2", "service3", ...].
+     */
+    struct kad_node_info nodes[KAD_K_CONST]; /* from {a,r} dict: target, nodes */
+    size_t               nodes_len;
+};
+
+struct kad_rpc_node_pair {
+    struct list_item     item;
+    struct kad_node_info old;
+    struct kad_node_info new;
 };
 
 struct kad_ctx {
     struct kad_dht   *dht;
     struct list_item  queries; // kad_rcp_msg list
+    struct list_item  insertq; // kad_rpc_node_pair list
 };
 
-bool kad_rpc_init(struct kad_ctx *kctx);
+bool kad_rpc_init(struct kad_ctx *ctx);
 void kad_rpc_terminate(struct kad_ctx *ctx);
 
 bool kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],

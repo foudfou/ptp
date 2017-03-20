@@ -13,6 +13,7 @@ bool kad_rpc_init(struct kad_ctx *ctx)
         return false;
     }
     list_init(&ctx->queries);
+    list_init(&ctx->insertq);
     log_debug("DHT initialized.");
     return true;
 }
@@ -22,6 +23,8 @@ void kad_rpc_terminate(struct kad_ctx *ctx)
     dht_terminate(ctx->dht);
     struct list_item *query = &ctx->queries;
     list_free_all(query, struct kad_rpc_msg, item);
+    struct list_item *ins = &ctx->insertq;
+    list_free_all(ins, struct kad_rpc_node_pair, item);
     log_debug("DHT terminated.");
 }
 
@@ -53,12 +56,14 @@ kad_rpc_query_find(struct kad_ctx *ctx, const unsigned char tx_id[])
     return m;
 }
 
+/**
+ * Returns 0 on success, -1 on failure, 1 if further ping confirmation is
+ * needed, in which case @ping is set.
+ */
 bool kad_rpc_handle(struct kad_ctx *ctx,
                     const char host[], const char service[],
                     const char buf[], const size_t slen)
 {
-    (void)ctx; (void)host; (void)service; // FIXME:
-
     struct kad_rpc_msg *msg = malloc(sizeof(struct kad_rpc_msg));
     if (!msg) {
         log_perror("Failed malloc: %s.", errno);
@@ -70,15 +75,45 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
     if (!benc_decode(msg, buf, slen) ||
         !kad_rpc_msg_validate(msg)) {
         log_error("Invalid message.");
-        return false;
+        goto fail;
     }
     kad_rpc_msg_log(msg);
+
+
+    /* Pending inserts are stored into a queue for later processing. */
+    struct kad_rpc_node_pair *ins =
+        malloc(sizeof(struct kad_rpc_node_pair));
+    if (!ins)
+        // FIXME: log_perror should accept prio
+        log_perror("Failed malloc: %s.", errno);
+    else {
+        memset(ins, 0, sizeof(*ins));
+        list_init(&(ins->item));
+        memcpy(ins->new.id.b, msg->node_id.b, KAD_GUID_BYTE_SPACE);
+        strcpy(ins->new.host, host);
+        strcpy(ins->new.service, service);
+
+        int updated = dht_update(ctx->dht, &ins->new);
+        if (updated < 0)
+            log_warning("Failed to update kad_node (id=%TODO:)");
+        else if (updated > 0) { // insert needed
+            if (dht_can_insert(ctx->dht, &ins->new.id, &ins->old)) {
+                if (!dht_insert(ctx->dht, &ins->new))
+                    log_warning("Failed to insert kad_node (id=%TODO:).");
+                free_safer(ins);
+            }
+            else
+                list_prepend(&ctx->insertq, &ins->item);
+        }
+        else
+            // bucket updated, nothing to do.
+            free_safer(ins);
+    }
 
     switch (msg->type) {
     case KAD_RPC_TYPE_NONE: {
         log_error("Got msg none");
-        free_safer(msg);
-        return false;
+        goto fail;
     }
 
     case KAD_RPC_TYPE_QUERY: {  /* We'll respond immediately */
@@ -90,7 +125,7 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
         log_debug("Got msg response");
         struct kad_rpc_msg *query = kad_rpc_query_find(ctx, msg->tx_id);
         if (!query)
-            return false;
+            goto fail;
 
         list_delete(&query->item);
         free_safer(query);
@@ -102,8 +137,10 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
     }
 
     free_safer(msg);
-
     return true;
+  fail:
+    free_safer(msg);
+    return false;
 }
 
 /**

@@ -8,6 +8,7 @@
 
 #include <netdb.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 #include "utils/cont.h"
 #include "utils/list.h"
@@ -28,14 +29,21 @@
 /* Byte arrays are not affected by endian issues.
    http://stackoverflow.com/a/4523537/421846 */
 typedef struct { unsigned char b[KAD_GUID_BYTE_SPACE]; } kad_guid;
+/* FIXME: easier as a straight array:
+   typedef char kad_guid[KAD_GUID_BYTE_SPACE];
+ */
+
+struct kad_node_info {
+    kad_guid id;
+    char     host[NI_MAXHOST];
+    char     service[NI_MAXSERV];
+};
 
 /* Nodes (DHT) are not peers (network). */
 struct kad_node {
-    struct list_item item;
-    kad_guid         id;
-    char             host[NI_MAXHOST];
-    char             service[NI_MAXSERV];
-    time_t           last_seen;
+    struct list_item     item;
+    struct kad_node_info info;
+    time_t               last_seen;
 };
 
 struct kad_dht {
@@ -43,10 +51,18 @@ struct kad_dht {
     /* The routing table is implemented as hash table: an array of lists
        (buckets) of at most KAD_K_CONST. Instead of using a generic hash table
        implementation, we build a specialized one for specific operations on
-       each list. List are sorted by construction: either we append new nodes
+       each list. Lists are sorted by construction: either we append new nodes
        at the end, or we update nodes and move them to the end. */
     struct list_item buckets[KAD_GUID_SPACE]; // kad_node list
 };
+
+static inline void kad_node_info_cpy(struct kad_node_info *dst,
+                                     const struct kad_node_info *src)
+{
+    memcpy(dst->id.b, src->id.b, KAD_GUID_BYTE_SPACE);
+    strcpy(dst->host, src->host);
+    strcpy(dst->service, src->service);
+}
 
 struct kad_dht *dht_init();
 void dht_terminate(struct kad_dht * dht);
@@ -64,11 +80,10 @@ void dht_terminate(struct kad_dht * dht);
  * So the proper sequence is to dht_update(), then dht_can_insert(),
  * and then [FIXME: when exactly] dht_insert().
  */
-int dht_update(struct kad_dht *dht, const kad_guid *node_id);
-struct kad_node *dht_can_insert(struct kad_dht *dht,
-                                const kad_guid *node_id);
-bool dht_insert(struct kad_dht *dht, const kad_guid *node_id,
-                const char host[], const char service[]);
+int dht_update(struct kad_dht *dht, const struct kad_node_info *info);
+bool dht_can_insert(struct kad_dht *dht, const kad_guid *node_id,
+                    struct kad_node_info *old);
+bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info);
 bool dht_delete(struct kad_dht *dht, const kad_guid *node_id);
 
 #endif /* DHT_H */

@@ -8,7 +8,6 @@
  */
 #include <errno.h>
 #include <stdlib.h>
-#include <string.h>
 #include <time.h>
 #include <unistd.h>
 #include "log.h"
@@ -114,19 +113,22 @@ dht_get(struct kad_dht *dht, const kad_guid *node_id, size_t *bkt_idx)
     struct kad_node *found;
     list_for(it, kad_bucket) {
         found = cont(it, struct kad_node, item);
-        if (kad_guid_eq(&found->id, node_id))
+        if (kad_guid_eq(&found->info.id, node_id))
             return found;
     }
     return NULL;
 }
 
 /**
+ * Try to update node's data and move it to the end of the bucket. The bucket
+ * is thus kept ordered by last_seen time, least recent first.
+ *
  * Return 0 on success, -1 on failure, 1 when node unknown.
  */
-int dht_update(struct kad_dht *dht, const kad_guid *node_id)
+int dht_update(struct kad_dht *dht, const struct kad_node_info *info)
 {
     size_t bkt_idx;
-    struct kad_node *node = dht_get(dht, node_id, &bkt_idx);
+    struct kad_node *node = dht_get(dht, &info->id, &bkt_idx);
     if (!node)
         return 1;
     /* TODO: check that ip:port hasn't changed. */
@@ -147,21 +149,27 @@ int dht_update(struct kad_dht *dht, const kad_guid *node_id)
 /**
  * Check if a node with @node_id can be inserted into the DHT.
  *
- * Returns NULL if there is room in the target bucket, or the last node.
+ * Returns true if there is room in the target bucket, otherwise sets @old node
+ * info to the least recently seen node in the target bucket and returns false.
+ *
  * Assumes unknown node, i.e. dht_update() did not succeed.
  */
-struct kad_node *dht_can_insert(struct kad_dht *dht, const kad_guid *node_id)
+bool dht_can_insert(struct kad_dht *dht, const kad_guid *node_id,
+                    struct kad_node_info *old)
 {
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
     struct list_item *bucket = &dht->buckets[bkt_idx];
     size_t count = kad_bucket_count(bucket);
-    if (count == KAD_K_CONST)
-        return cont(bucket->next, struct kad_node, item);
-    return NULL;
+
+    if (count == KAD_K_CONST) {
+        struct kad_node *least_recent = cont(bucket->next, struct kad_node, item);
+        kad_node_info_cpy(old, &least_recent->info);
+        return false;
+    }
+    return true;
 }
 
-static struct kad_node *
-dht_node_new(const kad_guid *node_id, const char host[], const char service[])
+static struct kad_node *dht_node_new(const struct kad_node_info *info)
 {
     struct timespec time;
     if (clock_gettime(CLOCK_REALTIME, &time) < 0) {
@@ -175,9 +183,7 @@ dht_node_new(const kad_guid *node_id, const char host[], const char service[])
         return NULL;
     }
 
-    memcpy(node->id.b, node_id->b, KAD_GUID_BYTE_SPACE);
-    strcpy(node->host, host);
-    strcpy(node->service, service);
+    kad_node_info_cpy(&node->info, info);
     node->last_seen = time.tv_sec;
     list_init(&(node->item));
 
@@ -190,14 +196,17 @@ dht_node_new(const kad_guid *node_id, const char host[], const char service[])
  * Assumes unknown node and corresponding bucket not full,
  * i.e. dht_can_insert() succeeded.
  */
-bool dht_insert(struct kad_dht *dht, const kad_guid *node_id,
-                const char host[], const char service[])
+bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info)
 {
-    struct kad_node *node = dht_node_new(node_id, host, service);
+    struct kad_node *node = dht_node_new(info);
     if (!node)
         return false;
-    size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->id);
+    size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->info.id);
     list_prepend(&dht->buckets[bkt_idx], &node->item);
+    char *id = log_fmt_hex(LOG_DEBUG, node->info.id.b, KAD_GUID_BYTE_SPACE);
+    log_debug("DHT insert of [%s]:%s (id=%s) into bucket %zu.",
+              info->host, info->service, info->id, bkt_idx);
+    free_safer(id);
     return true;
 }
 

@@ -427,30 +427,6 @@ static bool node_handle_data(int sock, struct kad_ctx *kctx)
 
     kad_rpc_handle(kctx, host, service, buf, (size_t)slen);
 
-    /* const kad_guid node_id = {0}; // FIXME: extract from message. */
-    /* int rv = kad_node_update(kctx, node_id); */
-    /* if (rv < 0) { */
-    /*     log_error("Failed to update kad_node (id=%"PRIx64").", node_id); */
-    /*     goto end; */
-    /* } */
-    /* else if (rv > 0) { // insert needed */
-    /*     struct kad_node *least_recent = kad_node_can_insert(kctx, node_id); */
-    /*     if (!least_recent) { */
-    /*         if (!kad_node_insert(kctx, node_id, node->host, node->service)) { */
-    /*             log_error("Failed to insert kad_node (id=%"PRIx64").", */
-    /*                       node_id); */
-    /*             goto end; */
-    /*         } */
-    /*     } */
-    /*     else { */
-    /*         /\* kad_node_send(PING, ...); *\/ */
-    /*         /\* kad_node_recv(with_timeout, ...); *\/ */
-    /*     } */
-    /* } */
-    /* else { */
-    /*     // bucket updated, nothing to do. */
-    /* } */
-
   end:
     return true;
 }
