@@ -53,6 +53,14 @@ struct kad_dht {
     struct list_item buckets[KAD_GUID_SPACE]; // kad_node list
 };
 
+static inline bool kad_guid_eq(const kad_guid *ida, const kad_guid *idb)
+{
+    for (int i = 0; i < KAD_GUID_BYTE_SPACE; i++)
+        if (ida->b[i] != idb->b[i])
+            return false;
+    return true;
+}
+
 static inline void kad_node_info_cpy(struct kad_node_info *dst,
                                      const struct kad_node_info *src)
 {

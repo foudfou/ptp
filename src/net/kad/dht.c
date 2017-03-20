@@ -90,14 +90,6 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
     return bucket_idx;
 }
 
-static inline bool kad_guid_eq(const kad_guid *ida, const kad_guid *idb)
-{
-    for (int i = 0; i < KAD_GUID_BYTE_SPACE; i++)
-        if (ida->b[i] != idb->b[i])
-            return false;
-    return true;
-}
-
 /**
  * Retrieves a node from its guid. Possibly sets @bkt_idx to the bucket index
  * of the given node.
@@ -202,7 +194,7 @@ bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info)
     if (!node)
         return false;
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->info.id);
-    list_prepend(&dht->buckets[bkt_idx], &node->item);
+    list_append(&dht->buckets[bkt_idx], &node->item);
     char *id = log_fmt_hex(LOG_DEBUG, node->info.id.b, KAD_GUID_BYTE_SPACE);
     log_debug("DHT insert of [%s]:%s (id=%s) into bucket %zu.",
               info->host, info->service, info->id, bkt_idx);

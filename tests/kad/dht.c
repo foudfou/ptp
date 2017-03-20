@@ -45,6 +45,7 @@ int main ()
     struct kad_node_info opp;
     opp.id = dht->self_id;
     opp.id.b[0] ^= 0x80;
+    kad_guid opp_id0 = opp.id;
     assert(KAD_K_CONST <= 0xff);  // don't want to overflow next
     for (int i = 0; i < KAD_K_CONST; ++i) {
         assert(dht_can_insert(dht, &opp.id, &old));
@@ -52,6 +53,8 @@ int main ()
         opp.id.b[KAD_GUID_BYTE_SPACE-1] += 1;
     }
     assert(!dht_can_insert(dht, &opp.id, &old));
+    // old set to least recent seen
+    assert(kad_guid_eq(&old.id, &opp_id0));
 
     dht_terminate(dht);
     log_shutdown(LOG_TYPE_STDOUT);

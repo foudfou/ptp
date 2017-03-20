@@ -96,6 +96,7 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
         if (updated < 0)
             log_warning("Failed to update kad_node (id=%TODO:)");
         else if (updated > 0) { // insert needed
+// FIXME: merge dht_insert and dht_can_insert.
             if (dht_can_insert(ctx->dht, &ins->new.id, &ins->old)) {
                 if (!dht_insert(ctx->dht, &ins->new))
                     log_warning("Failed to insert kad_node (id=%TODO:).");
