@@ -41,6 +41,7 @@ struct kad_node {
     struct list_item     item;
     struct kad_node_info info;
     time_t               last_seen;
+    int                  stale;
 };
 
 struct kad_dht {
@@ -51,6 +52,17 @@ struct kad_dht {
        each list. Lists are sorted by construction: either we append new nodes
        at the end, or we update nodes and move them to the end. */
     struct list_item buckets[KAD_GUID_SPACE]; // kad_node list
+    /* « To reduce traffic, Kademlia delays probing contacts until it has
+       useful messages to send them. When a Kademlia node receives an RPC from
+       an unknown contact and the k-bucket for that contact is already full
+       with k entries, the node places the new contact in a replacement cache
+       of nodes eligible to replace stale k-bucket entries. The next time the
+       node queries contacts in the k-bucket, any unresponsive ones can be
+       evicted and replaced with entries in the replacement cache. The
+       replacement cache is kept sorted by time last seen, with the most
+       recently seen entry having the highest priority as a replacement
+       candidate. » */
+    struct list_item replacement; // kad_node list
 };
 
 static inline bool kad_guid_eq(const kad_guid *ida, const kad_guid *idb)
@@ -86,8 +98,6 @@ void dht_terminate(struct kad_dht * dht);
  * and then [FIXME: when exactly] dht_insert().
  */
 int dht_update(struct kad_dht *dht, const struct kad_node_info *info);
-bool dht_can_insert(struct kad_dht *dht, const kad_guid *node_id,
-                    struct kad_node_info *old);
 bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info);
 bool dht_delete(struct kad_dht *dht, const kad_guid *node_id);
 

@@ -1,7 +1,7 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
-#include "net/kad/dht.c"      // testing static functions
 #include "utils/safer.h"
+#include "net/kad/dht.c"      // testing static functions
 
 int main ()
 {
@@ -28,33 +28,28 @@ int main ()
 
     struct kad_node_info info = { .id = {.b = {[KAD_GUID_BYTE_SPACE-1]=0x0}},
                                   .host = "1.1.1.1", .service = "22" };
-    struct kad_node_info old = {0};
     assert(dht_update(dht, &info) == 1);
-    assert(dht_can_insert(dht, &info.id, &old));
     assert(dht_insert(dht, &info));
-    /* dht_get_node() is not exposed. So we're not supposed to do bad things
-       like freeing a node, or assert(!n1) after it's been dht_delete'd. */
-    struct kad_node *n1 = dht_get(dht, &info.id, NULL);
+    /* dht_get...() is not exposed. So we're not supposed to do bad things like
+       freeing a node, or assert(!n1) after it's been dht_delete'd. */
+    bkt_idx = kad_bucket_hash(&dht->self_id, &info.id);
+    struct kad_node *n1 = dht_get_from_list(&dht->buckets[bkt_idx], &info.id);
     assert(n1);
 
     assert(dht_delete(dht, &info.id));
-    n1 = dht_get(dht, &info.id, NULL);
+    n1 = dht_get_from_list(&dht->buckets[bkt_idx], &info.id);
     assert(!n1);
 
     // bucket full
     struct kad_node_info opp;
     opp.id = dht->self_id;
     opp.id.b[0] ^= 0x80;
-    kad_guid opp_id0 = opp.id;
-    assert(KAD_K_CONST <= 0xff);  // don't want to overflow next
-    for (int i = 0; i < KAD_K_CONST; ++i) {
-        assert(dht_can_insert(dht, &opp.id, &old));
+    assert(KAD_K_CONST <= 0xff);  // don't want to overflow
+    for (int i = 0; i < KAD_K_CONST + 1; ++i) {
         assert(dht_insert(dht, &opp));
         opp.id.b[KAD_GUID_BYTE_SPACE-1] += 1;
     }
-    assert(!dht_can_insert(dht, &opp.id, &old));
-    // old set to least recent seen
-    assert(kad_guid_eq(&old.id, &opp_id0));
+    assert(!list_is_empty(&dht->replacement));
 
     dht_terminate(dht);
     log_shutdown(LOG_TYPE_STDOUT);

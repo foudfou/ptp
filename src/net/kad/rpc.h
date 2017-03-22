@@ -104,7 +104,6 @@ struct kad_rpc_node_pair {
 struct kad_ctx {
     struct kad_dht   *dht;
     struct list_item  queries; // kad_rcp_msg list
-    struct list_item  insertq; // kad_rpc_node_pair list
 };
 
 bool kad_rpc_init(struct kad_ctx *ctx);

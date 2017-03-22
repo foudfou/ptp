@@ -41,6 +41,7 @@ struct kad_dht *dht_init()
 
     for (size_t i = 0; i < KAD_GUID_SPACE; i++)
         list_init(&dht->buckets[i]);
+    list_init(&dht->replacement);
 
     return dht;
 }
@@ -51,6 +52,8 @@ void dht_terminate(struct kad_dht * dht)
         struct list_item *bucket = &dht->buckets[i];
         list_free_all(bucket, struct kad_node, item);
     }
+    struct list_item *repl = &dht->replacement;
+    list_free_all(repl, struct kad_node, item);
     free_safer(dht);
 }
 
@@ -90,20 +93,12 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
     return bucket_idx;
 }
 
-/**
- * Retrieves a node from its guid. Possibly sets @bkt_idx to the bucket index
- * of the given node.
- */
 static inline struct kad_node*
-dht_get(struct kad_dht *dht, const kad_guid *node_id, size_t *bkt_idx)
+dht_get_from_list(const struct list_item *list, const kad_guid *node_id)
 {
-    size_t bidx = kad_bucket_hash(&dht->self_id, node_id);
-    if (bkt_idx)
-        *bkt_idx = bidx;
-    const struct list_item *kad_bucket = &dht->buckets[bidx];
-    const struct list_item *it = kad_bucket;
+    const struct list_item *it = list;
     struct kad_node *found;
-    list_for(it, kad_bucket) {
+    list_for(it, list) {
         found = cont(it, struct kad_node, item);
         if (kad_guid_eq(&found->info.id, node_id))
             return found;
@@ -112,15 +107,21 @@ dht_get(struct kad_dht *dht, const kad_guid *node_id, size_t *bkt_idx)
 }
 
 /**
- * Try to update node's data and move it to the end of the bucket. The bucket
- * is thus kept ordered by last_seen time, least recent first.
+ * Try to update node's data and move it to the end of the bucket, or the the
+ * beginning of the replacement cache.
+ *
+ * Buckets are thus kept ordered by ascending last_seen time (least recent
+ * first). The replacement list is kept ordered by descending last_seen time
+ * (most recent first).
  *
  * Return 0 on success, -1 on failure, 1 when node unknown.
  */
 int dht_update(struct kad_dht *dht, const struct kad_node_info *info)
 {
-    size_t bkt_idx;
-    struct kad_node *node = dht_get(dht, &info->id, &bkt_idx);
+    size_t bkt_idx = kad_bucket_hash(&dht->self_id, &info->id);
+    struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], &info->id);
+    if (!node)
+        node = dht_get_from_list(&dht->replacement, &info->id);
     if (!node)
         return 1;
     /* TODO: check that ip:port hasn't changed. */
@@ -132,33 +133,11 @@ int dht_update(struct kad_dht *dht, const struct kad_node_info *info)
     }
 
     node->last_seen = time.tv_sec;
+    node->stale = 0;
     list_delete(&node->item);
     list_append(&dht->buckets[bkt_idx], &node->item);
 
     return 0;
-}
-
-/**
- * Check if a node with @node_id can be inserted into the DHT.
- *
- * Returns true if there is room in the target bucket, otherwise sets @old node
- * info to the least recently seen node in the target bucket and returns false.
- *
- * Assumes unknown node, i.e. dht_update() did not succeed.
- */
-bool dht_can_insert(struct kad_dht *dht, const kad_guid *node_id,
-                    struct kad_node_info *old)
-{
-    size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
-    struct list_item *bucket = &dht->buckets[bkt_idx];
-    size_t count = kad_bucket_count(bucket);
-
-    if (count == KAD_K_CONST) {
-        struct kad_node *least_recent = cont(bucket->next, struct kad_node, item);
-        kad_node_info_cpy(old, &least_recent->info);
-        return false;
-    }
-    return true;
 }
 
 static struct kad_node *dht_node_new(const struct kad_node_info *info)
@@ -177,34 +156,42 @@ static struct kad_node *dht_node_new(const struct kad_node_info *info)
 
     kad_node_info_cpy(&node->info, info);
     node->last_seen = time.tv_sec;
+    node->stale = 0;
     list_init(&(node->item));
 
     return node;
 }
 
 /**
- * Forcibly inserts a node into the routing table.
+ * Inserts a node into the routing table.
  *
- * Assumes unknown node and corresponding bucket not full,
- * i.e. dht_can_insert() succeeded.
+ * Assumes unknown node, i.e. dht_update() did not succeed.
  */
 bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info)
 {
     struct kad_node *node = dht_node_new(info);
     if (!node)
         return false;
+
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->info.id);
-    list_append(&dht->buckets[bkt_idx], &node->item);
-    char *id = log_fmt_hex(LOG_DEBUG, node->info.id.b, KAD_GUID_BYTE_SPACE);
-    log_debug("DHT insert of [%s]:%s (id=%s) into bucket %zu.",
-              info->host, info->service, info->id, bkt_idx);
-    free_safer(id);
+    struct list_item *bucket = &dht->buckets[bkt_idx];
+    size_t count = kad_bucket_count(bucket);
+    if (count <= KAD_K_CONST) {
+        list_append(&dht->buckets[bkt_idx], &node->item);
+        log_debug("DHT insert into bucket %zu.",bkt_idx);
+    }
+    else {
+        list_prepend(&dht->replacement, &node->item);
+        log_debug("DHT insert into replacement cache.");
+    }
+
     return true;
 }
 
 bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
 {
-    struct kad_node *node = dht_get(dht, node_id, NULL);
+    size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
+    struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], node_id);
     if (!node) {
         char *id = log_fmt_hex(LOG_ERR, node_id->b, KAD_GUID_BYTE_SPACE);
         log_error("Unknown node (id=%s).", id);
