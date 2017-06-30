@@ -231,7 +231,7 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NODE_ID) {
-            if (!cpy_id(msg->node_id.b, val, KAD_GUID_BYTE_SPACE))
+            if (!cpy_id(msg->node_id.b, val, KAD_GUID_SPACE_IN_BYTES))
                 goto fail;
         }
 
@@ -260,7 +260,7 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_TARGET) {
-            if (!cpy_id(msg->target.b, val, KAD_GUID_BYTE_SPACE))
+            if (!cpy_id(msg->target.b, val, KAD_GUID_SPACE_IN_BYTES))
                 goto fail;
         }
 
@@ -305,7 +305,7 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
             if (!cpy_id(msg->nodes[msg->nodes_len].id.b, val,
-                        KAD_GUID_BYTE_SPACE))
+                        KAD_GUID_SPACE_IN_BYTES))
                 goto fail;
             p->msg_field = KAD_RPC_MSG_FIELD_NODES_HOST;
         }

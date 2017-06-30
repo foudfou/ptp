@@ -14,8 +14,8 @@
 #include "utils/list.h"
 #include "utils/safer.h"
 
-#define KAD_GUID_BYTE_SPACE 20
-#define KAD_GUID_SPACE      8*KAD_GUID_BYTE_SPACE
+#define KAD_GUID_SPACE_IN_BYTES 20
+#define KAD_GUID_SPACE_IN_BITS      8*KAD_GUID_SPACE_IN_BYTES
 #define KAD_K_CONST         8
 
 #define list_free_all(itemp, type, field)                               \
@@ -28,7 +28,7 @@
 
 /* Byte arrays are not affected by endian issues.
    http://stackoverflow.com/a/4523537/421846 */
-typedef struct { unsigned char b[KAD_GUID_BYTE_SPACE]; } kad_guid;
+typedef struct { unsigned char b[KAD_GUID_SPACE_IN_BYTES]; } kad_guid;
 
 struct kad_node_info {
     kad_guid id;
@@ -51,7 +51,7 @@ struct kad_dht {
        implementation, we build a specialized one for specific operations on
        each list. Lists are sorted by construction: either we append new nodes
        at the end, or we update nodes and move them to the end. */
-    struct list_item buckets[KAD_GUID_SPACE]; // kad_node list
+    struct list_item buckets[KAD_GUID_SPACE_IN_BITS]; // kad_node list
     /* « To reduce traffic, Kademlia delays probing contacts until it has
        useful messages to send them. When a Kademlia node receives an RPC from
        an unknown contact and the k-bucket for that contact is already full
@@ -67,7 +67,7 @@ struct kad_dht {
 
 static inline bool kad_guid_eq(const kad_guid *ida, const kad_guid *idb)
 {
-    for (int i = 0; i < KAD_GUID_BYTE_SPACE; i++)
+    for (int i = 0; i < KAD_GUID_SPACE_IN_BYTES; i++)
         if (ida->b[i] != idb->b[i])
             return false;
     return true;

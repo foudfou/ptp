@@ -16,7 +16,7 @@
 
 static void kad_generate_id(kad_guid *uid)
 {
-    for (int i = 0; i < KAD_GUID_SPACE; i++)
+    for (int i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
         uid->b[i] = (unsigned char)random();
 }
 
@@ -35,11 +35,11 @@ struct kad_dht *dht_init()
     /* Although the node_id should be assigned by the network, it seems a
        common practice to have peers generate a random id themselves. */
     kad_generate_id(&dht->self_id);
-    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.b, KAD_GUID_BYTE_SPACE);
+    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.b, KAD_GUID_SPACE_IN_BYTES);
     log_debug("node_id=%s", id);
     free_safer(id);
 
-    for (size_t i = 0; i < KAD_GUID_SPACE; i++)
+    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
         list_init(&dht->buckets[i]);
     list_init(&dht->replacement);
 
@@ -48,7 +48,7 @@ struct kad_dht *dht_init()
 
 void dht_terminate(struct kad_dht * dht)
 {
-    for (int i = 0; i < KAD_GUID_SPACE; i++) {
+    for (int i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
         struct list_item *bucket = &dht->buckets[i];
         list_free_all(bucket, struct kad_node, item);
     }
@@ -79,8 +79,8 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
                                      const kad_guid *peer_id)
 {
     kad_guid dist = {0};
-    size_t bucket_idx = KAD_GUID_SPACE;
-    for (int i = 0; i < KAD_GUID_BYTE_SPACE; ++i) {
+    size_t bucket_idx = KAD_GUID_SPACE_IN_BITS;
+    for (int i = 0; i < KAD_GUID_SPACE_IN_BYTES; ++i) {
         dist.b[i] = self_id->b[i] ^ peer_id->b[i];
 
         for (int j = 0; j < 8; ++j) {
@@ -193,7 +193,7 @@ bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
     struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], node_id);
     if (!node) {
-        char *id = log_fmt_hex(LOG_ERR, node_id->b, KAD_GUID_BYTE_SPACE);
+        char *id = log_fmt_hex(LOG_ERR, node_id->b, KAD_GUID_SPACE_IN_BYTES);
         log_error("Unknown node (id=%s).", id);
         free_safer(id);
         return false;
