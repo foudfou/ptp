@@ -17,19 +17,22 @@ from .. import mlog
 from .. import build
 from ..mesonlib import MesonException, Popen_safe
 from ..dependencies import Qt5Dependency
+from . import ExtensionModule
 import xml.etree.ElementTree as ET
+from . import ModuleReturnValue
+from . import permittedKwargs
 
-class Qt5Module():
+class Qt5Module(ExtensionModule):
     tools_detected = False
 
-    def _detect_tools(self, env):
+    def _detect_tools(self, env, method):
         if self.tools_detected:
             return
         mlog.log('Detecting Qt5 tools')
         # FIXME: We currently require Qt5 to exist while importing the module.
         # We should make it gracefully degrade and not create any targets if
         # the import is marked as 'optional' (not implemented yet)
-        kwargs = {'required': 'true', 'modules': 'Core', 'silent': 'true'}
+        kwargs = {'required': 'true', 'modules': 'Core', 'silent': 'true', 'method': method}
         qt5 = Qt5Dependency(env, kwargs)
         # Get all tools and then make sure that they are the right version
         self.moc, self.uic, self.rcc = qt5.compilers_detect()
@@ -46,9 +49,9 @@ class Qt5Module():
                 moc_ver = stdout
             else:
                 raise MesonException('Moc preprocessor is not for Qt 5. Output:\n%s\n%s' %
-                                          (stdout, stderr))
-            mlog.log(' moc:', mlog.green('YES'), '(%s, %s)' % \
-                     (' '.join(self.moc.fullpath), moc_ver.split()[-1]))
+                                     (stdout, stderr))
+            mlog.log(' moc:', mlog.green('YES'), '(%s, %s)' %
+                     (self.moc.get_path(), moc_ver.split()[-1]))
         else:
             mlog.log(' moc:', mlog.red('NO'))
         if self.uic.found():
@@ -61,9 +64,9 @@ class Qt5Module():
                 uic_ver = stdout
             else:
                 raise MesonException('Uic compiler is not for Qt 5. Output:\n%s\n%s' %
-                                          (stdout, stderr))
-            mlog.log(' uic:', mlog.green('YES'), '(%s, %s)' % \
-                     (' '.join(self.uic.fullpath), uic_ver.split()[-1]))
+                                     (stdout, stderr))
+            mlog.log(' uic:', mlog.green('YES'), '(%s, %s)' %
+                     (self.uic.get_path(), uic_ver.split()[-1]))
         else:
             mlog.log(' uic:', mlog.red('NO'))
         if self.rcc.found():
@@ -76,9 +79,9 @@ class Qt5Module():
                 rcc_ver = stdout
             else:
                 raise MesonException('Rcc compiler is not for Qt 5. Output:\n%s\n%s' %
-                                          (stdout, stderr))
-            mlog.log(' rcc:', mlog.green('YES'), '(%s, %s)'\
-                     % (' '.join(self.rcc.fullpath), rcc_ver.split()[-1]))
+                                     (stdout, stderr))
+            mlog.log(' rcc:', mlog.green('YES'), '(%s, %s)'
+                     % (self.rcc.get_path(), rcc_ver.split()[-1]))
         else:
             mlog.log(' rcc:', mlog.red('NO'))
         self.tools_detected = True
@@ -100,6 +103,7 @@ class Qt5Module():
         except Exception:
             return []
 
+    @permittedKwargs({'moc_headers', 'moc_sources', 'ui_files', 'qresources', 'method'})
     def preprocess(self, state, args, kwargs):
         rcc_files = kwargs.pop('qresources', [])
         if not isinstance(rcc_files, list):
@@ -117,7 +121,8 @@ class Qt5Module():
         if not isinstance(sources, list):
             sources = [sources]
         sources += args[1:]
-        self._detect_tools(state.environment)
+        method = kwargs.get('method', 'auto')
+        self._detect_tools(state.environment, method)
         err_msg = "{0} sources specified and couldn't find {1}, " \
                   "please check your qt5 installation"
         if len(moc_headers) + len(moc_sources) > 0 and not self.moc.found():
@@ -133,34 +138,33 @@ class Qt5Module():
             else:
                 basename = os.path.split(rcc_files[0])[1]
                 name = 'qt5-' + basename.replace('.', '_')
-            rcc_kwargs = {'input' : rcc_files,
-                    'output' : name + '.cpp',
-                    'command' : [self.rcc, '-o', '@OUTPUT@', '@INPUT@'],
-                    'depend_files' : qrc_deps,
-                    }
+            rcc_kwargs = {'input': rcc_files,
+                          'output': name + '.cpp',
+                          'command': [self.rcc, '-o', '@OUTPUT@', '@INPUT@'],
+                          'depend_files': qrc_deps}
             res_target = build.CustomTarget(name, state.subdir, rcc_kwargs)
             sources.append(res_target)
         if len(ui_files) > 0:
             if not self.uic.found():
                 raise MesonException(err_msg.format('UIC', 'uic-qt5'))
-            ui_kwargs = {'output' : 'ui_@BASENAME@.h',
-                         'arguments' : ['-o', '@OUTPUT@', '@INPUT@']}
+            ui_kwargs = {'output': 'ui_@BASENAME@.h',
+                         'arguments': ['-o', '@OUTPUT@', '@INPUT@']}
             ui_gen = build.Generator([self.uic], ui_kwargs)
             ui_output = ui_gen.process_files('Qt5 ui', ui_files, state)
             sources.append(ui_output)
         if len(moc_headers) > 0:
-            moc_kwargs = {'output' : 'moc_@BASENAME@.cpp',
-                          'arguments' : ['@INPUT@', '-o', '@OUTPUT@']}
+            moc_kwargs = {'output': 'moc_@BASENAME@.cpp',
+                          'arguments': ['@INPUT@', '-o', '@OUTPUT@']}
             moc_gen = build.Generator([self.moc], moc_kwargs)
             moc_output = moc_gen.process_files('Qt5 moc header', moc_headers, state)
             sources.append(moc_output)
         if len(moc_sources) > 0:
-            moc_kwargs = {'output' : '@BASENAME@.moc',
-                          'arguments' : ['@INPUT@', '-o', '@OUTPUT@']}
+            moc_kwargs = {'output': '@BASENAME@.moc',
+                          'arguments': ['@INPUT@', '-o', '@OUTPUT@']}
             moc_gen = build.Generator([self.moc], moc_kwargs)
             moc_output = moc_gen.process_files('Qt5 moc source', moc_sources, state)
             sources.append(moc_output)
-        return sources
+        return ModuleReturnValue(sources, sources)
 
 def initialize():
     mlog.warning('rcc dependencies will not work reliably until this upstream issue is fixed:',

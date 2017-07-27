@@ -23,31 +23,31 @@ DT_STRTAB = 5
 DT_SONAME = 14
 DT_MIPS_RLD_MAP_REL = 1879048245
 
-class DataSizes():
+class DataSizes:
     def __init__(self, ptrsize, is_le):
         if is_le:
             p = '<'
         else:
             p = '>'
-        self.Half = p+'h'
+        self.Half = p + 'h'
         self.HalfSize = 2
-        self.Word = p+'I'
+        self.Word = p + 'I'
         self.WordSize = 4
-        self.Sword = p+'i'
+        self.Sword = p + 'i'
         self.SwordSize = 4
         if ptrsize == 64:
-            self.Addr = p+'Q'
+            self.Addr = p + 'Q'
             self.AddrSize = 8
-            self.Off = p+'Q'
+            self.Off = p + 'Q'
             self.OffSize = 8
-            self.XWord = p+'Q'
+            self.XWord = p + 'Q'
             self.XWordSize = 8
-            self.Sxword = p+'q'
+            self.Sxword = p + 'q'
             self.SxwordSize = 8
         else:
-            self.Addr = p+'I'
+            self.Addr = p + 'I'
             self.AddrSize = 4
-            self.Off = p+'I'
+            self.Off = p + 'I'
             self.OffSize = 4
 
 class DynamicEntry(DataSizes):
@@ -55,8 +55,8 @@ class DynamicEntry(DataSizes):
         super().__init__(ptrsize, is_le)
         self.ptrsize = ptrsize
         if ptrsize == 64:
-            self.d_tag = struct.unpack(self.Sxword, ifile.read(self.SxwordSize))[0];
-            self.val = struct.unpack(self.XWord, ifile.read(self.XWordSize))[0];
+            self.d_tag = struct.unpack(self.Sxword, ifile.read(self.SxwordSize))[0]
+            self.val = struct.unpack(self.XWord, ifile.read(self.XWordSize))[0]
         else:
             self.d_tag = struct.unpack(self.Sword, ifile.read(self.SwordSize))[0]
             self.val = struct.unpack(self.Word, ifile.read(self.WordSize))[0]
@@ -76,34 +76,34 @@ class SectionHeader(DataSizes):
             is_64 = True
         else:
             is_64 = False
-#Elf64_Word
-        self.sh_name = struct.unpack(self.Word, ifile.read(self.WordSize))[0];
-#Elf64_Word
+# Elf64_Word
+        self.sh_name = struct.unpack(self.Word, ifile.read(self.WordSize))[0]
+# Elf64_Word
         self.sh_type = struct.unpack(self.Word, ifile.read(self.WordSize))[0]
-#Elf64_Xword
+# Elf64_Xword
         if is_64:
             self.sh_flags = struct.unpack(self.XWord, ifile.read(self.XWordSize))[0]
         else:
             self.sh_flags = struct.unpack(self.Word, ifile.read(self.WordSize))[0]
-#Elf64_Addr
-        self.sh_addr = struct.unpack(self.Addr, ifile.read(self.AddrSize))[0];
-#Elf64_Off
+# Elf64_Addr
+        self.sh_addr = struct.unpack(self.Addr, ifile.read(self.AddrSize))[0]
+# Elf64_Off
         self.sh_offset = struct.unpack(self.Off, ifile.read(self.OffSize))[0]
-#Elf64_Xword
+# Elf64_Xword
         if is_64:
             self.sh_size = struct.unpack(self.XWord, ifile.read(self.XWordSize))[0]
         else:
             self.sh_size = struct.unpack(self.Word, ifile.read(self.WordSize))[0]
-#Elf64_Word
-        self.sh_link = struct.unpack(self.Word, ifile.read(self.WordSize))[0];
-#Elf64_Word
-        self.sh_info = struct.unpack(self.Word, ifile.read(self.WordSize))[0];
-#Elf64_Xword
+# Elf64_Word
+        self.sh_link = struct.unpack(self.Word, ifile.read(self.WordSize))[0]
+# Elf64_Word
+        self.sh_info = struct.unpack(self.Word, ifile.read(self.WordSize))[0]
+# Elf64_Xword
         if is_64:
             self.sh_addralign = struct.unpack(self.XWord, ifile.read(self.XWordSize))[0]
         else:
             self.sh_addralign = struct.unpack(self.Word, ifile.read(self.WordSize))[0]
-#Elf64_Xword
+# Elf64_Xword
         if is_64:
             self.sh_entsize = struct.unpack(self.XWord, ifile.read(self.XWordSize))[0]
         else:
@@ -127,8 +127,13 @@ class Elf(DataSizes):
     def __enter__(self):
         return self
 
+    def __del__(self):
+        if self.bf:
+            self.bf.close()
+
     def __exit__(self, exc_type, exc_value, traceback):
         self.bf.close()
+        self.bf = None
 
     def detect_elf_type(self):
         data = self.bf.read(6)
@@ -150,7 +155,7 @@ class Elf(DataSizes):
             is_le = False
         else:
             sys.exit('File "%s" has unknown ELF endianness.' % self.bfile)
-        return (ptrsize, is_le)
+        return ptrsize, is_le
 
     def parse_header(self):
         self.bf.seek(0)
@@ -220,7 +225,7 @@ class Elf(DataSizes):
                 soname = i
             if i.d_tag == DT_STRTAB:
                 strtab = i
-        else:
+        if soname is None or strtab is None:
             print("This file does not have a soname")
             return
         self.bf.seek(strtab.val + soname.val)
@@ -273,7 +278,7 @@ class Elf(DataSizes):
             name = self.read_str()
             if name.startswith(prefix):
                 basename = name.split(b'/')[-1]
-                padding = b'\0'*(len(name) - len(basename))
+                padding = b'\0' * (len(name) - len(basename))
                 newname = basename + padding
                 assert(len(newname) == len(name))
                 self.bf.seek(offset)
@@ -297,11 +302,20 @@ class Elf(DataSizes):
         old_rpath = self.read_str()
         if len(old_rpath) < len(new_rpath):
             sys.exit("New rpath must not be longer than the old one.")
-        self.bf.seek(rp_off)
-        self.bf.write(new_rpath)
-        self.bf.write(b'\0'*(len(old_rpath) - len(new_rpath) + 1))
-        if len(new_rpath) == 0:
+        # The linker does read-only string deduplication. If there is a
+        # string that shares a suffix with the rpath, they might get
+        # dedupped. This means changing the rpath string might break something
+        # completely unrelated. This has already happened once with X.org.
+        # Thus we want to keep this change as small as possible to minimize
+        # the chance of obliterating other strings. It might still happen
+        # but our behavior is identical to what chrpath does and it has
+        # been in use for ages so based on that this should be rare.
+        if not new_rpath:
             self.remove_rpath_entry(entrynum)
+        else:
+            self.bf.seek(rp_off)
+            self.bf.write(new_rpath)
+            self.bf.write(b'\0')
 
     def remove_rpath_entry(self, entrynum):
         sec = self.find_section(b'.dynamic')
@@ -311,8 +325,8 @@ class Elf(DataSizes):
             if entry.d_tag == entrynum:
                 rpentry = self.dynamic[i]
                 rpentry.d_tag = 0
-                self.dynamic = self.dynamic[:i] + self.dynamic[i+1:] + [rpentry]
-                break;
+                self.dynamic = self.dynamic[:i] + self.dynamic[i + 1:] + [rpentry]
+                break
         # DT_MIPS_RLD_MAP_REL is relative to the offset of the tag. Adjust it consequently.
         for entry in self.dynamic[i:]:
             if entry.d_tag == DT_MIPS_RLD_MAP_REL:
@@ -328,7 +342,7 @@ def run(args):
         print('This application resets target rpath.')
         print('Don\'t run this unless you know what you are doing.')
         print('%s: <binary file> <prefix>' % sys.argv[0])
-        exit(1)
+        sys.exit(1)
     with Elf(args[0]) as e:
         if len(args) == 1:
             e.print_rpath()

@@ -12,27 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys, os, platform
+import sys, os, platform, io
 
 """This is (mostly) a standalone module used to write logging
 information about Meson runs. Some output goes to screen,
 some to logging dir and some goes to both."""
 
-colorize_console = platform.system().lower() != 'windows' and os.isatty(sys.stdout.fileno())
+colorize_console = platform.system().lower() != 'windows' and os.isatty(sys.stdout.fileno()) and \
+    os.environ.get('TERM') != 'dumb'
 log_dir = None
 log_file = None
 
 def initialize(logdir):
     global log_dir, log_file
     log_dir = logdir
-    log_file = open(os.path.join(logdir, 'meson-log.txt'), 'w')
+    log_file = open(os.path.join(logdir, 'meson-log.txt'), 'w', encoding='utf8')
 
 def shutdown():
     global log_file
     if log_file is not None:
         log_file.close()
 
-class AnsiDecorator():
+class AnsiDecorator:
     plain_code = "\033[0m"
 
     def __init__(self, text, code):
@@ -70,6 +71,17 @@ def process_markup(args, keep):
             arr.append(str(arg))
     return arr
 
+def force_print(*args, **kwargs):
+    # _Something_ is going to get printed.
+    try:
+        print(*args, **kwargs)
+    except UnicodeEncodeError:
+        iostr = io.StringIO()
+        kwargs['file'] = iostr
+        print(*args, **kwargs)
+        cleaned = iostr.getvalue().encode('ascii', 'replace').decode('ascii')
+        print(cleaned)
+
 def debug(*args, **kwargs):
     arr = process_markup(args, False)
     if log_file is not None:
@@ -83,7 +95,20 @@ def log(*args, **kwargs):
         log_file.flush()
     if colorize_console:
         arr = process_markup(args, True)
-    print(*arr, **kwargs)
+    force_print(*arr, **kwargs)
 
 def warning(*args, **kwargs):
     log(yellow('WARNING:'), *args, **kwargs)
+
+# Format a list for logging purposes as a string. It separates
+# all but the last item with commas, and the last with 'and'.
+def format_list(list):
+    l = len(list)
+    if l > 2:
+        return ' and '.join([', '.join(list[:-1]), list[-1]])
+    elif l == 2:
+        return ' and '.join(list)
+    elif l == 1:
+        return list[0]
+    else:
+        return ''

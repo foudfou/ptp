@@ -20,6 +20,7 @@ from . import build
 import platform
 from . import mlog, coredata
 from .mesonlib import MesonException
+from .wrap import WrapMode
 
 
 parser = argparse.ArgumentParser()
@@ -29,7 +30,7 @@ default_warning = '1'
 def add_builtin_argument(name, **kwargs):
     k = kwargs.get('dest', name.replace('-', '_'))
     c = coredata.get_builtin_option_choices(k)
-    b = True if kwargs.get('action', None) in [ 'store_true', 'store_false' ] else False
+    b = True if kwargs.get('action', None) in ['store_true', 'store_false'] else False
     h = coredata.get_builtin_option_description(k)
     if not b:
         h = h.rstrip('.') + ' (default: %s).' % coredata.get_builtin_option_default(k)
@@ -53,7 +54,7 @@ add_builtin_argument('sharedstatedir')
 add_builtin_argument('backend')
 add_builtin_argument('buildtype')
 add_builtin_argument('strip', action='store_true')
-add_builtin_argument('unity', action='store_true')
+add_builtin_argument('unity')
 add_builtin_argument('werror', action='store_true')
 add_builtin_argument('layout')
 add_builtin_argument('default-library')
@@ -63,25 +64,20 @@ add_builtin_argument('errorlogs', action='store_false')
 
 parser.add_argument('--cross-file', default=None,
                     help='File describing cross compilation environment.')
-parser.add_argument('-D', action='append', dest='projectoptions', default=[],
-                    help='Set project options.')
+parser.add_argument('-D', action='append', dest='projectoptions', default=[], metavar="option",
+                    help='Set the value of an option, can be used several times to set multiple options.')
 parser.add_argument('-v', '--version', action='version',
                     version=coredata.version)
+# See the mesonlib.WrapMode enum for documentation
+parser.add_argument('--wrap-mode', default=WrapMode.default,
+                    type=lambda t: getattr(WrapMode, t), choices=WrapMode,
+                    help='Special wrap mode to use')
 parser.add_argument('directories', nargs='*')
 
-class MesonApp():
+class MesonApp:
 
     def __init__(self, dir1, dir2, script_launcher, handshake, options, original_cmd_line_args):
         (self.source_dir, self.build_dir) = self.validate_dirs(dir1, dir2, handshake)
-        if not os.path.isabs(options.prefix):
-            raise RuntimeError('--prefix value must be an absolute path: {!r}'.format(options.prefix))
-        if options.prefix.endswith('/') or options.prefix.endswith('\\'):
-            # On Windows we need to preserve the trailing slash if the
-            # string is of type 'C:\' because 'C:' is not an absolute path.
-            if len(options.prefix) == 3 and options.prefix[1] == ':':
-                pass
-            else:
-                options.prefix = options.prefix[:-1]
         self.meson_script_launcher = script_launcher
         self.options = options
         self.original_cmd_line_args = original_cmd_line_args
@@ -91,8 +87,8 @@ class MesonApp():
         return os.path.exists(fname)
 
     def validate_core_dirs(self, dir1, dir2):
-        ndir1 = os.path.abspath(dir1)
-        ndir2 = os.path.abspath(dir2)
+        ndir1 = os.path.abspath(os.path.realpath(dir1))
+        ndir2 = os.path.abspath(os.path.realpath(dir2))
         if not os.path.exists(ndir1):
             os.makedirs(ndir1)
         if not os.path.exists(ndir2):
@@ -106,9 +102,9 @@ class MesonApp():
         if self.has_build_file(ndir1):
             if self.has_build_file(ndir2):
                 raise RuntimeError('Both directories contain a build file %s.' % environment.build_filename)
-            return (ndir1, ndir2)
+            return ndir1, ndir2
         if self.has_build_file(ndir2):
-            return (ndir2, ndir1)
+            return ndir2, ndir1
         raise RuntimeError('Neither directory contains a build file %s.' % environment.build_filename)
 
     def validate_dirs(self, dir1, dir2, handshake):
@@ -126,7 +122,7 @@ If you want to change option values, use the mesonconf tool instead.'''
         else:
             if handshake:
                 raise RuntimeError('Something went terribly wrong. Please file a bug.')
-        return (src_dir, build_dir)
+        return src_dir, build_dir
 
     def check_pkgconfig_envvar(self, env):
         curvar = os.environ.get('PKG_CONFIG_PATH', '')
@@ -154,12 +150,19 @@ If you want to change option values, use the mesonconf tool instead.'''
         if self.options.backend == 'ninja':
             from .backend import ninjabackend
             g = ninjabackend.NinjaBackend(b)
+        elif self.options.backend == 'vs':
+            from .backend import vs2010backend
+            g = vs2010backend.autodetect_vs_version(b)
+            mlog.log('Auto detected Visual Studio backend:', mlog.bold(g.name))
         elif self.options.backend == 'vs2010':
             from .backend import vs2010backend
             g = vs2010backend.Vs2010Backend(b)
         elif self.options.backend == 'vs2015':
             from .backend import vs2015backend
             g = vs2015backend.Vs2015Backend(b)
+        elif self.options.backend == 'vs2017':
+            from .backend import vs2017backend
+            g = vs2017backend.Vs2017Backend(b)
         elif self.options.backend == 'xcode':
             from .backend import xcodebackend
             g = xcodebackend.XCodeBackend(b)
@@ -177,20 +180,26 @@ If you want to change option values, use the mesonconf tool instead.'''
         intr.run()
         coredata_mtime = time.time()
         g.generate(intr)
-        g.run_postconf_scripts()
         dumpfile = os.path.join(env.get_scratch_dir(), 'build.dat')
         with open(dumpfile, 'wb') as f:
             pickle.dump(b, f)
-        # Write this last since we use the existence of this file to check if
-        # we generated the build file successfully, so we don't want an error
-        # that pops up during generation, post-conf scripts, etc to cause us to
+        # Write this as late as possible since we use the existence of this
+        # file to check if we generated the build file successfully, so we
+        # don't want an error that pops up during generation, etc to cause us to
         # incorrectly signal a successful meson run which will cause an error
         # about an already-configured build directory when the user tries again.
         #
         # However, we set the mtime to an earlier value to ensure that doing an
         # mtime comparison between the coredata dump and other build files
         # shows the build files to be newer, not older.
-        env.dump_coredata(coredata_mtime)
+        cdf = env.dump_coredata(coredata_mtime)
+        # Post-conf scripts must be run after writing coredata or else introspection fails.
+        try:
+            g.run_postconf_scripts()
+        except:
+            os.unlink(cdf)
+            raise
+
 
 def run_script_command(args):
     cmdname = args[0]
@@ -219,6 +228,9 @@ def run_script_command(args):
     elif cmdname == 'gtkdoc':
         import mesonbuild.scripts.gtkdochelper as abc
         cmdfunc = abc.run
+    elif cmdname == 'msgfmthelper':
+        import mesonbuild.scripts.msgfmthelper as abc
+        cmdfunc = abc.run
     elif cmdname == 'regencheck':
         import mesonbuild.scripts.regen_checker as abc
         cmdfunc = abc.run
@@ -236,6 +248,15 @@ def run_script_command(args):
         cmdfunc = abc.run
     elif cmdname == 'yelphelper':
         import mesonbuild.scripts.yelphelper as abc
+        cmdfunc = abc.run
+    elif cmdname == 'uninstall':
+        import mesonbuild.scripts.uninstall as abc
+        cmdfunc = abc.run
+    elif cmdname == 'dist':
+        import mesonbuild.scripts.dist as abc
+        cmdfunc = abc.run
+    elif cmdname == 'coverage':
+        import mesonbuild.scripts.coverage as abc
         cmdfunc = abc.run
     else:
         raise MesonException('Unknown internal command {}.'.format(cmdname))
@@ -263,10 +284,10 @@ def run(mainfile, args):
     args = mesonlib.expand_arguments(args)
     options = parser.parse_args(args)
     args = options.directories
-    if len(args) == 0 or len(args) > 2:
+    if not args or len(args) > 2:
         # if there's a meson.build in the dir above, and not in the current
         # directory, assume we're in the build directory
-        if len(args) == 0 and not os.path.exists('meson.build') and os.path.exists('../meson.build'):
+        if not args and not os.path.exists('meson.build') and os.path.exists('../meson.build'):
             dir1 = '..'
             dir2 = '.'
         else:
@@ -297,7 +318,11 @@ def run(mainfile, args):
             else:
                 mlog.log(mlog.red('\nMeson encountered an error:'))
             mlog.log(e)
+            if os.environ.get('MESON_FORCE_BACKTRACE'):
+                raise
         else:
+            if os.environ.get('MESON_FORCE_BACKTRACE'):
+                raise
             traceback.print_exc()
         return 1
     return 0

@@ -12,10 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import sys
+import shutil
+
 from os import path
 from .. import coredata, mesonlib, build
 from ..mesonlib import MesonException
-import sys
+from . import ModuleReturnValue
+from . import ExtensionModule
+from . import permittedKwargs
 
 PRESET_ARGS = {
     'glib': [
@@ -43,8 +48,16 @@ PRESET_ARGS = {
     ]
 }
 
-class I18nModule:
+class I18nModule(ExtensionModule):
 
+    @staticmethod
+    def _get_data_dirs(state, dirs):
+        """Returns source directories of relative paths"""
+        src_dir = path.join(state.environment.get_source_dir(), state.subdir)
+        return [path.join(src_dir, d) for d in dirs]
+
+    @permittedKwargs({'languages', 'data_dirs', 'preset', 'args', 'po_dir', 'type',
+                      'input', 'output', 'install', 'install_dir'})
     def merge_file(self, state, args, kwargs):
         podir = kwargs.pop('po_dir', None)
         if not podir:
@@ -56,16 +69,27 @@ class I18nModule:
         if file_type not in VALID_TYPES:
             raise MesonException('i18n: "{}" is not a valid type {}'.format(file_type, VALID_TYPES))
 
-        kwargs['command'] = ['msgfmt', '--' + file_type,
-                             '--template', '@INPUT@', '-d', podir, '-o', '@OUTPUT@']
-        return build.CustomTarget(kwargs['output'] + '_merge', state.subdir, kwargs)
+        datadirs = self._get_data_dirs(state, mesonlib.stringlistify(kwargs.pop('data_dirs', [])))
+        datadirs = '--datadirs=' + ':'.join(datadirs) if datadirs else None
 
+        command = [state.environment.get_build_command(), '--internal', 'msgfmthelper',
+                   '@INPUT@', '@OUTPUT@', file_type, podir]
+        if datadirs:
+            command.append(datadirs)
+
+        kwargs['command'] = command
+        ct = build.CustomTarget(kwargs['output'] + '_merge', state.subdir, kwargs)
+        return ModuleReturnValue(ct, [ct])
+
+    @permittedKwargs({'po_dir', 'data_dirs', 'type', 'languages', 'args', 'preset'})
     def gettext(self, state, args, kwargs):
         if len(args) != 1:
             raise coredata.MesonException('Gettext requires one positional argument (package name).')
+        if not shutil.which('xgettext'):
+            raise coredata.MesonException('Can not do gettext because xgettext is not installed.')
         packagename = args[0]
         languages = mesonlib.stringlistify(kwargs.get('languages', []))
-        datadirs = mesonlib.stringlistify(kwargs.get('data_dirs', []))
+        datadirs = self._get_data_dirs(state, mesonlib.stringlistify(kwargs.get('data_dirs', [])))
         extra_args = mesonlib.stringlistify(kwargs.get('args', []))
 
         preset = kwargs.pop('preset', None)
@@ -102,7 +126,7 @@ class I18nModule:
             updatepoargs.append(extra_args)
         updatepotarget = build.RunTarget(packagename + '-update-po', sys.executable, updatepoargs, [], state.subdir)
 
-        script = [sys.executable,  state.environment.get_build_command()]
+        script = [sys.executable, state.environment.get_build_command()]
         args = ['--internal', 'gettext', 'install',
                 '--subdir=' + state.subdir,
                 '--localedir=' + state.environment.coredata.get_builtin_option('localedir'),
@@ -111,7 +135,7 @@ class I18nModule:
             args.append(lang_arg)
         iscript = build.RunScript(script, args)
 
-        return [pottarget, gmotarget, iscript, updatepotarget]
+        return ModuleReturnValue(None, [pottarget, gmotarget, iscript, updatepotarget])
 
 def initialize():
     return I18nModule()

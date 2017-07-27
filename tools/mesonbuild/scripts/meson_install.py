@@ -12,13 +12,46 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys, pickle, os, shutil, subprocess, gzip, platform
+import sys, pickle, os, shutil, subprocess, gzip, platform, errno
 from glob import glob
 from . import depfixer
 from . import destdir_join
-from ..mesonlib import Popen_safe
+from ..mesonlib import is_windows, Popen_safe
 
 install_log_file = None
+
+def set_mode(path, mode):
+    if mode is None:
+        # Keep mode unchanged
+        return
+    if (mode.perms_s or mode.owner or mode.group) is None:
+        # Nothing to set
+        return
+    # No chown() on Windows, and must set one of owner/group
+    if not is_windows() and (mode.owner or mode.group) is not None:
+        try:
+            shutil.chown(path, mode.owner, mode.group)
+        except PermissionError as e:
+            msg = '{!r}: Unable to set owner {!r} and group {!r}: {}, ignoring...'
+            print(msg.format(path, mode.owner, mode.group, e.strerror))
+        except LookupError:
+            msg = '{!r}: Non-existent owner {!r} or group {!r}: ignoring...'
+            print(msg.format(path, mode.owner, mode.group))
+        except OSError as e:
+            if e.errno == errno.EINVAL:
+                msg = '{!r}: Non-existent numeric owner {!r} or group {!r}: ignoring...'
+                print(msg.format(path, mode.owner, mode.group))
+            else:
+                raise
+    # Must set permissions *after* setting owner/group otherwise the
+    # setuid/setgid bits will get wiped by chmod
+    # NOTE: On Windows you can set read/write perms; the rest are ignored
+    if mode.perms_s is not None:
+        try:
+            os.chmod(path, mode.perms)
+        except PermissionError as e:
+            msg = '{!r}: Unable to set permissions {!r}: {}, ignoring...'
+            print(msg.format(path, mode.perms_s, e.strerror))
 
 def append_to_log(line):
     install_log_file.write(line)
@@ -51,7 +84,7 @@ def do_copydir(src_prefix, src_dir, dst_dir):
     for root, dirs, files in os.walk(src_prefix):
         for d in dirs:
             abs_src = os.path.join(src_dir, root, d)
-            filepart = abs_src[len(src_dir)+1:]
+            filepart = abs_src[len(src_dir) + 1:]
             abs_dst = os.path.join(dst_dir, filepart)
             if os.path.isdir(abs_dst):
                 continue
@@ -62,7 +95,7 @@ def do_copydir(src_prefix, src_dir, dst_dir):
             shutil.copystat(abs_src, abs_dst)
         for f in files:
             abs_src = os.path.join(src_dir, root, f)
-            filepart = abs_src[len(src_dir)+1:]
+            filepart = abs_src[len(src_dir) + 1:]
             abs_dst = os.path.join(dst_dir, filepart)
             if os.path.isdir(abs_dst):
                 print('Tried to copy file %s but a directory of that name already exists.' % abs_dst)
@@ -96,24 +129,28 @@ def do_install(datafilename):
     run_install_script(d)
 
 def install_subdirs(data):
-    for (src_dir, inst_dir, dst_dir) in data.install_subdirs:
+    for (src_dir, inst_dir, dst_dir, mode) in data.install_subdirs:
         if src_dir.endswith('/') or src_dir.endswith('\\'):
             src_dir = src_dir[:-1]
         src_prefix = os.path.join(src_dir, inst_dir)
-        print('Installing subdir %s to %s.' % (src_prefix, dst_dir))
+        print('Installing subdir %s to %s' % (src_prefix, dst_dir))
         dst_dir = get_destdir_path(data, dst_dir)
         if not os.path.exists(dst_dir):
             os.makedirs(dst_dir)
         do_copydir(src_prefix, src_dir, dst_dir)
+        dst_prefix = os.path.join(dst_dir, inst_dir)
+        set_mode(dst_prefix, mode)
 
 def install_data(d):
     for i in d.data:
         fullfilename = i[0]
         outfilename = get_destdir_path(d, i[1])
+        mode = i[2]
         outdir = os.path.split(outfilename)[0]
         os.makedirs(outdir, exist_ok=True)
-        print('Installing %s to %s.' % (fullfilename, outdir))
+        print('Installing %s to %s' % (fullfilename, outdir))
         do_copyfile(fullfilename, outfilename)
+        set_mode(outfilename, mode)
 
 def install_man(d):
     for m in d.man:
@@ -121,7 +158,7 @@ def install_man(d):
         outfilename = get_destdir_path(d, m[1])
         outdir = os.path.split(outfilename)[0]
         os.makedirs(outdir, exist_ok=True)
-        print('Installing %s to %s.' % (full_source_filename, outdir))
+        print('Installing %s to %s' % (full_source_filename, outdir))
         if outfilename.endswith('.gz') and not full_source_filename.endswith('.gz'):
             with open(outfilename, 'wb') as of:
                 with open(full_source_filename, 'rb') as sf:
@@ -142,11 +179,11 @@ def install_headers(d):
         do_copyfile(fullfilename, outfilename)
 
 def run_install_script(d):
-    env = {'MESON_SOURCE_ROOT' : d.source_dir,
-           'MESON_BUILD_ROOT' : d.build_dir,
-           'MESON_INSTALL_PREFIX' : d.prefix,
-           'MESON_INSTALL_DESTDIR_PREFIX' : d.fullprefix,
-          }
+    env = {'MESON_SOURCE_ROOT': d.source_dir,
+           'MESON_BUILD_ROOT': d.build_dir,
+           'MESON_INSTALL_PREFIX': d.prefix,
+           'MESON_INSTALL_DESTDIR_PREFIX': d.fullprefix,
+           'MESONINTROSPECT': d.mesonintrospect}
     child_env = os.environ.copy()
     child_env.update(env)
 
@@ -165,7 +202,7 @@ def run_install_script(d):
 
 def is_elf_platform():
     platname = platform.system().lower()
-    if platname == 'darwin' or platname == 'windows':
+    if platname == 'darwin' or platname == 'windows' or platname == 'cygwin':
         return False
     return True
 
@@ -208,14 +245,22 @@ def install_targets(d):
             raise RuntimeError('File {!r} could not be found'.format(fname))
         elif os.path.isfile(fname):
             do_copyfile(fname, outname)
-            if should_strip:
+            if should_strip and d.strip_bin is not None:
+                if fname.endswith('.jar'):
+                    print('Not stripping jar target:', os.path.split(fname)[1])
+                    continue
                 print('Stripping target {!r}'.format(fname))
-                ps, stdo, stde = Popen_safe(['strip', outname])
+                ps, stdo, stde = Popen_safe(d.strip_bin + [outname])
                 if ps.returncode != 0:
                     print('Could not strip file.\n')
                     print('Stdout:\n%s\n' % stdo)
                     print('Stderr:\n%s\n' % stde)
                     sys.exit(1)
+            pdb_filename = os.path.splitext(fname)[0] + '.pdb'
+            if not should_strip and os.path.exists(pdb_filename):
+                pdb_outname = os.path.splitext(outname)[0] + '.pdb'
+                print('Installing pdb file %s to %s' % (pdb_filename, pdb_outname))
+                do_copyfile(pdb_filename, pdb_outname)
         elif os.path.isdir(fname):
             fname = os.path.join(d.build_dir, fname.rstrip('/'))
             do_copydir(fname, os.path.dirname(fname), outdir)

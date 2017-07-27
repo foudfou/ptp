@@ -12,10 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-class TestModule:
+from . import ModuleReturnValue
+from . import ExtensionModule
+from . import noKwargs
 
+class TestModule(ExtensionModule):
+
+    @noKwargs
     def print_hello(self, state, args, kwargs):
         print('Hello from a Meson module')
+        rv = ModuleReturnValue(None, [])
+        return rv
 
 def initialize():
     return TestModule()

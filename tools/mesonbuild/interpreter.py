@@ -1,5 +1,4 @@
-# Copyright 2012-2016 The Meson development team
-
+# Copyright 2012-2017 The Meson development team
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -20,16 +19,20 @@ from . import mlog
 from . import build
 from . import optinterpreter
 from . import compilers
-from .wrap import wrap
+from .wrap import wrap, WrapMode
 from . import mesonlib
-from .mesonlib import Popen_safe
-from .dependencies import InternalDependency, Dependency
+from .mesonlib import FileMode, Popen_safe, get_meson_script
+from .dependencies import ExternalProgram
+from .dependencies import InternalDependency, Dependency, DependencyException
 from .interpreterbase import InterpreterBase
-from .interpreterbase import check_stringlist, noPosargs, noKwargs, stringArgs
+from .interpreterbase import check_stringlist, noPosargs, noKwargs, stringArgs, permittedKwargs
 from .interpreterbase import InterpreterException, InvalidArguments, InvalidCode
 from .interpreterbase import InterpreterObject, MutableInterpreterObject
+from .modules import ModuleReturnValue
 
 import os, sys, shutil, uuid
+import re
+from collections import namedtuple
 
 import importlib
 
@@ -49,11 +52,11 @@ class TryRunResultHolder(InterpreterObject):
     def __init__(self, res):
         super().__init__()
         self.res = res
-        self.methods.update({'returncode' : self.returncode_method,
-                             'compiled' : self.compiled_method,
-                             'stdout' : self.stdout_method,
-                             'stderr' : self.stderr_method,
-                            })
+        self.methods.update({'returncode': self.returncode_method,
+                             'compiled': self.compiled_method,
+                             'stdout': self.stdout_method,
+                             'stderr': self.stderr_method,
+                             })
 
     def returncode_method(self, args, kwargs):
         return self.res.returncode
@@ -69,20 +72,23 @@ class TryRunResultHolder(InterpreterObject):
 
 class RunProcess(InterpreterObject):
 
-    def __init__(self, command_array, source_dir, build_dir, subdir, in_builddir=False):
+    def __init__(self, cmd, args, source_dir, build_dir, subdir, mesonintrospect, in_builddir=False):
         super().__init__()
-        pc, self.stdout, self.stderr = self.run_command(command_array, source_dir, build_dir, subdir, in_builddir)
+        if not isinstance(cmd, ExternalProgram):
+            raise AssertionError('BUG: RunProcess must be passed an ExternalProgram')
+        pc, self.stdout, self.stderr = self.run_command(cmd, args, source_dir, build_dir, subdir, mesonintrospect, in_builddir)
         self.returncode = pc.returncode
-        self.methods.update({'returncode' : self.returncode_method,
-                             'stdout' : self.stdout_method,
-                             'stderr' : self.stderr_method,
-                            })
+        self.methods.update({'returncode': self.returncode_method,
+                             'stdout': self.stdout_method,
+                             'stderr': self.stderr_method,
+                             })
 
-    def run_command(self, command_array, source_dir, build_dir, subdir, in_builddir):
-        cmd_name = command_array[0]
-        env = {'MESON_SOURCE_ROOT' : source_dir,
-               'MESON_BUILD_ROOT' : build_dir,
-               'MESON_SUBDIR' : subdir}
+    def run_command(self, cmd, args, source_dir, build_dir, subdir, mesonintrospect, in_builddir):
+        command_array = cmd.get_command() + args
+        env = {'MESON_SOURCE_ROOT': source_dir,
+               'MESON_BUILD_ROOT': build_dir,
+               'MESON_SUBDIR': subdir,
+               'MESONINTROSPECT': mesonintrospect}
         if in_builddir:
             cwd = os.path.join(build_dir, subdir)
         else:
@@ -93,19 +99,7 @@ class RunProcess(InterpreterObject):
         try:
             return Popen_safe(command_array, env=child_env, cwd=cwd)
         except FileNotFoundError:
-            pass
-        # Was not a command, is a program in path?
-        exe = shutil.which(cmd_name)
-        if exe is not None:
-            command_array = [exe] + command_array[1:]
-            return Popen_safe(command_array, env=child_env, cwd=cwd)
-        # No? Maybe it is a script in the source tree.
-        fullpath = os.path.join(source_dir, subdir, cmd_name)
-        command_array = [fullpath] + command_array[1:]
-        try:
-            return Popen_safe(command_array, env=child_env, cwd=cwd)
-        except FileNotFoundError:
-            raise InterpreterException('Could not execute command "%s".' % cmd_name)
+            raise InterpreterException('Could not execute command "%s".' % ' '.join(command_array))
 
     def returncode_method(self, args, kwargs):
         return self.returncode
@@ -129,8 +123,12 @@ class EnvironmentVariablesHolder(MutableInterpreterObject):
         self.held_object = build.EnvironmentVariables()
         self.methods.update({'set': self.set_method,
                              'append': self.append_method,
-                             'prepend' : self.prepend_method,
-                            })
+                             'prepend': self.prepend_method,
+                             })
+
+    def __repr__(self):
+        repr_str = "<{0}: {1}>"
+        return repr_str.format(self.__class__.__name__, self.held_object.envvars)
 
     @stringArgs
     def add_var(self, method, args, kwargs):
@@ -161,8 +159,10 @@ class ConfigurationDataHolder(MutableInterpreterObject):
         self.methods.update({'set': self.set_method,
                              'set10': self.set10_method,
                              'set_quoted': self.set_quoted_method,
-                             'has' : self.has_method,
-                            })
+                             'has': self.has_method,
+                             'get': self.get_method,
+                             'merge_from': self.merge_from_method,
+                             })
 
     def is_used(self):
         return self.used
@@ -183,7 +183,7 @@ class ConfigurationDataHolder(MutableInterpreterObject):
         if desc is not None and not isinstance(desc, str):
             raise InterpreterException('Description must be a string.')
 
-        return (name, val, desc)
+        return name, val, desc
 
     def set_method(self, args, kwargs):
         (name, val, desc) = self.validate_args(args, kwargs)
@@ -206,11 +206,31 @@ class ConfigurationDataHolder(MutableInterpreterObject):
     def has_method(self, args, kwargs):
         return args[0] in self.held_object.values
 
+    def get_method(self, args, kwargs):
+        if len(args) < 1 or len(args) > 2:
+            raise InterpreterException('Get method takes one or two arguments.')
+        name = args[0]
+        if name in self.held_object:
+            return self.held_object.get(name)[0]
+        if len(args) > 1:
+            return args[1]
+        raise InterpreterException('Entry %s not in configuration data.' % name)
+
     def get(self, name):
         return self.held_object.values[name]     # (val, desc)
 
     def keys(self):
         return self.held_object.values.keys()
+
+    def merge_from_method(self, args, kwargs):
+        if len(args) != 1:
+            raise InterpreterException('Merge_from takes one positional argument.')
+        from_object = args[0]
+        if not isinstance(from_object, ConfigurationDataHolder):
+            raise InterpreterException('Merge_from argument must be a configuration data object.')
+        from_object = from_object.held_object
+        for k, v in from_object.values.items():
+            self.held_object.values[k] = v
 
 # Interpreter objects can not be pickled so we must have
 # these wrappers.
@@ -219,7 +239,7 @@ class DependencyHolder(InterpreterObject):
     def __init__(self, dep):
         InterpreterObject.__init__(self)
         self.held_object = dep
-        self.methods.update({'found' : self.found_method,
+        self.methods.update({'found': self.found_method,
                              'type_name': self.type_name_method,
                              'version': self.version_method,
                              'get_pkgconfig_variable': self.pkgconfig_method,
@@ -231,7 +251,6 @@ class DependencyHolder(InterpreterObject):
     def found_method(self, args, kwargs):
         if self.held_object.type_name == 'internal':
             return True
-
         return self.held_object.found()
 
     def version_method(self, args, kwargs):
@@ -251,7 +270,7 @@ class InternalDependencyHolder(InterpreterObject):
     def __init__(self, dep):
         InterpreterObject.__init__(self)
         self.held_object = dep
-        self.methods.update({'found' : self.found_method,
+        self.methods.update({'found': self.found_method,
                              'version': self.version_method,
                              })
 
@@ -272,16 +291,16 @@ class ExternalProgramHolder(InterpreterObject):
         return self.found()
 
     def path_method(self, args, kwargs):
-        return self.get_command()
+        return self.held_object.get_path()
 
     def found(self):
         return self.held_object.found()
 
     def get_command(self):
-        return self.held_object.fullpath
+        return self.held_object.get_command()
 
     def get_name(self):
-        return self.held_object.name
+        return self.held_object.get_name()
 
 class ExternalLibraryHolder(InterpreterObject):
     def __init__(self, el):
@@ -294,9 +313,6 @@ class ExternalLibraryHolder(InterpreterObject):
 
     def found_method(self, args, kwargs):
         return self.found()
-
-    def get_filename(self):
-        return self.held_object.fullpath
 
     def get_name(self):
         return self.held_object.name
@@ -315,7 +331,7 @@ class GeneratorHolder(InterpreterObject):
         super().__init__()
         self.interpreter = interpreter
         self.held_object = build.Generator(args, kwargs)
-        self.methods.update({'process' : self.process_method})
+        self.methods.update({'process': self.process_method})
 
     def process_method(self, args, kwargs):
         extras = mesonlib.stringlistify(kwargs.get('extra_args', []))
@@ -342,23 +358,27 @@ class BuildMachine(InterpreterObject):
     def __init__(self, compilers):
         self.compilers = compilers
         InterpreterObject.__init__(self)
-        self.methods.update({'system' : self.system_method,
-                             'cpu_family' : self.cpu_family_method,
-                             'cpu' : self.cpu_method,
-                             'endian' : self.endian_method,
-                            })
+        self.held_object = environment.MachineInfo(environment.detect_system(),
+                                                   environment.detect_cpu_family(self.compilers),
+                                                   environment.detect_cpu(self.compilers),
+                                                   sys.byteorder)
+        self.methods.update({'system': self.system_method,
+                             'cpu_family': self.cpu_family_method,
+                             'cpu': self.cpu_method,
+                             'endian': self.endian_method,
+                             })
 
     def cpu_family_method(self, args, kwargs):
-        return environment.detect_cpu_family(self.compilers)
+        return self.held_object.cpu_family
 
     def cpu_method(self, args, kwargs):
-        return environment.detect_cpu(self.compilers)
+        return self.held_object.cpu
 
     def system_method(self, args, kwargs):
-        return environment.detect_system()
+        return self.held_object.system
 
     def endian_method(self, args, kwargs):
-        return sys.byteorder
+        return self.held_object.endian
 
 # This class will provide both host_machine and
 # target_machine
@@ -371,23 +391,27 @@ class CrossMachineInfo(InterpreterObject):
                 'Machine info is currently {}\n'.format(cross_info) +
                 'but is missing {}.'.format(minimum_cross_info - set(cross_info)))
         self.info = cross_info
-        self.methods.update({'system' : self.system_method,
-                             'cpu' : self.cpu_method,
-                             'cpu_family' : self.cpu_family_method,
-                             'endian' : self.endian_method,
-                            })
-
-    def system_method(self, args, kwargs):
-        return self.info['system']
-
-    def cpu_method(self, args, kwargs):
-        return self.info['cpu']
+        self.held_object = environment.MachineInfo(cross_info['system'],
+                                                   cross_info['cpu_family'],
+                                                   cross_info['cpu'],
+                                                   cross_info['endian'])
+        self.methods.update({'system': self.system_method,
+                             'cpu': self.cpu_method,
+                             'cpu_family': self.cpu_family_method,
+                             'endian': self.endian_method,
+                             })
 
     def cpu_family_method(self, args, kwargs):
-        return self.info['cpu_family']
+        return self.held_object.cpu_family
+
+    def cpu_method(self, args, kwargs):
+        return self.held_object.cpu
+
+    def system_method(self, args, kwargs):
+        return self.held_object.system
 
     def endian_method(self, args, kwargs):
-        return self.info['endian']
+        return self.held_object.endian
 
 class IncludeDirsHolder(InterpreterObject):
     def __init__(self, idobj):
@@ -418,11 +442,9 @@ class Headers(InterpreterObject):
         return self.custom_install_dir
 
 class DataHolder(InterpreterObject):
-    def __init__(self, sources, install_dir):
+    def __init__(self, data):
         super().__init__()
-        if not isinstance(install_dir, str):
-            raise InterpreterException('Custom_install_dir must be a string.')
-        self.held_object = build.Data(sources, install_dir)
+        self.held_object = data
 
     def get_source_subdir(self):
         return self.held_object.source_subdir
@@ -434,11 +456,12 @@ class DataHolder(InterpreterObject):
         return self.held_object.install_dir
 
 class InstallDir(InterpreterObject):
-    def __init__(self, source_subdir, installable_subdir, install_dir):
+    def __init__(self, src_subdir, inst_subdir, install_dir, install_mode):
         InterpreterObject.__init__(self)
-        self.source_subdir = source_subdir
-        self.installable_subdir = installable_subdir
+        self.source_subdir = src_subdir
+        self.installable_subdir = inst_subdir
         self.install_dir = install_dir
+        self.install_mode = install_mode
 
 class Man(InterpreterObject):
 
@@ -476,17 +499,21 @@ class GeneratedObjectsHolder(InterpreterObject):
         super().__init__()
         self.held_object = held_object
 
-class BuildTargetHolder(InterpreterObject):
+class TargetHolder(InterpreterObject):
+    def __init__(self):
+        super().__init__()
+
+class BuildTargetHolder(TargetHolder):
     def __init__(self, target, interp):
         super().__init__()
         self.held_object = target
         self.interpreter = interp
-        self.methods.update({'extract_objects' : self.extract_objects_method,
-                             'extract_all_objects' : self.extract_all_objects_method,
+        self.methods.update({'extract_objects': self.extract_objects_method,
+                             'extract_all_objects': self.extract_all_objects_method,
                              'get_id': self.get_id_method,
-                             'outdir' : self.outdir_method,
-                             'full_path' : self.full_path_method,
-                             'private_dir_include' : self.private_dir_include_method,
+                             'outdir': self.outdir_method,
+                             'full_path': self.full_path_method,
+                             'private_dir_include': self.private_dir_include_method,
                              })
 
     def __repr__(self):
@@ -499,7 +526,7 @@ class BuildTargetHolder(InterpreterObject):
 
     def private_dir_include_method(self, args, kwargs):
         return IncludeDirsHolder(build.IncludeDirs('', [], False,
-                    [self.interpreter.backend.get_target_private_dir(self.held_object)]))
+                                                   [self.interpreter.backend.get_target_private_dir(self.held_object)]))
 
     def full_path_method(self, args, kwargs):
         return self.interpreter.backend.get_target_filename_abs(self.held_object)
@@ -538,12 +565,12 @@ class JarHolder(BuildTargetHolder):
     def __init__(self, target, interp):
         super().__init__(target, interp)
 
-class CustomTargetHolder(InterpreterObject):
+class CustomTargetHolder(TargetHolder):
     def __init__(self, object_to_hold, interp):
         super().__init__()
         self.held_object = object_to_hold
         self.interpreter = interp
-        self.methods.update({'full_path' : self.full_path_method,
+        self.methods.update({'full_path': self.full_path_method,
                              })
 
     def __repr__(self):
@@ -556,6 +583,7 @@ class CustomTargetHolder(InterpreterObject):
 
 class RunTargetHolder(InterpreterObject):
     def __init__(self, name, command, args, dependencies, subdir):
+        super().__init__()
         self.held_object = build.RunTarget(name, command, args, dependencies, subdir)
 
     def __repr__(self):
@@ -587,8 +615,8 @@ class SubprojectHolder(InterpreterObject):
     def __init__(self, subinterpreter):
         super().__init__()
         self.held_object = subinterpreter
-        self.methods.update({'get_variable' : self.get_variable_method,
-                            })
+        self.methods.update({'get_variable': self.get_variable_method,
+                             })
 
     def get_variable_method(self, args, kwargs):
         if len(args) != 1:
@@ -606,24 +634,26 @@ class CompilerHolder(InterpreterObject):
         self.methods.update({'compiles': self.compiles_method,
                              'links': self.links_method,
                              'get_id': self.get_id_method,
+                             'compute_int': self.compute_int_method,
                              'sizeof': self.sizeof_method,
+                             'get_define': self.get_define_method,
                              'has_header': self.has_header_method,
                              'has_header_symbol': self.has_header_symbol_method,
-                             'run' : self.run_method,
-                             'has_function' : self.has_function_method,
-                             'has_member' : self.has_member_method,
-                             'has_members' : self.has_members_method,
-                             'has_type' : self.has_type_method,
-                             'alignment' : self.alignment_method,
-                             'version' : self.version_method,
-                             'cmd_array' : self.cmd_array_method,
+                             'run': self.run_method,
+                             'has_function': self.has_function_method,
+                             'has_member': self.has_member_method,
+                             'has_members': self.has_members_method,
+                             'has_type': self.has_type_method,
+                             'alignment': self.alignment_method,
+                             'version': self.version_method,
+                             'cmd_array': self.cmd_array_method,
                              'find_library': self.find_library_method,
-                             'has_argument' : self.has_argument_method,
-                             'has_multi_arguments' : self.has_multi_arguments_method,
-                             'first_supported_argument' : self.first_supported_argument_method,
-                             'unittest_args' : self.unittest_args_method,
+                             'has_argument': self.has_argument_method,
+                             'has_multi_arguments': self.has_multi_arguments_method,
+                             'first_supported_argument': self.first_supported_argument_method,
+                             'unittest_args': self.unittest_args_method,
                              'symbols_have_underscore_prefix': self.symbols_have_underscore_prefix_method,
-                            })
+                             })
 
     def version_method(self, args, kwargs):
         return self.compiler.version
@@ -674,8 +704,12 @@ class CompilerHolder(InterpreterObject):
             raise InterpreterException('Alignment method takes exactly one positional argument.')
         check_stringlist(args)
         typename = args[0]
+        prefix = kwargs.get('prefix', '')
+        if not isinstance(prefix, str):
+            raise InterpreterException('Prefix argument of sizeof must be a string.')
         extra_args = mesonlib.stringlistify(kwargs.get('args', []))
-        result = self.compiler.alignment(typename, self.environment, extra_args)
+        deps = self.determine_dependencies(kwargs)
+        result = self.compiler.alignment(typename, prefix, self.environment, extra_args, deps)
         mlog.log('Checking for alignment of "', mlog.bold(typename), '": ', result, sep='')
         return result
 
@@ -701,7 +735,7 @@ class CompilerHolder(InterpreterObject):
                 h = mlog.green('YES')
             else:
                 h = mlog.red('NO (%d)' % result.returncode)
-            mlog.log('Checking if "', mlog.bold(testname), '" runs : ', h, sep='')
+            mlog.log('Checking if "', mlog.bold(testname), '" runs: ', h, sep='')
         return TryRunResultHolder(result)
 
     def get_id_method(self, args, kwargs):
@@ -717,7 +751,7 @@ class CompilerHolder(InterpreterObject):
     def unittest_args_method(self, args, kwargs):
         # At time, only D compilers have this feature.
         if not hasattr(self.compiler, 'get_unittest_args'):
-            raise InterpreterException('This {} compiler has no unittest arguments.'.format(self.compiler.language))
+            raise InterpreterException('This {} compiler has no unittest arguments.'.format(self.compiler.get_display_language()))
         return self.compiler.get_unittest_args()
 
     def has_member_method(self, args, kwargs):
@@ -797,6 +831,29 @@ class CompilerHolder(InterpreterObject):
         mlog.log('Checking for type "', mlog.bold(typename), '": ', hadtxt, sep='')
         return had
 
+    def compute_int_method(self, args, kwargs):
+        if len(args) != 1:
+            raise InterpreterException('Compute_int takes exactly one argument.')
+        check_stringlist(args)
+        expression = args[0]
+        prefix = kwargs.get('prefix', '')
+        l = kwargs.get('low', -1024)
+        h = kwargs.get('high', 1024)
+        guess = kwargs.get('guess', None)
+        if not isinstance(prefix, str):
+            raise InterpreterException('Prefix argument of compute_int must be a string.')
+        if not isinstance(l, int):
+            raise InterpreterException('Low argument of compute_int must be an int.')
+        if not isinstance(h, int):
+            raise InterpreterException('High argument of compute_int must be an int.')
+        if guess is not None and not isinstance(guess, int):
+            raise InterpreterException('Guess argument of compute_int must be an int.')
+        extra_args = self.determine_args(kwargs)
+        deps = self.determine_dependencies(kwargs)
+        res = self.compiler.compute_int(expression, l, h, guess, prefix, self.environment, extra_args, deps)
+        mlog.log('Computing int of "%s": %d' % (expression, res))
+        return res
+
     def sizeof_method(self, args, kwargs):
         if len(args) != 1:
             raise InterpreterException('Sizeof takes exactly one argument.')
@@ -810,6 +867,20 @@ class CompilerHolder(InterpreterObject):
         esize = self.compiler.sizeof(element, prefix, self.environment, extra_args, deps)
         mlog.log('Checking for size of "%s": %d' % (element, esize))
         return esize
+
+    def get_define_method(self, args, kwargs):
+        if len(args) != 1:
+            raise InterpreterException('get_define() takes exactly one argument.')
+        check_stringlist(args)
+        element = args[0]
+        prefix = kwargs.get('prefix', '')
+        if not isinstance(prefix, str):
+            raise InterpreterException('Prefix argument of get_define() must be a string.')
+        extra_args = self.determine_args(kwargs)
+        deps = self.determine_dependencies(kwargs)
+        value = self.compiler.get_define(element, prefix, self.environment, extra_args, deps)
+        mlog.log('Checking for value of define "%s": %s' % (element, value))
+        return value
 
     def compiles_method(self, args, kwargs):
         if len(args) != 1:
@@ -831,7 +902,7 @@ class CompilerHolder(InterpreterObject):
                 h = mlog.green('YES')
             else:
                 h = mlog.red('NO')
-            mlog.log('Checking if "', mlog.bold(testname), '" compiles : ', h, sep='')
+            mlog.log('Checking if "', mlog.bold(testname), '" compiles: ', h, sep='')
         return result
 
     def links_method(self, args, kwargs):
@@ -854,7 +925,7 @@ class CompilerHolder(InterpreterObject):
                 h = mlog.green('YES')
             else:
                 h = mlog.red('NO')
-            mlog.log('Checking if "', mlog.bold(testname), '" links : ', h, sep='')
+            mlog.log('Checking if "', mlog.bold(testname), '" links: ', h, sep='')
         return result
 
     def has_header_method(self, args, kwargs):
@@ -910,16 +981,9 @@ class CompilerHolder(InterpreterObject):
                 raise InvalidCode('Search directory %s is not an absolute path.' % i)
         linkargs = self.compiler.find_library(libname, self.environment, search_dirs)
         if required and not linkargs:
-            l = self.compiler.language.capitalize()
-            raise InterpreterException('{} library {!r} not found'.format(l, libname))
-        # If this is set to None, the library and link arguments are for
-        # a C-like compiler. Otherwise, it's for some other language that has
-        # a find_library implementation. We do this because it's easier than
-        # maintaining a list of languages that can consume C libraries.
-        lang = None
-        if self.compiler.language == 'vala':
-            lang = 'vala'
-        lib = dependencies.ExternalLibrary(libname, linkargs, language=lang)
+            raise InterpreterException('{} library {!r} not found'.format(self.compiler.get_display_language(), libname))
+        lib = dependencies.ExternalLibrary(libname, linkargs, self.environment,
+                                           self.compiler.language)
         return ExternalLibraryHolder(lib)
 
     def has_argument_method(self, args, kwargs):
@@ -931,7 +995,7 @@ class CompilerHolder(InterpreterObject):
             h = mlog.green('YES')
         else:
             h = mlog.red('NO')
-        mlog.log('Compiler for {} supports argument {}:'.format(self.compiler.language, args[0]), h)
+        mlog.log('Compiler for {} supports argument {}:'.format(self.compiler.get_display_language(), args[0]), h)
         return result
 
     def has_multi_arguments_method(self, args, kwargs):
@@ -943,7 +1007,7 @@ class CompilerHolder(InterpreterObject):
             h = mlog.red('NO')
         mlog.log(
             'Compiler for {} supports arguments {}:'.format(
-                self.compiler.language, ' '.join(args)),
+                self.compiler.get_display_language(), ' '.join(args)),
             h)
         return result
 
@@ -955,8 +1019,10 @@ class CompilerHolder(InterpreterObject):
         mlog.log('First supported argument:', mlog.red('None'))
         return []
 
-class ModuleState:
-    pass
+ModuleState = namedtuple('ModuleState', [
+    'build_to_src', 'subdir', 'environment', 'project_name', 'project_version',
+    'backend', 'compilers', 'targets', 'data', 'headers', 'man', 'global_args',
+    'project_args', 'build_machine', 'host_machine', 'target_machine'])
 
 class ModuleHolder(InterpreterObject):
     def __init__(self, modname, module, interpreter):
@@ -972,22 +1038,38 @@ class ModuleHolder(InterpreterObject):
             raise InvalidArguments('Module %s does not have method %s.' % (self.modname, method_name))
         if method_name.startswith('_'):
             raise InvalidArguments('Function {!r} in module {!r} is private.'.format(method_name, self.modname))
-        state = ModuleState()
-        state.build_to_src = os.path.relpath(self.interpreter.environment.get_source_dir(),
-                                             self.interpreter.environment.get_build_dir())
-        state.subdir = self.interpreter.subdir
-        state.environment = self.interpreter.environment
-        state.project_name = self.interpreter.build.project_name
-        state.project_version = self.interpreter.build.dep_manifest[self.interpreter.active_projectname]
-        state.compilers = self.interpreter.build.compilers
-        state.targets = self.interpreter.build.targets
-        state.data = self.interpreter.build.data
-        state.headers = self.interpreter.build.get_headers()
-        state.man = self.interpreter.build.get_man()
-        state.global_args = self.interpreter.build.global_args
-        state.project_args = self.interpreter.build.projects_args.get(self.interpreter.subproject, {})
-        value = fn(state, args, kwargs)
-        return self.interpreter.module_method_callback(value)
+        # This is not 100% reliable but we can't use hash()
+        # because the Build object contains dicts and lists.
+        num_targets = len(self.interpreter.build.targets)
+        state = ModuleState(
+            build_to_src=os.path.relpath(self.interpreter.environment.get_source_dir(),
+                                         self.interpreter.environment.get_build_dir()),
+            subdir=self.interpreter.subdir,
+            environment=self.interpreter.environment,
+            project_name=self.interpreter.build.project_name,
+            project_version=self.interpreter.build.dep_manifest[self.interpreter.active_projectname],
+            # The backend object is under-used right now, but we will need it:
+            # https://github.com/mesonbuild/meson/issues/1419
+            backend=self.interpreter.backend,
+            compilers=self.interpreter.build.compilers,
+            targets=self.interpreter.build.targets,
+            data=self.interpreter.build.data,
+            headers=self.interpreter.build.get_headers(),
+            man=self.interpreter.build.get_man(),
+            global_args=self.interpreter.build.global_args,
+            project_args=self.interpreter.build.projects_args.get(self.interpreter.subproject, {}),
+            build_machine=self.interpreter.builtin['build_machine'].held_object,
+            host_machine=self.interpreter.builtin['host_machine'].held_object,
+            target_machine=self.interpreter.builtin['target_machine'].held_object,
+        )
+        if self.held_object.is_snippet(method_name):
+            value = fn(self.interpreter, state, args, kwargs)
+            return self.interpreter.holderify(value)
+        else:
+            value = fn(state, args, kwargs)
+            if num_targets != len(self.interpreter.build.targets):
+                raise InterpreterException('Extension module altered internal state illegally.')
+            return self.interpreter.module_method_callback(value)
 
 class MesonMain(InterpreterObject):
     def __init__(self, build, interpreter):
@@ -996,23 +1078,23 @@ class MesonMain(InterpreterObject):
         self.interpreter = interpreter
         self._found_source_scripts = {}
         self.methods.update({'get_compiler': self.get_compiler_method,
-                             'is_cross_build' : self.is_cross_build_method,
-                             'has_exe_wrapper' : self.has_exe_wrapper_method,
-                             'is_unity' : self.is_unity_method,
-                             'is_subproject' : self.is_subproject_method,
-                             'current_source_dir' : self.current_source_dir_method,
-                             'current_build_dir' : self.current_build_dir_method,
-                             'source_root' : self.source_root_method,
-                             'build_root' : self.build_root_method,
-                             'add_install_script' : self.add_install_script_method,
-                             'add_postconf_script' : self.add_postconf_script_method,
+                             'is_cross_build': self.is_cross_build_method,
+                             'has_exe_wrapper': self.has_exe_wrapper_method,
+                             'is_unity': self.is_unity_method,
+                             'is_subproject': self.is_subproject_method,
+                             'current_source_dir': self.current_source_dir_method,
+                             'current_build_dir': self.current_build_dir_method,
+                             'source_root': self.source_root_method,
+                             'build_root': self.build_root_method,
+                             'add_install_script': self.add_install_script_method,
+                             'add_postconf_script': self.add_postconf_script_method,
                              'install_dependency_manifest': self.install_dependency_manifest_method,
                              'project_version': self.project_version_method,
                              'version': self.version_method,
-                             'project_name' : self.project_name_method,
+                             'project_name': self.project_name_method,
                              'get_cross_property': self.get_cross_property_method,
-                             'backend' : self.backend_method,
-                            })
+                             'backend': self.backend_method,
+                             })
 
     def _find_source_script(self, name, args):
         # Prefer scripts in the current source directory
@@ -1023,10 +1105,11 @@ class MesonMain(InterpreterObject):
             found = self._found_source_scripts[key]
         else:
             found = dependencies.ExternalProgram(name, search_dir=search_dir)
-            if found:
+            if found.found():
                 self._found_source_scripts[key] = found
             else:
-                raise InterpreterException('Script {!r} not found'.format(name))
+                m = 'Script or command {!r} not found or not executable'
+                raise InterpreterException(m.format(name))
         return build.RunScript(found.get_command(), args)
 
     def add_install_script_method(self, args, kwargs):
@@ -1102,7 +1185,10 @@ class MesonMain(InterpreterObject):
         raise InterpreterException('Tried to access compiler for unspecified language "%s".' % cname)
 
     def is_unity_method(self, args, kwargs):
-        return self.build.environment.coredata.get_builtin_option('unity')
+        optval = self.interpreter.environment.coredata.get_builtin_option('unity')
+        if optval == 'on' or (optval == 'subprojects' and self.interpreter.subproject != ''):
+            return True
+        return False
 
     def is_subproject_method(self, args, kwargs):
         return self.interpreter.is_subproject()
@@ -1137,30 +1223,121 @@ class MesonMain(InterpreterObject):
                 return args[1]
             raise InterpreterException('Unknown cross property: %s.' % propname)
 
+pch_kwargs = set(['c_pch', 'cpp_pch'])
+
+lang_arg_kwargs = set(['c_args',
+                       'cpp_args',
+                       'd_args',
+                       'fortran_args',
+                       'java_args',
+                       'objc_args',
+                       'objcpp_args',
+                       'rust_args',
+                       'vala_args',
+                   ])
+
+vala_kwargs = set(['vala_header', 'vala_gir', 'vala_vapi'])
+rust_kwargs = set(['rust_crate_type'])
+cs_kwargs = set(['resources'])
+
+buildtarget_kwargs = set(['build_by_default',
+                          'build_rpath',
+                          'dependencies',
+                          'extra_files',
+                          'gui_app',
+                          'link_with',
+                          'link_whole',
+                          'link_args',
+                          'link_depends',
+                          'include_directories',
+                          'install',
+                          'install_rpath',
+                          'install_dir',
+                          'name_prefix',
+                          'name_suffix',
+                          'native',
+                          'objects',
+                          'override_options',
+                          'pic',
+                          'sources',
+                          'vs_module_defs',
+                      ])
+
+build_target_common_kwargs = (
+    buildtarget_kwargs |
+    lang_arg_kwargs |
+    pch_kwargs |
+    vala_kwargs |
+    rust_kwargs |
+    cs_kwargs)
+
+exe_kwargs = set()
+exe_kwargs.update(build_target_common_kwargs)
+
+shlib_kwargs = (build_target_common_kwargs) | {'version', 'soversion'}
+shmod_kwargs = shlib_kwargs
+stlib_kwargs = shlib_kwargs
+
+jar_kwargs = exe_kwargs.copy()
+jar_kwargs.update(['main_class'])
+
+build_target_kwargs = exe_kwargs.copy()
+build_target_kwargs.update(['target_type'])
+
+permitted_kwargs = {'add_global_arguments': {'language'},
+                    'add_global_link_arguments': {'language'},
+                    'add_project_link_arguments': {'language'},
+                    'add_languages': {'required'},
+                    'add_project_arguments': {'language'},
+                    'add_test_setup': {'exe_wrapper', 'gdb', 'timeout_multiplier', 'env'},
+                    'benchmark': {'args', 'env', 'should_fail', 'timeout', 'workdir', 'suite'},
+                    'build_target': build_target_kwargs,
+                    'configure_file': {'input', 'output', 'configuration', 'command', 'install_dir', 'capture', 'install'},
+                    'custom_target': {'input', 'output', 'command', 'install', 'install_dir', 'build_always', 'capture', 'depends', 'depend_files', 'depfile', 'build_by_default'},
+                    'declare_dependency': {'include_directories', 'link_with', 'sources', 'dependencies', 'compile_args', 'link_args', 'version'},
+                    'executable': exe_kwargs,
+                    'find_program': {'required'},
+                    'generator': {'arguments', 'output', 'depfile'},
+                    'include_directories': {'is_system'},
+                    'install_data': {'install_dir', 'install_mode', 'sources'},
+                    'install_headers': {'install_dir', 'subdir'},
+                    'install_man': {'install_dir'},
+                    'install_subdir': {'install_dir', 'install_mode'},
+                    'jar': jar_kwargs,
+                    'project': {'version', 'meson_version', 'default_options', 'license', 'subproject_dir'},
+                    'run_target': {'command', 'depends'},
+                    'shared_library': shlib_kwargs,
+                    'shared_module': shmod_kwargs,
+                    'static_library': stlib_kwargs,
+                    'subproject': {'version', 'default_options'},
+                    'test': {'args', 'env', 'is_parallel', 'should_fail', 'timeout', 'workdir', 'suite'},
+                    'vcs_tag': {'input', 'output', 'fallback', 'command', 'replace_string'},
+                    }
+
+
 class Interpreter(InterpreterBase):
 
-    def __init__(self, build, backend, subproject='', subdir='', subproject_dir='subprojects'):
+    def __init__(self, build, backend, subproject='', subdir='', subproject_dir='subprojects',
+                 default_project_options=[]):
         super().__init__(build.environment.get_source_dir(), subdir)
+        self.an_unpicklable_object = mesonlib.an_unpicklable_object
         self.build = build
         self.environment = build.environment
         self.coredata = self.environment.get_coredata()
         self.backend = backend
         self.subproject = subproject
         self.subproject_dir = subproject_dir
-        option_file = os.path.join(self.source_root, self.subdir, 'meson_options.txt')
-        if os.path.exists(option_file):
-            oi = optinterpreter.OptionInterpreter(self.subproject, \
-                                                  self.build.environment.cmd_line_options.projectoptions)
-            oi.process(option_file)
-            self.build.environment.merge_options(oi.options)
+        self.option_file = os.path.join(self.source_root, self.subdir, 'meson_options.txt')
         self.load_root_meson_file()
         self.sanity_check_ast()
         self.builtin.update({'meson': MesonMain(build, self)})
         self.generators = []
         self.visited_subdirs = {}
-        self.args_frozen = False
+        self.project_args_frozen = False
+        self.global_args_frozen = False  # implies self.project_args_frozen
         self.subprojects = {}
         self.subproject_stack = []
+        self.default_project_options = default_project_options[:] # Passed from the outside, only used in subprojects.
         self.build_func_dict()
         self.parse_project()
         self.builtin['build_machine'] = BuildMachine(self.coredata.compilers)
@@ -1180,92 +1357,112 @@ class Interpreter(InterpreterBase):
         self.build_def_files = [os.path.join(self.subdir, environment.build_filename)]
 
     def build_func_dict(self):
-        self.funcs.update({'project' : self.func_project,
-                      'message' : self.func_message,
-                      'error' : self.func_error,
-                      'executable': self.func_executable,
-                      'dependency' : self.func_dependency,
-                      'static_library' : self.func_static_lib,
-                      'shared_library' : self.func_shared_lib,
-                      'shared_module' : self.func_shared_module,
-                      'library' : self.func_library,
-                      'jar' : self.func_jar,
-                      'build_target': self.func_build_target,
-                      'custom_target' : self.func_custom_target,
-                      'run_target' : self.func_run_target,
-                      'generator' : self.func_generator,
-                      'test' : self.func_test,
-                      'benchmark' : self.func_benchmark,
-                      'install_headers' : self.func_install_headers,
-                      'install_man' : self.func_install_man,
-                      'subdir' : self.func_subdir,
-                      'install_data' : self.func_install_data,
-                      'install_subdir' : self.func_install_subdir,
-                      'configure_file' : self.func_configure_file,
-                      'include_directories' : self.func_include_directories,
-                      'add_global_arguments' : self.func_add_global_arguments,
-                      'add_project_arguments' : self.func_add_project_arguments,
-                      'add_global_link_arguments' : self.func_add_global_link_arguments,
-                      'add_project_link_arguments' : self.func_add_project_link_arguments,
-                      'add_languages' : self.func_add_languages,
-                      'find_program' : self.func_find_program,
-                      'find_library' : self.func_find_library,
-                      'configuration_data' : self.func_configuration_data,
-                      'run_command' : self.func_run_command,
-                      'gettext' : self.func_gettext,
-                      'option' : self.func_option,
-                      'get_option' : self.func_get_option,
-                      'subproject' : self.func_subproject,
-                      'vcs_tag' : self.func_vcs_tag,
-                      'set_variable' : self.func_set_variable,
-                      'is_variable' : self.func_is_variable,
-                      'get_variable' : self.func_get_variable,
-                      'import' : self.func_import,
-                      'files' : self.func_files,
-                      'declare_dependency': self.func_declare_dependency,
-                      'assert': self.func_assert,
-                      'environment' : self.func_environment,
-                      'join_paths' : self.func_join_paths,
-                     })
+        self.funcs.update({'add_global_arguments': self.func_add_global_arguments,
+                           'add_project_arguments': self.func_add_project_arguments,
+                           'add_global_link_arguments': self.func_add_global_link_arguments,
+                           'add_project_link_arguments': self.func_add_project_link_arguments,
+                           'add_test_setup': self.func_add_test_setup,
+                           'add_languages': self.func_add_languages,
+                           'assert': self.func_assert,
+                           'benchmark': self.func_benchmark,
+                           'build_target': self.func_build_target,
+                           'configuration_data': self.func_configuration_data,
+                           'configure_file': self.func_configure_file,
+                           'custom_target': self.func_custom_target,
+                           'declare_dependency': self.func_declare_dependency,
+                           'dependency': self.func_dependency,
+                           'environment': self.func_environment,
+                           'error': self.func_error,
+                           'executable': self.func_executable,
+                           'generator': self.func_generator,
+                           'gettext': self.func_gettext,
+                           'get_option': self.func_get_option,
+                           'get_variable': self.func_get_variable,
+                           'files': self.func_files,
+                           'find_library': self.func_find_library,
+                           'find_program': self.func_find_program,
+                           'include_directories': self.func_include_directories,
+                           'import': self.func_import,
+                           'install_data': self.func_install_data,
+                           'install_headers': self.func_install_headers,
+                           'install_man': self.func_install_man,
+                           'install_subdir': self.func_install_subdir,
+                           'is_variable': self.func_is_variable,
+                           'jar': self.func_jar,
+                           'join_paths': self.func_join_paths,
+                           'library': self.func_library,
+                           'message': self.func_message,
+                           'option': self.func_option,
+                           'project': self.func_project,
+                           'run_target': self.func_run_target,
+                           'run_command': self.func_run_command,
+                           'set_variable': self.func_set_variable,
+                           'subdir': self.func_subdir,
+                           'subproject': self.func_subproject,
+                           'shared_library': self.func_shared_lib,
+                           'shared_module': self.func_shared_module,
+                           'static_library': self.func_static_lib,
+                           'test': self.func_test,
+                           'vcs_tag': self.func_vcs_tag,
+                           })
 
-    def module_method_callback(self, invalues):
-        unwrap_single = False
-        if invalues is None:
-            return
+    def holderify(self, item):
+        if isinstance(item, list):
+            return [self.holderify(x) for x in item]
+        if isinstance(item, build.CustomTarget):
+            return CustomTargetHolder(item, self)
+        elif isinstance(item, (int, str)) or item is None:
+            return item
+        elif isinstance(item, build.Executable):
+            return ExecutableHolder(item, self)
+        elif isinstance(item, build.GeneratedList):
+            return GeneratedListHolder(item)
+        elif isinstance(item, build.RunTarget):
+            raise RuntimeError('This is not a pipe.')
+        elif isinstance(item, build.RunScript):
+            raise RuntimeError('Do not do this.')
+        elif isinstance(item, build.Data):
+            return DataHolder(item)
+        elif isinstance(item, dependencies.InternalDependency):
+            return InternalDependencyHolder(item)
+        elif isinstance(item, dependencies.ExternalProgram):
+            return ExternalProgramHolder(item)
+        elif hasattr(item, 'held_object'):
+            return item
+        else:
+            raise InterpreterException('Module returned a value of unknown type.')
+
+    def process_new_values(self, invalues):
         if not isinstance(invalues, list):
-            unwrap_single = True
             invalues = [invalues]
-        outvalues = []
         for v in invalues:
-            if isinstance(v, build.CustomTarget):
+            if isinstance(v, (build.BuildTarget, build.CustomTarget, build.RunTarget)):
                 self.add_target(v.name, v)
-                outvalues.append(CustomTargetHolder(v, self))
-            elif isinstance(v, (int, str)):
-                outvalues.append(v)
-            elif isinstance(v, build.Executable):
-                self.add_target(v.name, v)
-                outvalues.append(ExecutableHolder(v, self))
             elif isinstance(v, list):
-                outvalues.append(self.module_method_callback(v))
+                self.module_method_callback(v)
             elif isinstance(v, build.GeneratedList):
-                outvalues.append(GeneratedListHolder(v))
-            elif isinstance(v, build.RunTarget):
-                self.add_target(v.name, v)
+                pass
             elif isinstance(v, build.RunScript):
                 self.build.install_scripts.append(v)
             elif isinstance(v, build.Data):
                 self.build.data.append(v)
+            elif isinstance(v, dependencies.ExternalProgram):
+                return ExternalProgramHolder(v)
             elif isinstance(v, dependencies.InternalDependency):
                 # FIXME: This is special cased and not ideal:
                 # The first source is our new VapiTarget, the rest are deps
-                self.module_method_callback(v.sources[0])
-                outvalues.append(InternalDependencyHolder(v))
+                self.process_new_values(v.sources[0])
+            elif hasattr(v, 'held_object'):
+                pass
             else:
-                print(v)
                 raise InterpreterException('Module returned a value of unknown type.')
-        if len(outvalues) == 1 and unwrap_single:
-            return outvalues[0]
-        return outvalues
+
+    def module_method_callback(self, return_object):
+        if not isinstance(return_object, ModuleReturnValue):
+            raise InterpreterException('Bug in module, it returned an invalid object')
+        invalues = return_object.new_objects
+        self.process_new_values(invalues)
+        return self.holderify(return_object.return_value)
 
     def get_build_def_files(self):
         return self.build_def_files
@@ -1280,12 +1477,12 @@ class Interpreter(InterpreterBase):
                 try:
                     di = mesonlib.stringlistify(cross_info.get_stdlib(l))
                     if len(di) != 2:
-                        raise InterpreterException('Stdlib definition for %s should have exactly two elements.' \
+                        raise InterpreterException('Stdlib definition for %s should have exactly two elements.'
                                                    % l)
                     projname, depname = di
                     subproj = self.do_subproject(projname, {})
                     self.build.cross_stdlibs[l] = subproj.get_variable_method([depname], {})
-                except KeyError as e:
+                except KeyError:
                     pass
 
     @stringArgs
@@ -1294,9 +1491,16 @@ class Interpreter(InterpreterBase):
         if len(args) != 1:
             raise InvalidCode('Import takes one argument.')
         modname = args[0]
+        if modname.startswith('unstable-'):
+            plainname = modname.split('-', 1)[1]
+            mlog.warning('Module %s has no backwards or forwards compatibility and might not exist in future releases.' % modname)
+            modname = 'unstable_' + plainname
         if modname not in self.environment.coredata.modules:
-            module = importlib.import_module('mesonbuild.modules.' + modname).initialize()
-            self.environment.coredata.modules[modname] = module
+            try:
+                module = importlib.import_module('mesonbuild.modules.' + modname)
+            except ImportError:
+                raise InvalidArguments('Module "%s" does not exist' % (modname, ))
+            self.environment.coredata.modules[modname] = module.initialize()
         return ModuleHolder(modname, self.environment.coredata.modules[modname], self)
 
     @stringArgs
@@ -1304,6 +1508,7 @@ class Interpreter(InterpreterBase):
     def func_files(self, node, args, kwargs):
         return [mesonlib.File.from_source_file(self.environment.source_dir, self.subdir, fname) for fname in args]
 
+    @permittedKwargs(permitted_kwargs['declare_dependency'])
     @noPosargs
     def func_declare_dependency(self, node, args, kwargs):
         version = kwargs.get('version', self.project_version)
@@ -1319,7 +1524,7 @@ class Interpreter(InterpreterBase):
         if not isinstance(sources, list):
             sources = [sources]
         sources = self.source_strings_to_files(self.flatten(sources))
-        deps = kwargs.get('dependencies', [])
+        deps = self.flatten(kwargs.get('dependencies', []))
         if not isinstance(deps, list):
             deps = [deps]
         compile_args = mesonlib.stringlistify(kwargs.get('compile_args', []))
@@ -1333,7 +1538,13 @@ class Interpreter(InterpreterBase):
             if not isinstance(d, (dependencies.Dependency, dependencies.ExternalLibrary, dependencies.InternalDependency)):
                 raise InterpreterException('Dependencies must be external deps')
             final_deps.append(d)
-        dep = dependencies.InternalDependency(version, incs, compile_args, link_args, libs, sources, final_deps)
+        dep = dependencies.InternalDependency(version,
+                                              mesonlib.unholder_array(incs),
+                                              compile_args,
+                                              link_args,
+                                              mesonlib.unholder_array(libs),
+                                              mesonlib.unholder_array(sources),
+                                              final_deps)
         return DependencyHolder(dep)
 
     @noKwargs
@@ -1356,37 +1567,49 @@ class Interpreter(InterpreterBase):
         for i in range(min(len(args), len(arg_types))):
             wanted = arg_types[i]
             actual = args[i]
-            if wanted != None:
+            if wanted is not None:
                 if not isinstance(actual, wanted):
                     raise InvalidArguments('Incorrect argument type.')
 
+    @noKwargs
     def func_run_command(self, node, args, kwargs):
+        return self.run_command_impl(node, args, kwargs)
+
+    def run_command_impl(self, node, args, kwargs, in_builddir=False):
         if len(args) < 1:
             raise InterpreterException('Not enough arguments')
         cmd = args[0]
         cargs = args[1:]
+        srcdir = self.environment.get_source_dir()
+        builddir = self.environment.get_build_dir()
+        m = 'must be a string, or the output of find_program(), files(), or ' \
+            'configure_file(); not {!r}'
         if isinstance(cmd, ExternalProgramHolder):
-            cmd = cmd.get_command()
-        elif isinstance(cmd, str):
-            cmd = [cmd]
+            cmd = cmd.held_object
         else:
-            raise InterpreterException('First argument is of incorrect type.')
+            if isinstance(cmd, mesonlib.File):
+                cmd = cmd.absolute_path(srcdir, builddir)
+            elif not isinstance(cmd, str):
+                raise InterpreterException('First argument ' + m.format(cmd))
+            # Prefer scripts in the current source directory
+            search_dir = os.path.join(srcdir, self.subdir)
+            prog = ExternalProgram(cmd, silent=True, search_dir=search_dir)
+            if not prog.found():
+                raise InterpreterException('Program or command {!r} not found'
+                                           'or not executable'.format(cmd))
+            cmd = prog
         expanded_args = []
         for a in mesonlib.flatten(cargs):
             if isinstance(a, str):
                 expanded_args.append(a)
             elif isinstance(a, mesonlib.File):
-                if a.is_built:
-                    raise InterpreterException('Can not use generated files in run_command.')
-                expanded_args.append(os.path.join(self.environment.get_source_dir(), str(a)))
+                expanded_args.append(a.absolute_path(srcdir, builddir))
+            elif isinstance(a, ExternalProgramHolder):
+                expanded_args.append(a.held_object.get_path())
             else:
-                raise InterpreterException('Run_command arguments must be strings or the output of files().')
-        args = cmd + expanded_args
-        in_builddir = kwargs.get('in_builddir', False)
-        if not isinstance(in_builddir, bool):
-            raise InterpreterException('in_builddir must be boolean.')
-        return RunProcess(args, self.environment.source_dir, self.environment.build_dir,
-                          self.subdir, in_builddir)
+                raise InterpreterException('Arguments ' + m.format(a))
+        return RunProcess(cmd, expanded_args, srcdir, builddir, self.subdir,
+                          get_meson_script(self.environment, 'mesonintrospect'), in_builddir)
 
     @stringArgs
     def func_gettext(self, nodes, args, kwargs):
@@ -1395,6 +1618,7 @@ class Interpreter(InterpreterBase):
     def func_option(self, nodes, args, kwargs):
         raise InterpreterException('Tried to call option() in build description file. All options must be in the option file.')
 
+    @permittedKwargs(permitted_kwargs['subproject'])
     @stringArgs
     def func_subproject(self, nodes, args, kwargs):
         if len(args) != 1:
@@ -1409,16 +1633,19 @@ class Interpreter(InterpreterBase):
             raise InvalidCode('Recursive include of subprojects: %s.' % incpath)
         if dirname in self.subprojects:
             return self.subprojects[dirname]
-        r = wrap.Resolver(os.path.join(self.build.environment.get_source_dir(), self.subproject_dir))
-        resolved = r.resolve(dirname)
-        if resolved is None:
-            msg = 'Subproject directory {!r} does not exist and cannot be downloaded.'
-            raise InterpreterException(msg.format(os.path.join(self.subproject_dir, dirname)))
+        subproject_dir_abs = os.path.join(self.environment.get_source_dir(), self.subproject_dir)
+        r = wrap.Resolver(subproject_dir_abs, self.coredata.wrap_mode)
+        try:
+            resolved = r.resolve(dirname)
+        except RuntimeError as e:
+            msg = 'Subproject directory {!r} does not exist and cannot be downloaded:\n{}'
+            raise InterpreterException(msg.format(os.path.join(self.subproject_dir, dirname), e))
         subdir = os.path.join(self.subproject_dir, resolved)
         os.makedirs(os.path.join(self.build.environment.get_build_dir(), subdir), exist_ok=True)
-        self.args_frozen = True
+        self.global_args_frozen = True
         mlog.log('\nExecuting subproject ', mlog.bold(dirname), '.\n', sep='')
-        subi = Interpreter(self.build, self.backend, dirname, subdir, self.subproject_dir)
+        subi = Interpreter(self.build, self.backend, dirname, subdir, self.subproject_dir,
+                           mesonlib.stringlistify(kwargs.get('default_options', [])))
         subi.subprojects = self.subprojects
 
         subi.subproject_stack = self.subproject_stack + [dirname]
@@ -1443,6 +1670,10 @@ class Interpreter(InterpreterBase):
         if len(args) != 1:
             raise InterpreterException('Argument required for get_option.')
         optname = args[0]
+        try:
+            return compilers.base_options[optname].value
+        except KeyError:
+            pass
         try:
             return self.environment.get_coredata().get_builtin_option(optname)
         except RuntimeError:
@@ -1473,7 +1704,7 @@ class Interpreter(InterpreterBase):
 
     @noKwargs
     def func_configuration_data(self, node, args, kwargs):
-        if len(args) != 0:
+        if args:
             raise InterpreterException('configuration_data takes no arguments')
         return ConfigurationDataHolder()
 
@@ -1488,28 +1719,65 @@ class Interpreter(InterpreterBase):
                 raise InterpreterException('All default options must be of type key=value.')
             key, value = option.split('=', 1)
             if coredata.is_builtin_option(key):
+                if self.subproject != '':
+                    continue # Only the master project is allowed to set global options.
                 if not self.environment.had_argument_for(key):
                     self.coredata.set_builtin_option(key, value)
                 # If this was set on the command line, do not override.
             else:
+                # Option values set with subproject() default_options override those
+                # set in project() default_options.
+                pref = key + '='
+                for i in self.default_project_options:
+                    if i.startswith(pref):
+                        option = i
+                        break
+                # If we are in a subproject, add the subproject prefix to option
+                # name.
+                if self.subproject != '':
+                    option = self.subproject + ':' + option
                 newoptions = [option] + self.environment.cmd_line_options.projectoptions
+                self.environment.cmd_line_options.projectoptions = newoptions
+        # Add options that are only in default_options.
+        for defopt in self.default_project_options:
+            key, value = defopt.split('=')
+            pref = key + '='
+            for i in default_options:
+                if i.startswith(pref):
+                    break
+            else:
+                defopt = self.subproject + ':' + defopt
+                newoptions = [defopt] + self.environment.cmd_line_options.projectoptions
                 self.environment.cmd_line_options.projectoptions = newoptions
 
     @stringArgs
+    @permittedKwargs(permitted_kwargs['project'])
     def func_project(self, node, args, kwargs):
+        if len(args) < 1:
+            raise InvalidArguments('Not enough arguments to project(). Needs at least the project name.')
+        proj_name = args[0]
+        proj_langs = args[1:]
+        if ':' in proj_name:
+            raise InvalidArguments("Project name {!r} must not contain ':'".format(proj_name))
+        default_options = kwargs.get('default_options', [])
+        if self.environment.first_invocation and (len(default_options) > 0 or
+                                                  len(self.default_project_options) > 0):
+            self.parse_default_options(default_options)
         if not self.is_subproject():
-            self.build.project_name = args[0]
-            if self.environment.first_invocation and 'default_options' in kwargs:
-                self.parse_default_options(kwargs['default_options'])
-        if len(args) < 2:
-            raise InvalidArguments('Not enough arguments to project(). Needs at least the project name and one language')
-        self.active_projectname = args[0]
+            self.build.project_name = proj_name
+        if os.path.exists(self.option_file):
+            oi = optinterpreter.OptionInterpreter(self.subproject,
+                                                  self.build.environment.cmd_line_options.projectoptions,
+                                                  )
+            oi.process(self.option_file)
+            self.build.environment.merge_options(oi.options)
+        self.active_projectname = proj_name
         self.project_version = kwargs.get('version', 'undefined')
         if self.build.project_version is None:
             self.build.project_version = self.project_version
         proj_license = mesonlib.stringlistify(kwargs.get('license', 'unknown'))
-        self.build.dep_manifest[args[0]] = {'version': self.project_version,
-                                            'license': proj_license}
+        self.build.dep_manifest[proj_name] = {'version': self.project_version,
+                                              'license': proj_license}
         if self.subproject in self.build.projects:
             raise InvalidCode('Second call to project().')
         if not self.is_subproject() and 'subproject_dir' in kwargs:
@@ -1520,9 +1788,9 @@ class Interpreter(InterpreterBase):
             pv = kwargs['meson_version']
             if not mesonlib.version_compare(cv, pv):
                 raise InterpreterException('Meson version is %s but project requires %s.' % (cv, pv))
-        self.build.projects[self.subproject] = args[0]
-        mlog.log('Project name: ', mlog.bold(args[0]), sep='')
-        self.add_languages(args[1:], True)
+        self.build.projects[self.subproject] = proj_name
+        mlog.log('Project name: ', mlog.bold(proj_name), sep='')
+        self.add_languages(proj_langs, True)
         langs = self.coredata.compilers.keys()
         if 'vala' in langs:
             if 'c' not in langs:
@@ -1530,6 +1798,7 @@ class Interpreter(InterpreterBase):
         if not self.is_subproject():
             self.check_cross_stdlibs()
 
+    @permittedKwargs(permitted_kwargs['add_languages'])
     @stringArgs
     def func_add_languages(self, node, args, kwargs):
         return self.add_languages(args, kwargs.get('required', True))
@@ -1626,12 +1895,12 @@ class Interpreter(InterpreterBase):
                     new_options[i].set_value(value)
         new_options.update(self.coredata.compiler_options)
         self.coredata.compiler_options = new_options
-        return (comp, cross_comp)
+        return comp, cross_comp
 
     def add_languages(self, args, required):
         success = True
         need_cross_compiler = self.environment.is_cross_build() and self.environment.cross_info.need_cross_compiler()
-        for lang in args:
+        for lang in sorted(args, key=compilers.sort_clike):
             lang = lang.lower()
             if lang in self.coredata.compilers:
                 comp = self.coredata.compilers[lang]
@@ -1646,14 +1915,15 @@ class Interpreter(InterpreterBase):
                         continue
                     else:
                         raise
-            mlog.log('Native %s compiler: ' % lang, mlog.bold(' '.join(comp.get_exelist())), ' (%s %s)' % (comp.id, comp.version), sep='')
+            mlog.log('Native %s compiler: ' % comp.get_display_language(), mlog.bold(' '.join(comp.get_exelist())), ' (%s %s)' % (comp.id, comp.version), sep='')
             if not comp.get_language() in self.coredata.external_args:
-                (ext_compile_args, ext_link_args) = environment.get_args_from_envvars(comp)
-                self.coredata.external_args[comp.get_language()] = ext_compile_args
-                self.coredata.external_link_args[comp.get_language()] = ext_link_args
+                (preproc_args, compile_args, link_args) = environment.get_args_from_envvars(comp)
+                self.coredata.external_preprocess_args[comp.get_language()] = preproc_args
+                self.coredata.external_args[comp.get_language()] = compile_args
+                self.coredata.external_link_args[comp.get_language()] = link_args
             self.build.add_compiler(comp)
             if need_cross_compiler:
-                mlog.log('Cross %s compiler: ' % lang, mlog.bold(' '.join(cross_comp.get_exelist())), ' (%s %s)' % (cross_comp.id, cross_comp.version), sep='')
+                mlog.log('Cross %s compiler: ' % cross_comp.get_display_language(), mlog.bold(' '.join(cross_comp.get_exelist())), ' (%s %s)' % (cross_comp.id, cross_comp.version), sep='')
                 self.build.add_cross_compiler(cross_comp)
             if self.environment.is_cross_build() and not need_cross_compiler:
                 self.build.add_cross_compiler(comp)
@@ -1672,9 +1942,9 @@ class Interpreter(InterpreterBase):
                     break
             self.coredata.base_options[optname] = oobj
 
-    @stringArgs
+    @permittedKwargs(permitted_kwargs['find_program'])
     def func_find_program(self, node, args, kwargs):
-        if len(args) == 0:
+        if not args:
             raise InterpreterException('No program name specified.')
         required = kwargs.get('required', True)
         if not isinstance(required, bool):
@@ -1682,77 +1952,114 @@ class Interpreter(InterpreterBase):
         # Search for scripts relative to current subdir.
         # Do not cache found programs because find_program('foobar')
         # might give different results when run from different source dirs.
-        search_dir = os.path.join(self.environment.get_source_dir(), self.subdir)
+        source_dir = os.path.join(self.environment.get_source_dir(), self.subdir)
         for exename in args:
+            if isinstance(exename, mesonlib.File):
+                if exename.is_built:
+                    search_dir = os.path.join(self.environment.get_build_dir(),
+                                              exename.subdir)
+                else:
+                    search_dir = os.path.join(self.environment.get_source_dir(),
+                                              exename.subdir)
+                exename = exename.fname
+            elif isinstance(exename, str):
+                search_dir = source_dir
+            else:
+                raise InvalidArguments('find_program only accepts strings and '
+                                       'files, not {!r}'.format(exename))
             extprog = dependencies.ExternalProgram(exename, search_dir=search_dir)
             progobj = ExternalProgramHolder(extprog)
             if progobj.found():
                 return progobj
         if required and not progobj.found():
-            raise InvalidArguments('Program "%s" not found.' % exename)
+            raise InvalidArguments('Program "%s" not found or not executable' % exename)
         return progobj
 
     def func_find_library(self, node, args, kwargs):
         mlog.log(mlog.red('DEPRECATION:'), 'find_library() is removed, use the corresponding method in compiler object instead.')
 
+    def _find_cached_dep(self, name, kwargs):
+        # Check if we want this as a cross-dep or a native-dep
+        # FIXME: Not all dependencies support such a distinction right now,
+        # and we repeat this check inside dependencies that do. We need to
+        # consolidate this somehow.
+        is_cross = self.environment.is_cross_build()
+        if 'native' in kwargs and is_cross:
+            want_cross = not kwargs['native']
+        else:
+            want_cross = is_cross
+        identifier = dependencies.get_dep_identifier(name, kwargs, want_cross)
+        cached_dep = None
+        # Check if we've already searched for and found this dep
+        if identifier in self.coredata.deps:
+            cached_dep = self.coredata.deps[identifier]
+        else:
+            # Check if exactly the same dep with different version requirements
+            # was found already.
+            wanted = identifier[1]
+            for trial, trial_dep in self.coredata.deps.items():
+                # trial[1], identifier[1] are the version requirements
+                if trial[0] != identifier[0] or trial[2:] != identifier[2:]:
+                    continue
+                found = trial_dep.get_version()
+                if not wanted or mesonlib.version_compare_many(found, wanted)[0]:
+                    # We either don't care about the version, or our
+                    # version requirements matched the trial dep's version.
+                    cached_dep = trial_dep
+                    break
+        return identifier, cached_dep
+
     def func_dependency(self, node, args, kwargs):
         self.validate_arguments(args, 1, [str])
         name = args[0]
         if '<' in name or '>' in name or '=' in name:
-            raise InvalidArguments('''Characters <, > and = are forbidden in target names. To specify version
-requirements use the version keyword argument instead.''')
-        identifier = dependencies.get_dep_identifier(name, kwargs)
-        # Check if we've already searched for and found this dep
-        cached_dep = None
-        if identifier in self.coredata.deps:
-            cached_dep = self.coredata.deps[identifier]
-            if 'version' in kwargs:
-                wanted = kwargs['version']
-                found = cached_dep.get_version()
-                if not cached_dep.found() or \
-                   not mesonlib.version_compare_many(found, wanted)[0]:
-                    # Cached dep has the wrong version. Check if an external
-                    # dependency or a fallback dependency provides it.
-                    cached_dep = None
-            # Don't re-use cached dep if it wasn't required but this one is,
-            # so we properly go into fallback/error code paths
-            if kwargs.get('required', True) and not getattr(cached_dep, 'required', False):
-                cached_dep = None
+            raise InvalidArguments('Characters <, > and = are forbidden in dependency names. To specify'
+                                   'version\n requirements use the \'version\' keyword argument instead.')
+        identifier, cached_dep = self._find_cached_dep(name, kwargs)
 
         if cached_dep:
+            if kwargs.get('required', True) and not cached_dep.found():
+                m = 'Dependency {!r} was already checked and was not found'
+                raise DependencyException(m.format(name))
             dep = cached_dep
         else:
-            # We need to actually search for this dep
-            exception = None
-            dep = None
-            # If the fallback has already been configured (possibly by a higher level project)
-            # try to use it before using the native version
+            # If the dependency has already been configured, possibly by
+            # a higher level project, try to use it first.
             if 'fallback' in kwargs:
                 dirname, varname = self.get_subproject_infos(kwargs)
                 if dirname in self.subprojects:
+                    subproject = self.subprojects[dirname]
                     try:
-                        dep = self.subprojects[dirname].get_variable_method([varname], {})
-                        dep = dep.held_object
+                        # Never add fallback deps to self.coredata.deps
+                        return subproject.get_variable_method([varname], {})
                     except KeyError:
                         pass
 
-            if not dep:
-                try:
-                    dep = dependencies.find_external_dependency(name, self.environment, kwargs)
-                except dependencies.DependencyException as e:
-                    exception = e
-                    pass
+            # We need to actually search for this dep
+            exception = None
+            dep = None
 
+            # Search for it outside the project
+            try:
+                dep = dependencies.find_external_dependency(name, self.environment, kwargs)
+            except DependencyException as e:
+                exception = e
+
+            # Search inside the projects list
             if not dep or not dep.found():
                 if 'fallback' in kwargs:
                     fallback_dep = self.dependency_fallback(name, kwargs)
                     if fallback_dep:
+                        # Never add fallback deps to self.coredata.deps since we
+                        # cannot cache them. They must always be evaluated else
+                        # we won't actually read all the build files.
                         return fallback_dep
-
                 if not dep:
                     raise exception
 
-        self.coredata.deps[identifier] = dep
+        # Only store found-deps in the cache
+        if dep.found():
+            self.coredata.deps[identifier] = dep
         return DependencyHolder(dep)
 
     def get_subproject_infos(self, kwargs):
@@ -1763,10 +2070,20 @@ requirements use the version keyword argument instead.''')
         return fbinfo
 
     def dependency_fallback(self, name, kwargs):
+        if self.coredata.wrap_mode in (WrapMode.nofallback, WrapMode.nodownload):
+            mlog.log('Not looking for a fallback subproject for the dependency',
+                     mlog.bold(name), 'because:\nAutomatic wrap-based fallback '
+                     'dependency downloading is disabled.')
+            return None
         dirname, varname = self.get_subproject_infos(kwargs)
         # Try to execute the subproject
         try:
-            self.do_subproject(dirname, {})
+            sp_kwargs = {}
+            try:
+                sp_kwargs['default_options'] = kwargs['default_options']
+            except KeyError:
+                pass
+            self.do_subproject(dirname, sp_kwargs)
         # Invalid code is always an error
         except InvalidCode:
             raise
@@ -1774,41 +2091,50 @@ requirements use the version keyword argument instead.''')
         # exception; let the caller handle things.
         except:
             mlog.log('Also couldn\'t find a fallback subproject in',
-                    mlog.bold(os.path.join(self.subproject_dir, dirname)),
-                    'for the dependency', mlog.bold(name))
+                     mlog.bold(os.path.join(self.subproject_dir, dirname)),
+                     'for the dependency', mlog.bold(name))
             return None
         try:
             dep = self.subprojects[dirname].get_variable_method([varname], {})
         except KeyError:
-            raise InvalidCode('Fallback variable {!r} in the subproject '
-                              '{!r} does not exist'.format(varname, dirname))
+            if kwargs.get('required', True):
+                m = 'Fallback variable {!r} in the subproject {!r} does not exist'
+                raise DependencyException(m.format(varname, dirname))
+            # If the dependency is not required, don't raise an exception
+            mlog.log('Also couldn\'t find the dependency', mlog.bold(name),
+                     'in the fallback subproject',
+                     mlog.bold(os.path.join(self.subproject_dir, dirname)))
+            return None
         if not isinstance(dep, DependencyHolder):
             raise InvalidCode('Fallback variable {!r} in the subproject {!r} is '
                               'not a dependency object.'.format(varname, dirname))
-            return None
         # Check if the version of the declared dependency matches what we want
         if 'version' in kwargs:
             wanted = kwargs['version']
             found = dep.version_method([], {})
             if found == 'undefined' or not mesonlib.version_compare(found, wanted):
                 mlog.log('Subproject', mlog.bold(dirname), 'dependency',
-                        mlog.bold(varname), 'version is', mlog.bold(found),
-                        'but', mlog.bold(wanted), 'is required.')
+                         mlog.bold(varname), 'version is', mlog.bold(found),
+                         'but', mlog.bold(wanted), 'is required.')
                 return None
         mlog.log('Found a', mlog.green('fallback'), 'subproject',
                  mlog.bold(os.path.join(self.subproject_dir, dirname)), 'for',
                  mlog.bold(name))
         return dep
 
+    @permittedKwargs(permitted_kwargs['executable'])
     def func_executable(self, node, args, kwargs):
         return self.build_target(node, args, kwargs, ExecutableHolder)
 
+    @permittedKwargs(permitted_kwargs['static_library'])
     def func_static_lib(self, node, args, kwargs):
         return self.build_target(node, args, kwargs, StaticLibraryHolder)
 
+    @permittedKwargs(permitted_kwargs['shared_library'])
     def func_shared_lib(self, node, args, kwargs):
         return self.build_target(node, args, kwargs, SharedLibraryHolder)
 
+    @permittedKwargs(permitted_kwargs['shared_module'])
     def func_shared_module(self, node, args, kwargs):
         return self.build_target(node, args, kwargs, SharedModuleHolder)
 
@@ -1817,9 +2143,12 @@ requirements use the version keyword argument instead.''')
             return self.func_shared_lib(node, args, kwargs)
         return self.func_static_lib(node, args, kwargs)
 
+    @permittedKwargs(permitted_kwargs['jar'])
     def func_jar(self, node, args, kwargs):
+        kwargs['target_type'] = 'jar'
         return self.build_target(node, args, kwargs, JarHolder)
 
+    @permittedKwargs(permitted_kwargs['build_target'])
     def func_build_target(self, node, args, kwargs):
         if 'target_type' not in kwargs:
             raise InterpreterException('Missing target_type keyword argument')
@@ -1837,10 +2166,13 @@ requirements use the version keyword argument instead.''')
         else:
             raise InterpreterException('Unknown target_type.')
 
+    @permittedKwargs(permitted_kwargs['vcs_tag'])
     def func_vcs_tag(self, node, args, kwargs):
-        fallback = kwargs.pop('fallback', None)
+        if 'input' not in kwargs or 'output' not in kwargs:
+            raise InterpreterException('Keyword arguments input and output must exist')
+        fallback = kwargs.pop('fallback', self.project_version)
         if not isinstance(fallback, str):
-            raise InterpreterException('Keyword argument fallback must exist and be a string.')
+            raise InterpreterException('Keyword argument fallback must be a string.')
         replace_string = kwargs.pop('replace_string', '@VCS_TAG@')
         regex_selector = '(.*)' # default regex selector for custom command: use complete output
         vcs_cmd = kwargs.get('command', None)
@@ -1873,6 +2205,7 @@ requirements use the version keyword argument instead.''')
         return self.func_custom_target(node, [kwargs['output']], kwargs)
 
     @stringArgs
+    @permittedKwargs(permitted_kwargs['custom_target'])
     def func_custom_target(self, node, args, kwargs):
         if len(args) != 1:
             raise InterpreterException('custom_target: Only one positional argument is allowed, and it must be a string name')
@@ -1881,6 +2214,7 @@ requirements use the version keyword argument instead.''')
         self.add_target(name, tg.held_object)
         return tg
 
+    @permittedKwargs(permitted_kwargs['run_target'])
     def func_run_target(self, node, args, kwargs):
         global run_depr_printed
         if len(args) > 1:
@@ -1931,34 +2265,22 @@ requirements use the version keyword argument instead.''')
         self.add_target(name, tg.held_object)
         return tg
 
+    @permittedKwargs(permitted_kwargs['generator'])
     def func_generator(self, node, args, kwargs):
         gen = GeneratorHolder(self, args, kwargs)
         self.generators.append(gen)
         return gen
 
+    @permittedKwargs(permitted_kwargs['benchmark'])
     def func_benchmark(self, node, args, kwargs):
         self.add_test(node, args, kwargs, False)
 
+    @permittedKwargs(permitted_kwargs['test'])
     def func_test(self, node, args, kwargs):
         self.add_test(node, args, kwargs, True)
 
-    def add_test(self, node, args, kwargs, is_base_test):
-        if len(args) != 2:
-            raise InterpreterException('Incorrect number of arguments')
-        if not isinstance(args[0], str):
-            raise InterpreterException('First argument of test must be a string.')
-        if not isinstance(args[1], (ExecutableHolder, JarHolder, ExternalProgramHolder)):
-            raise InterpreterException('Second argument must be executable.')
-        par = kwargs.get('is_parallel', True)
-        if not isinstance(par, bool):
-            raise InterpreterException('Keyword argument is_parallel must be a boolean.')
-        cmd_args = kwargs.get('args', [])
-        if not isinstance(cmd_args, list):
-            cmd_args = [cmd_args]
-        for i in cmd_args:
-            if not isinstance(i, (str, mesonlib.File)):
-                raise InterpreterException('Command line arguments must be strings')
-        envlist = kwargs.get('env', [])
+    def unpack_env_kwarg(self, kwargs):
+        envlist = kwargs.get('env', EnvironmentVariablesHolder())
         if isinstance(envlist, EnvironmentVariablesHolder):
             env = envlist.held_object
         else:
@@ -1974,8 +2296,26 @@ requirements use the version keyword argument instead.''')
                 if ' ' in k:
                     raise InterpreterException('Env var key must not have spaces in it.')
                 env[k] = val
-        if not isinstance(envlist, list):
-            envlist = [envlist]
+        return env
+
+    def add_test(self, node, args, kwargs, is_base_test):
+        if len(args) != 2:
+            raise InterpreterException('Incorrect number of arguments')
+        if not isinstance(args[0], str):
+            raise InterpreterException('First argument of test must be a string.')
+        if not isinstance(args[1], (ExecutableHolder, JarHolder, ExternalProgramHolder)):
+            raise InterpreterException('Second argument must be executable.')
+        par = kwargs.get('is_parallel', True)
+        if not isinstance(par, bool):
+            raise InterpreterException('Keyword argument is_parallel must be a boolean.')
+        cmd_args = kwargs.get('args', [])
+        if not isinstance(cmd_args, list):
+            cmd_args = [cmd_args]
+        for i in cmd_args:
+            if not isinstance(i, (str, mesonlib.File, TargetHolder)):
+                raise InterpreterException('Command line arguments must be strings, files or targets.')
+        cmd_args = mesonlib.unholder_array(cmd_args)
+        env = self.unpack_env_kwarg(kwargs)
         should_fail = kwargs.get('should_fail', False)
         if not isinstance(should_fail, bool):
             raise InterpreterException('Keyword argument should_fail must be a boolean.')
@@ -1990,14 +2330,14 @@ requirements use the version keyword argument instead.''')
             workdir = None
         if not isinstance(timeout, int):
             raise InterpreterException('Timeout must be an integer.')
-        suite = mesonlib.stringlistify(kwargs.get('suite', ''))
-        if self.is_subproject():
-            newsuite = []
-            for s in suite:
-                if len(s) > 0:
-                    s = '.' + s
-                newsuite.append(self.subproject.replace(' ', '_').replace('.', '_') + s)
-            suite = newsuite
+        suite = []
+        for s in mesonlib.stringlistify(kwargs.get('suite', '')):
+            if len(s) > 0:
+                s = ':' + s
+            if self.is_subproject():
+                suite.append(self.subproject.replace(' ', '_').replace(':', '_') + s)
+            else:
+                suite.append(self.build.project_name.replace(' ', '_').replace(':', '_') + s)
         t = Test(args[0], suite, args[1].held_object, par, cmd_args, env, should_fail, timeout, workdir)
         if is_base_test:
             self.build.tests.append(t)
@@ -2006,12 +2346,14 @@ requirements use the version keyword argument instead.''')
             self.build.benchmarks.append(t)
             mlog.debug('Adding benchmark "', mlog.bold(args[0]), '".', sep='')
 
+    @permittedKwargs(permitted_kwargs['install_headers'])
     def func_install_headers(self, node, args, kwargs):
         source_files = self.source_strings_to_files(args)
         h = Headers(source_files, kwargs)
         self.build.headers.append(h)
         return h
 
+    @permittedKwargs(permitted_kwargs['install_man'])
     @stringArgs
     def func_install_man(self, node, args, kwargs):
         m = Man(self.subdir, args, kwargs)
@@ -2025,12 +2367,18 @@ requirements use the version keyword argument instead.''')
             raise InvalidArguments('Subdir contains ..')
         if self.subdir == '' and args[0] == self.subproject_dir:
             raise InvalidArguments('Must not go into subprojects dir with subdir(), use subproject() instead.')
+        if self.subdir == '' and args[0].startswith('meson-'):
+            raise InvalidArguments('The "meson-" prefix is reserved and cannot be used for top-level subdir().')
         prev_subdir = self.subdir
         subdir = os.path.join(prev_subdir, args[0])
-        if subdir in self.visited_subdirs:
-            raise InvalidArguments('Tried to enter directory "%s", which has already been visited.'\
+        if os.path.isabs(subdir):
+            raise InvalidArguments('Subdir argument must be a relative path.')
+        absdir = os.path.join(self.environment.get_source_dir(), subdir)
+        symlinkless_dir = os.path.realpath(absdir)
+        if symlinkless_dir in self.visited_subdirs:
+            raise InvalidArguments('Tried to enter directory "%s", which has already been visited.'
                                    % subdir)
-        self.visited_subdirs[subdir] = True
+        self.visited_subdirs[symlinkless_dir] = True
         self.subdir = subdir
         os.makedirs(os.path.join(self.environment.build_dir, subdir), exist_ok=True)
         buildfilename = os.path.join(self.subdir, environment.build_filename)
@@ -2038,7 +2386,7 @@ requirements use the version keyword argument instead.''')
         absname = os.path.join(self.environment.get_source_dir(), buildfilename)
         if not os.path.isfile(absname):
             self.subdir = prev_subdir
-            raise InterpreterException('Nonexistent build def file %s.' % buildfilename)
+            raise InterpreterException('Non-existent build file {!r}'.format(buildfilename))
         with open(absname, encoding='utf8') as f:
             code = f.read()
         assert(isinstance(code, str))
@@ -2050,6 +2398,26 @@ requirements use the version keyword argument instead.''')
         self.evaluate_codeblock(codeblock)
         self.subdir = prev_subdir
 
+    def _get_kwarg_install_mode(self, kwargs):
+        if 'install_mode' not in kwargs:
+            return None
+        install_mode = []
+        mode = mesonlib.typeslistify(kwargs.get('install_mode', []), (str, int))
+        for m in mode:
+            # We skip any arguments that are set to `false`
+            if m is False:
+                m = None
+            install_mode.append(m)
+        if len(install_mode) > 3:
+            raise InvalidArguments('Keyword argument install_mode takes at '
+                                   'most 3 arguments.')
+        if len(install_mode) > 0 and install_mode[0] is not None and \
+           not isinstance(install_mode[0], str):
+            raise InvalidArguments('Keyword argument install_mode requires the '
+                                   'permissions arg to be a string or false')
+        return FileMode(*install_mode)
+
+    @permittedKwargs(permitted_kwargs['install_data'])
     def func_install_data(self, node, args, kwargs):
         kwsource = mesonlib.stringlistify(kwargs.get('sources', []))
         raw_sources = args + kwsource
@@ -2062,10 +2430,14 @@ requirements use the version keyword argument instead.''')
                 source_strings.append(s)
         sources += self.source_strings_to_files(source_strings)
         install_dir = kwargs.get('install_dir', None)
-        data = DataHolder(sources, install_dir)
+        if not isinstance(install_dir, (str, type(None))):
+            raise InvalidArguments('Keyword argument install_dir not a string.')
+        install_mode = self._get_kwarg_install_mode(kwargs)
+        data = DataHolder(build.Data(sources, install_dir, install_mode))
         self.build.data.append(data.held_object)
         return data
 
+    @permittedKwargs(permitted_kwargs['install_subdir'])
     @stringArgs
     def func_install_subdir(self, node, args, kwargs):
         if len(args) != 1:
@@ -2075,21 +2447,56 @@ requirements use the version keyword argument instead.''')
         install_dir = kwargs['install_dir']
         if not isinstance(install_dir, str):
             raise InvalidArguments('Keyword argument install_dir not a string.')
-        idir = InstallDir(self.subdir, args[0], install_dir)
+        install_mode = self._get_kwarg_install_mode(kwargs)
+        idir = InstallDir(self.subdir, args[0], install_dir, install_mode)
         self.build.install_dirs.append(idir)
         return idir
 
+    @permittedKwargs(permitted_kwargs['configure_file'])
     def func_configure_file(self, node, args, kwargs):
         if len(args) > 0:
             raise InterpreterException("configure_file takes only keyword arguments.")
         if 'output' not in kwargs:
             raise InterpreterException('Required keyword argument "output" not defined.')
-        inputfile = kwargs.get('input', None)
+        if 'configuration' in kwargs and 'command' in kwargs:
+            raise InterpreterException('Must not specify both "configuration" '
+                                       'and "command" keyword arguments since '
+                                       'they are mutually exclusive.')
+        if 'capture' in kwargs:
+            if not isinstance(kwargs['capture'], bool):
+                raise InterpreterException('"capture" keyword must be a boolean.')
+            if 'command' not in kwargs:
+                raise InterpreterException('"capture" keyword requires "command" keyword.')
+
+        # Validate input
+        inputfile = None
+        ifile_abs = None
+        if 'input' in kwargs:
+            inputfile = kwargs['input']
+            if isinstance(inputfile, list):
+                if len(inputfile) != 1:
+                    m = "Keyword argument 'input' requires exactly one file"
+                    raise InterpreterException(m)
+                inputfile = inputfile[0]
+            if not isinstance(inputfile, (str, mesonlib.File)):
+                raise InterpreterException('Input must be a string or a file')
+            if isinstance(inputfile, str):
+                inputfile = os.path.join(self.subdir, inputfile)
+                ifile_abs = os.path.join(self.environment.source_dir, inputfile)
+            else:
+                ifile_abs = inputfile.absolute_path(self.environment.source_dir,
+                                                    self.environment.build_dir)
+                inputfile = inputfile.relative_name()
+        elif 'command' in kwargs and '@INPUT@' in kwargs['command']:
+            raise InterpreterException('@INPUT@ used as command argument, but no input file specified.')
+        # Validate output
         output = kwargs['output']
-        if not isinstance(inputfile, (str, type(None))):
-            raise InterpreterException('Input must be a string.')
         if not isinstance(output, str):
-            raise InterpreterException('Output must be a string.')
+            raise InterpreterException('Output file name must be a string')
+        if ifile_abs:
+            values = mesonlib.get_filenames_templates_dict([ifile_abs], None)
+            outputs = mesonlib.substitute_values([output], values)
+            output = outputs[0]
         if os.path.split(output)[0] != '':
             raise InterpreterException('Output file name must not contain a subdirectory.')
         (ofile_path, ofile_fname) = os.path.split(os.path.join(self.subdir, output))
@@ -2098,39 +2505,85 @@ requirements use the version keyword argument instead.''')
             conf = kwargs['configuration']
             if not isinstance(conf, ConfigurationDataHolder):
                 raise InterpreterException('Argument "configuration" is not of type configuration_data')
+            mlog.log('Configuring', mlog.bold(output), 'using configuration')
             if inputfile is not None:
                 # Normalize the path of the conffile to avoid duplicates
                 # This is especially important to convert '/' to '\' on Windows
-                conffile = os.path.normpath(os.path.join(self.subdir, inputfile))
+                conffile = os.path.normpath(inputfile)
                 if conffile not in self.build_def_files:
                     self.build_def_files.append(conffile)
                 os.makedirs(os.path.join(self.environment.build_dir, self.subdir), exist_ok=True)
-                ifile_abs = os.path.join(self.environment.source_dir, self.subdir, inputfile)
-                mesonlib.do_conf_file(ifile_abs, ofile_abs, conf.held_object)
+                missing_variables = mesonlib.do_conf_file(ifile_abs, ofile_abs,
+                                                          conf.held_object)
+                if missing_variables:
+                    var_list = ", ".join(map(repr, sorted(missing_variables)))
+                    mlog.warning(
+                        "The variable(s) %s in the input file %r are not "
+                        "present in the given configuration data" % (
+                            var_list, inputfile))
             else:
                 mesonlib.dump_conf_header(ofile_abs, conf.held_object)
             conf.mark_used()
         elif 'command' in kwargs:
-            if 'input' not in kwargs:
-                raise InterpreterException('Required keyword input missing.')
-            res = self.func_run_command(node, kwargs['command'], {})
+            # We use absolute paths for input and output here because the cwd
+            # that the command is run from is 'unspecified', so it could change.
+            # Currently it's builddir/subdir for in_builddir else srcdir/subdir.
+            if ifile_abs:
+                values = mesonlib.get_filenames_templates_dict([ifile_abs], [ofile_abs])
+            else:
+                values = mesonlib.get_filenames_templates_dict(None, [ofile_abs])
+            # Substitute @INPUT@, @OUTPUT@, etc here.
+            cmd = mesonlib.substitute_values(kwargs['command'], values)
+            mlog.log('Configuring', mlog.bold(output), 'with command')
+            res = self.run_command_impl(node, cmd,  {}, True)
             if res.returncode != 0:
                 raise InterpreterException('Running configure command failed.\n%s\n%s' %
                                            (res.stdout, res.stderr))
+            if 'capture' in kwargs and kwargs['capture']:
+                dst_tmp = ofile_abs + '~'
+                with open(dst_tmp, 'w', encoding='utf-8') as f:
+                    f.writelines(res.stdout)
+                if ifile_abs:
+                    shutil.copymode(ifile_abs, dst_tmp)
+                mesonlib.replace_if_different(ofile_abs, dst_tmp)
         else:
             raise InterpreterException('Configure_file must have either "configuration" or "command".')
         idir = kwargs.get('install_dir', None)
         if isinstance(idir, str):
             cfile = mesonlib.File.from_built_file(ofile_path, ofile_fname)
-            self.build.data.append(DataHolder([cfile], idir).held_object)
+            self.build.data.append(build.Data([cfile], idir))
         return mesonlib.File.from_built_file(self.subdir, output)
 
+    @permittedKwargs(permitted_kwargs['include_directories'])
     @stringArgs
     def func_include_directories(self, node, args, kwargs):
-        absbase = os.path.join(self.environment.get_source_dir(), self.subdir)
+        src_root = self.environment.get_source_dir()
+        build_root = self.environment.get_build_dir()
+        absbase_src = os.path.join(src_root, self.subdir)
+        absbase_build = os.path.join(build_root, self.subdir)
+
         for a in args:
-            absdir = os.path.join(absbase, a)
-            if not os.path.isdir(absdir):
+            if a.startswith(src_root):
+                raise InvalidArguments('''Tried to form an absolute path to a source dir. You should not do that but use
+relative paths instead.
+
+To get include path to any directory relative to the current dir do
+
+incdir = include_directories(dirname)
+
+After this incdir will contain both the current source dir as well as the
+corresponding build dir. It can then be used in any subdirectory and
+Meson will take care of all the busywork to make paths work.
+
+Dirname can even be '.' to mark the current directory. Though you should
+remember that the current source and build directories are always
+put in the include directories by default so you only need to do
+include_directories('.') if you intend to use the result in a
+different subdirectory.
+''')
+            absdir_src = os.path.join(absbase_src, a)
+            absdir_build = os.path.join(absbase_build, a)
+            if not os.path.isdir(absdir_src) and not os.path.isdir(absdir_build):
                 raise InvalidArguments('Include dir %s does not exist.' % a)
         is_system = kwargs.get('is_system', False)
         if not isinstance(is_system, bool):
@@ -2138,86 +2591,102 @@ requirements use the version keyword argument instead.''')
         i = IncludeDirsHolder(build.IncludeDirs(self.subdir, args, is_system))
         return i
 
+    @permittedKwargs(permitted_kwargs['add_test_setup'])
+    @stringArgs
+    def func_add_test_setup(self, node, args, kwargs):
+        if len(args) != 1:
+            raise InterpreterException('Add_test_setup needs one argument for the setup name.')
+        setup_name = args[0]
+        if re.fullmatch('[_a-zA-Z][_0-9a-zA-Z]*', setup_name) is None:
+            raise InterpreterException('Setup name may only contain alphanumeric characters.')
+        try:
+            inp = kwargs.get('exe_wrapper', [])
+            if not isinstance(inp, list):
+                inp = [inp]
+            exe_wrapper = []
+            for i in inp:
+                if hasattr(i, 'held_object'):
+                    i = i.held_object
+                if isinstance(i, str):
+                    exe_wrapper.append(i)
+                elif isinstance(i, dependencies.ExternalProgram):
+                    if not i.found():
+                        raise InterpreterException('Tried to use non-found executable.')
+                    exe_wrapper += i.get_command()
+                else:
+                    raise InterpreterException('Exe wrapper can only contain strings or external binaries.')
+        except KeyError:
+            exe_wrapper = None
+        gdb = kwargs.get('gdb', False)
+        if not isinstance(gdb, bool):
+            raise InterpreterException('Gdb option must be a boolean')
+        timeout_multiplier = kwargs.get('timeout_multiplier', 1)
+        if not isinstance(timeout_multiplier, int):
+            raise InterpreterException('Timeout multiplier must be a number.')
+        env = self.unpack_env_kwarg(kwargs)
+        setupobj = build.TestSetup(exe_wrapper=exe_wrapper,
+                                   gdb=gdb,
+                                   timeout_multiplier=timeout_multiplier,
+                                   env=env)
+        if self.subproject == '':
+            # Dunno what we should do with subprojects really. Let's start simple
+            # and just use the master project ones.
+            self.build.test_setups[setup_name] = setupobj
+
+    @permittedKwargs(permitted_kwargs['add_global_arguments'])
     @stringArgs
     def func_add_global_arguments(self, node, args, kwargs):
-        if self.subproject != '':
-            msg = 'Global arguments can not be set in subprojects because ' \
-                  'there is no way to make that reliable.\nPlease only call ' \
-                  'this if is_subproject() returns false. Alternatively, ' \
-                  'define a variable that\ncontains your language-specific ' \
-                  'arguments and add it to the appropriate *_args kwarg ' \
-                  'in each target.'
-            raise InvalidCode(msg)
-        if self.args_frozen:
-            msg = 'Tried to set global arguments after a build target has ' \
-                  'been declared.\nThis is not permitted. Please declare all ' \
-                  'global arguments before your targets.'
-            raise InvalidCode(msg)
-        if 'language' not in kwargs:
-            raise InvalidCode('Missing language definition in add_global_arguments')
-        lang = kwargs['language'].lower()
-        if lang in self.build.global_args:
-            self.build.global_args[lang] += args
-        else:
-            self.build.global_args[lang] = args
+        self.add_global_arguments(node, self.build.global_args, args, kwargs)
 
+    @permittedKwargs(permitted_kwargs['add_global_link_arguments'])
     @stringArgs
     def func_add_global_link_arguments(self, node, args, kwargs):
+        self.add_global_arguments(node, self.build.global_link_args, args, kwargs)
+
+    @permittedKwargs(permitted_kwargs['add_project_arguments'])
+    @stringArgs
+    def func_add_project_arguments(self, node, args, kwargs):
+        self.add_project_arguments(node, self.build.projects_args, args, kwargs)
+
+    @permittedKwargs(permitted_kwargs['add_project_link_arguments'])
+    @stringArgs
+    def func_add_project_link_arguments(self, node, args, kwargs):
+        self.add_project_arguments(node, self.build.projects_link_args, args, kwargs)
+
+    def add_global_arguments(self, node, argsdict, args, kwargs):
         if self.subproject != '':
-            msg = 'Global link arguments can not be set in subprojects because ' \
+            msg = 'Function \'{}\' cannot be used in subprojects because ' \
                   'there is no way to make that reliable.\nPlease only call ' \
                   'this if is_subproject() returns false. Alternatively, ' \
                   'define a variable that\ncontains your language-specific ' \
                   'arguments and add it to the appropriate *_args kwarg ' \
-                  'in each target.'
+                  'in each target.'.format(node.func_name)
             raise InvalidCode(msg)
-        if self.args_frozen:
-            msg = 'Tried to set global link arguments after a build target has ' \
-                  'been declared.\nThis is not permitted. Please declare all ' \
-                  'global arguments before your targets.'
-            raise InvalidCode(msg)
-        if 'language' not in kwargs:
-            raise InvalidCode('Missing language definition in add_global_link_arguments')
-        lang = kwargs['language'].lower()
-        if lang in self.build.global_link_args:
-            self.build.global_link_args[lang] += args
-        else:
-            self.build.global_link_args[lang] = args
+        frozen = self.project_args_frozen or self.global_args_frozen
+        self.add_arguments(node, argsdict, frozen, args, kwargs)
 
-    @stringArgs
-    def func_add_project_link_arguments(self, node, args, kwargs):
-        if self.args_frozen:
-            msg = 'Tried to set project link arguments after a build target has ' \
-                  'been declared.\nThis is not permitted. Please declare all ' \
-                  'project link arguments before your targets.'
-            raise InvalidCode(msg)
-        if 'language' not in kwargs:
-            raise InvalidCode('Missing language definition in add_project_link_arguments')
-        lang = kwargs['language'].lower()
-        if self.subproject not in self.build.projects_link_args:
-            self.build.projects_link_args[self.subproject] = {}
+    def add_project_arguments(self, node, argsdict, args, kwargs):
+        if self.subproject not in argsdict:
+            argsdict[self.subproject] = {}
+        self.add_arguments(node, argsdict[self.subproject],
+                           self.project_args_frozen, args, kwargs)
 
-        args = self.build.projects_link_args[self.subproject].get(lang, []) + args
-        self.build.projects_link_args[self.subproject][lang] = args
-
-    @stringArgs
-    def func_add_project_arguments(self, node, args, kwargs):
-        if self.args_frozen:
-            msg = 'Tried to set project arguments after a build target has ' \
-                  'been declared.\nThis is not permitted. Please declare all ' \
-                  'project arguments before your targets.'
+    def add_arguments(self, node, argsdict, args_frozen, args, kwargs):
+        if args_frozen:
+            msg = 'Tried to use \'{}\' after a build target has been declared.\n' \
+                  'This is not permitted. Please declare all ' \
+                  'arguments before your targets.'.format(node.func_name)
             raise InvalidCode(msg)
 
         if 'language' not in kwargs:
-            raise InvalidCode('Missing language definition in add_project_arguments')
+            raise InvalidCode('Missing language definition in {}'.format(node.func_name))
 
-        if self.subproject not in self.build.projects_args:
-            self.build.projects_args[self.subproject] = {}
+        for lang in mesonlib.stringlistify(kwargs['language']):
+            lang = lang.lower()
+            argsdict[lang] = argsdict.get(lang, []) + args
 
-        lang = kwargs['language'].lower()
-        args = self.build.projects_args[self.subproject].get(lang, []) + args
-        self.build.projects_args[self.subproject][lang] = args
-
+    @noKwargs
+    @noPosargs
     def func_environment(self, node, args, kwargs):
         return EnvironmentVariablesHolder()
 
@@ -2247,7 +2716,7 @@ requirements use the version keyword argument instead.''')
         if name == '':
             raise InterpreterException('Target name must not be empty.')
         if name in coredata.forbidden_target_names:
-            raise InvalidArguments('Target name "%s" is reserved for Meson\'s internal use. Please rename.'\
+            raise InvalidArguments('Target name "%s" is reserved for Meson\'s internal use. Please rename.'
                                    % name)
         # To permit an executable and a shared library to have the
         # same name, such as "foo.exe" and "libfoo.a".
@@ -2259,7 +2728,7 @@ requirements use the version keyword argument instead.''')
             self.coredata.target_guids[idname] = str(uuid.uuid4()).upper()
 
     def build_target(self, node, args, kwargs, targetholder):
-        if len(args) == 0:
+        if not args:
             raise InterpreterException('Target does not have a name.')
         name = args[0]
         sources = args[1:]
@@ -2280,6 +2749,11 @@ requirements use the version keyword argument instead.''')
         sources = self.source_strings_to_files(sources)
         objs = self.flatten(kwargs.get('objects', []))
         kwargs['dependencies'] = self.flatten(kwargs.get('dependencies', []))
+        if 'extra_files' in kwargs:
+            ef = kwargs['extra_files']
+            if not isinstance(ef, list):
+                ef = [ef]
+            kwargs['extra_files'] = self.source_strings_to_files(ef)
         if not isinstance(objs, list):
             objs = [objs]
         self.check_sources_exist(os.path.join(self.source_root, self.subdir), sources)
@@ -2301,7 +2775,7 @@ requirements use the version keyword argument instead.''')
             self.add_cross_stdlib_info(target)
         l = targetholder(target, self)
         self.add_target(name, l.held_object)
-        self.args_frozen = True
+        self.project_args_frozen = True
         return l
 
     def get_used_languages(self, target):
@@ -2315,8 +2789,8 @@ requirements use the version keyword argument instead.''')
 
     def add_cross_stdlib_info(self, target):
         for l in self.get_used_languages(target):
-            if self.environment.cross_info.has_stdlib(l) and \
-                self.subproject != self.environment.cross_info.get_stdlib(l)[0]:
+            if self.environment.cross_info.has_stdlib(l) \
+                    and self.subproject != self.environment.cross_info.get_stdlib(l)[0]:
                 target.add_deps(self.build.cross_stdlibs[l])
 
     def check_sources_exist(self, subdir, sources):
@@ -2327,13 +2801,11 @@ requirements use the version keyword argument instead.''')
             if not os.path.isfile(fname):
                 raise InterpreterException('Tried to add non-existing source file %s.' % s)
 
-
     def format_string(self, templ, args):
-        templ = self.to_native(templ)
         if isinstance(args, mparser.ArgumentNode):
             args = args.arguments
         for (i, arg) in enumerate(args):
-            arg = self.to_native(self.evaluate_statement(arg))
+            arg = self.evaluate_statement(arg)
             if isinstance(arg, bool): # Python boolean is upper case.
                 arg = str(arg).lower()
             templ = templ.replace('@{}@'.format(i), str(arg))
@@ -2359,12 +2831,40 @@ requirements use the version keyword argument instead.''')
                 found = self.check_contains(element, args)
                 if found:
                     return True
-            try:
-                if element == item:
-                    return True
-            except Exception:
-                pass
+            if element == item:
+                return True
         return False
 
     def is_subproject(self):
         return self.subproject != ''
+
+    @noKwargs
+    def func_set_variable(self, node, args, kwargs):
+        if len(args) != 2:
+            raise InvalidCode('Set_variable takes two arguments.')
+        varname = args[0]
+        value = args[1]
+        self.set_variable(varname, value)
+
+    @noKwargs
+    def func_get_variable(self, node, args, kwargs):
+        if len(args) < 1 or len(args) > 2:
+            raise InvalidCode('Get_variable takes one or two arguments.')
+        varname = args[0]
+        if not isinstance(varname, str):
+            raise InterpreterException('First argument must be a string.')
+        try:
+            return self.variables[varname]
+        except KeyError:
+            pass
+        if len(args) == 2:
+            return args[1]
+        raise InterpreterException('Tried to get unknown variable "%s".' % varname)
+
+    @stringArgs
+    @noKwargs
+    def func_is_variable(self, node, args, kwargs):
+        if len(args) != 1:
+            raise InvalidCode('Is_variable takes two arguments.')
+        varname = args[0]
+        return varname in self.variables

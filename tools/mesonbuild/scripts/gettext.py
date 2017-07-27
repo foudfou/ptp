@@ -58,7 +58,7 @@ def run_potgen(src_sub, pkgname, datadirs, args):
     ofile = os.path.join(src_sub, pkgname + '.pot')
     return subprocess.call(['xgettext', '--package-name=' + pkgname, '-p', src_sub, '-f', listfile,
                             '-D', os.environ['MESON_SOURCE_ROOT'], '-k_', '-o', ofile] + args,
-                            env=child_env)
+                           env=child_env)
 
 def gen_gmo(src_sub, bld_sub, langs):
     for l in langs:
@@ -81,14 +81,14 @@ def do_install(src_sub, bld_sub, dest, pkgname, langs):
         os.makedirs(os.path.split(outfile)[0], exist_ok=True)
         shutil.copyfile(srcfile, outfile)
         shutil.copystat(srcfile, outfile)
-        print('Installing %s to %s.' % (srcfile, outfile))
+        print('Installing %s to %s' % (srcfile, outfile))
     return 0
 
 def run(args):
     options = parser.parse_args(args)
     subcmd = options.command
     langs = options.langs.split('@@') if options.langs else None
-    extra_args = options.extra_args.split('@@')
+    extra_args = options.extra_args.split('@@') if options.extra_args else []
     subdir = os.environ.get('MESON_SUBDIR', '')
     if options.subdir:
         subdir = options.subdir

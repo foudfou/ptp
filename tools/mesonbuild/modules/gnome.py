@@ -20,23 +20,29 @@ import os
 import sys
 import copy
 import subprocess
-from ..mesonlib import MesonException, Popen_safe
+from . import ModuleReturnValue
+from ..mesonlib import MesonException, OrderedSet, Popen_safe
 from ..dependencies import Dependency, PkgConfigDependency, InternalDependency
 from .. import mlog
 from .. import mesonlib
 from .. import compilers
 from .. import interpreter
-from . import find_program, GResourceTarget, GResourceHeaderTarget, GirTarget, TypelibTarget, VapiTarget
+from . import GResourceTarget, GResourceHeaderTarget, GirTarget, TypelibTarget, VapiTarget
+from . import find_program, get_include_args
+from . import ExtensionModule
+from . import noKwargs, permittedKwargs
+
 
 # gresource compilation is broken due to the way
 # the resource compiler and Ninja clash about it
 #
 # https://github.com/ninja-build/ninja/issues/1184
 # https://bugzilla.gnome.org/show_bug.cgi?id=774368
-gresource_dep_needed_version = '>= 2.52.0'
+gresource_dep_needed_version = '>= 2.51.1'
 
 native_glib_version = None
 girwarning_printed = False
+gdbuswarning_printed = False
 gresource_warning_printed = False
 _gir_has_extra_lib_arg = None
 
@@ -54,7 +60,7 @@ def gir_has_extra_lib_arg():
         pass
     return _gir_has_extra_lib_arg
 
-class GnomeModule:
+class GnomeModule(ExtensionModule):
     gir_dep = None
 
     @staticmethod
@@ -63,21 +69,33 @@ class GnomeModule:
         if native_glib_version is None:
             glib_dep = PkgConfigDependency('glib-2.0', state.environment,
                                            {'native': True})
-            native_glib_version = glib_dep.get_modversion()
+            native_glib_version = glib_dep.get_version()
         return native_glib_version
 
     def __print_gresources_warning(self, state):
         global gresource_warning_printed
         if not gresource_warning_printed:
             if not mesonlib.version_compare(self._get_native_glib_version(state), gresource_dep_needed_version):
-                mlog.warning('''GLib compiled dependencies do not work reliably with
-the current version of GLib. See the following upstream issue:''',
+                mlog.warning('GLib compiled dependencies do not work reliably with \n'
+                             'the current version of GLib. See the following upstream issue:',
                              mlog.bold('https://bugzilla.gnome.org/show_bug.cgi?id=774368'))
             gresource_warning_printed = True
         return []
 
+    @staticmethod
+    def _print_gdbus_warning():
+        global gdbuswarning_printed
+        if not gdbuswarning_printed:
+            mlog.warning('Code generated with gdbus_codegen() requires the root directory be added to\n'
+                         '  include_directories of targets with GLib < 2.51.3:',
+                         mlog.bold('https://github.com/mesonbuild/meson/issues/1387'))
+            gdbuswarning_printed = True
+
+    @permittedKwargs({'source_dir', 'c_name', 'dependencies', 'export', 'gresource_bundle', 'install_header',
+                      'install', 'install_dir', 'extra_args'})
     def compile_resources(self, state, args, kwargs):
         self.__print_gresources_warning(state)
+        glib_version = self._get_native_glib_version(state)
 
         cmd = ['glib-compile-resources', '@INPUT@']
 
@@ -86,26 +104,48 @@ the current version of GLib. See the following upstream issue:''',
             source_dirs = [source_dirs]
 
         if len(args) < 2:
-            raise MesonException('Not enough arguments; The name of the resource and the path to the XML file are required')
+            raise MesonException('Not enough arguments; the name of the resource '
+                                 'and the path to the XML file are required')
 
         dependencies = kwargs.pop('dependencies', [])
         if not isinstance(dependencies, list):
             dependencies = [dependencies]
-
-        glib_version = self._get_native_glib_version(state)
-        if not mesonlib.version_compare(glib_version, gresource_dep_needed_version):
-            if len(dependencies) > 0:
-                raise MesonException('''The "dependencies" argument of gnome.compile_resources()
-can not be used with the current version of glib-compiled-resources, due to
-<https://bugzilla.gnome.org/show_bug.cgi?id=774368>''')
+        # Validate dependencies
+        for (ii, dep) in enumerate(dependencies):
+            if hasattr(dep, 'held_object'):
+                dependencies[ii] = dep = dep.held_object
+            if not isinstance(dep, (mesonlib.File, build.CustomTarget)):
+                m = 'Unexpected dependency type {!r} for gnome.compile_resources() ' \
+                    '"dependencies" argument.\nPlease pass the return value of ' \
+                    'custom_target() or configure_file()'
+                raise MesonException(m.format(dep))
+            if isinstance(dep, build.CustomTarget):
+                if not mesonlib.version_compare(glib_version, gresource_dep_needed_version):
+                    m = 'The "dependencies" argument of gnome.compile_resources() can not\n' \
+                        'be used with the current version of glib-compile-resources due to\n' \
+                        '<https://bugzilla.gnome.org/show_bug.cgi?id=774368>'
+                    raise MesonException(m)
 
         ifile = args[1]
         if isinstance(ifile, mesonlib.File):
-            ifile = os.path.join(ifile.subdir, ifile.fname)
+            # glib-compile-resources will be run inside the source dir,
+            # so we need either 'src_to_build' or the absolute path.
+            # Absolute path is the easiest choice.
+            if ifile.is_built:
+                ifile = os.path.join(state.environment.get_build_dir(), ifile.subdir, ifile.fname)
+            else:
+                ifile = os.path.join(ifile.subdir, ifile.fname)
         elif isinstance(ifile, str):
             ifile = os.path.join(state.subdir, ifile)
+        elif isinstance(ifile, (interpreter.CustomTargetHolder,
+                                interpreter.GeneratedObjectsHolder)):
+            m = 'Resource xml files generated at build-time cannot be used ' \
+                'with gnome.compile_resources() because we need to scan ' \
+                'the xml for dependencies. Use configure_file() instead ' \
+                'to generate it at configure-time.'
+            raise MesonException(m)
         else:
-            raise RuntimeError('Unreachable code.')
+            raise MesonException('Invalid file argument: {!r}'.format(ifile))
 
         depend_files, depends, subdirs = self._get_gresource_dependencies(
             state, ifile, source_dirs, dependencies)
@@ -117,7 +157,7 @@ can not be used with the current version of glib-compiled-resources, due to
         # Ensure build directories of generated deps are included
         source_dirs += subdirs
 
-        for source_dir in set(source_dirs):
+        for source_dir in OrderedSet(source_dirs):
             cmd += ['--sourcedir', source_dir]
 
         if 'c_name' in kwargs:
@@ -161,7 +201,7 @@ can not be used with the current version of glib-compiled-resources, due to
         target_c = GResourceTarget(name, state.subdir, kwargs)
 
         if gresource: # Only one target for .gresource files
-            return [target_c]
+            return ModuleReturnValue(target_c, [target_c])
 
         h_kwargs = {
             'command': cmd,
@@ -175,16 +215,10 @@ can not be used with the current version of glib-compiled-resources, due to
             h_kwargs['install_dir'] = kwargs.get('install_dir',
                                                  state.environment.coredata.get_builtin_option('includedir'))
         target_h = GResourceHeaderTarget(args[0] + '_h', state.subdir, h_kwargs)
-        return [target_c, target_h]
+        rv = [target_c, target_h]
+        return ModuleReturnValue(rv, rv)
 
     def _get_gresource_dependencies(self, state, input_file, source_dirs, dependencies):
-        for dep in dependencies:
-            if not isinstance(dep, interpreter.CustomTargetHolder) and not \
-                    isinstance(dep, mesonlib.File):
-                raise MesonException(
-                    'Unexpected dependency type for gnome.compile_resources() '
-                    '"dependencies" argument. Please pass the output of '
-                    'custom_target() or configure_file().')
 
         cmd = ['glib-compile-resources',
                input_file,
@@ -194,9 +228,10 @@ can not be used with the current version of glib-compiled-resources, due to
             cmd += ['--sourcedir', os.path.join(state.subdir, source_dir)]
         cmd += ['--sourcedir', state.subdir] # Current dir
 
-        pc, stdout = Popen_safe(cmd, cwd=state.environment.get_source_dir())[0:2]
+        pc, stdout, stderr = Popen_safe(cmd, cwd=state.environment.get_source_dir())
         if pc.returncode != 0:
-            mlog.warning('glib-compile-resources has failed to get the dependencies for {}'.format(cmd[1]))
+            m = 'glib-compile-resources failed to get dependencies for {}:\n{}'
+            mlog.warning(m.format(cmd[1], stderr))
             raise subprocess.CalledProcessError(pc.returncode, cmd)
 
         dep_files = stdout.split('\n')[:-1]
@@ -221,6 +256,8 @@ can not be used with the current version of glib-compiled-resources, due to
             missing_basename = os.path.basename(missing)
 
             for dep in dependencies:
+                if hasattr(dep, 'held_object'):
+                    dep = dep.held_object
                 if isinstance(dep, mesonlib.File):
                     if dep.fname == missing_basename:
                         found = True
@@ -228,18 +265,20 @@ can not be used with the current version of glib-compiled-resources, due to
                         dep_files.append(dep)
                         subdirs.append(dep.subdir)
                         break
-                elif isinstance(dep, interpreter.CustomTargetHolder):
-                    if dep.held_object.get_basename() == missing_basename:
+                elif isinstance(dep, build.CustomTarget):
+                    if dep.get_basename() == missing_basename:
                         found = True
                         dep_files.remove(missing)
                         dep_files.append(
                             mesonlib.File(
                                 is_built=True,
-                                subdir=dep.held_object.get_subdir(),
-                                fname=dep.held_object.get_basename()))
-                        depends.append(dep.held_object)
-                        subdirs.append(dep.held_object.get_subdir())
+                                subdir=dep.get_subdir(),
+                                fname=dep.get_basename()))
+                        depends.append(dep)
+                        subdirs.append(dep.get_subdir())
                         break
+                else:
+                    raise RuntimeError('Unreachable code.')
 
             if not found:
                 raise MesonException(
@@ -250,54 +289,37 @@ can not be used with the current version of glib-compiled-resources, due to
 
         return dep_files, depends, subdirs
 
-
-    def _get_link_args(self, state, lib, depends=None, include_rpath=False):
-        if gir_has_extra_lib_arg():
-            link_command = ['--extra-library=%s' % lib.name]
-        else:
-            link_command = ['-l%s' % lib.name]
+    def _get_link_args(self, state, lib, depends=None, include_rpath=False,
+                       use_gir_args=False):
+        link_command = []
+        # Construct link args
         if isinstance(lib, build.SharedLibrary):
-            libdir = os.path.join(state.environment.get_build_dir(), lib.subdir)
-            link_command += ['-L%s' %libdir]
+            libdir = os.path.join(state.environment.get_build_dir(), state.backend.get_target_dir(lib))
+            link_command.append('-L' + libdir)
+            # Needed for the following binutils bug:
+            # https://github.com/mesonbuild/meson/issues/1911
+            # However, g-ir-scanner does not understand -Wl,-rpath
+            # so we need to use -L instead
+            for d in state.backend.determine_rpath_dirs(lib):
+                d = os.path.join(state.environment.get_build_dir(), d)
+                link_command.append('-L' + d)
+                if include_rpath:
+                    link_command.append('-Wl,-rpath,' + d)
             if include_rpath:
-                link_command += ['-Wl,-rpath %s' %libdir]
+                link_command.append('-Wl,-rpath,' + libdir)
             if depends:
                 depends.append(lib)
+        if gir_has_extra_lib_arg() and use_gir_args:
+            link_command.append('--extra-library=' + lib.name)
+        else:
+            link_command.append('-l' + lib.name)
         return link_command
 
-    @staticmethod
-    def _get_include_args(state, include_dirs, prefix='-I'):
-        if not include_dirs:
-            return []
-
-        dirs_str = []
-        for incdirs in include_dirs:
-            if hasattr(incdirs, "held_object"):
-                dirs = incdirs.held_object
-            else:
-                dirs = incdirs
-
-            if isinstance(dirs, str):
-                dirs_str += ['%s%s' % (prefix, dirs)]
-                continue
-
-            # Should be build.IncludeDirs object.
-            basedir = dirs.get_curdir()
-            for d in dirs.get_incdirs():
-                expdir =  os.path.join(basedir, d)
-                srctreedir = os.path.join(state.environment.get_source_dir(), expdir)
-                buildtreedir = os.path.join(state.environment.get_build_dir(), expdir)
-                dirs_str += ['%s%s' % (prefix, buildtreedir),
-                             '%s%s' % (prefix, srctreedir)]
-            for d in dirs.get_extra_build_dirs():
-                dirs_str += ['%s%s' % (prefix, d)]
-
-        return dirs_str
-
-    def _get_dependencies_flags(self, deps, state, depends=None, include_rpath=False):
-        cflags = set()
-        ldflags = set()
-        gi_includes = set()
+    def _get_dependencies_flags(self, deps, state, depends=None, include_rpath=False,
+                                use_gir_args=False):
+        cflags = OrderedSet()
+        ldflags = OrderedSet()
+        gi_includes = OrderedSet()
         if not isinstance(deps, list):
             deps = [deps]
 
@@ -305,21 +327,27 @@ can not be used with the current version of glib-compiled-resources, due to
             if hasattr(dep, 'held_object'):
                 dep = dep.held_object
             if isinstance(dep, InternalDependency):
-                cflags.update(self._get_include_args(state, dep.include_directories))
+                cflags.update(get_include_args(dep.include_directories))
                 for lib in dep.libraries:
-                    ldflags.update(self._get_link_args(state, lib.held_object, depends, include_rpath))
-                    libdepflags = self._get_dependencies_flags(lib.held_object.get_external_deps(), state, depends, include_rpath)
+                    if hasattr(lib, 'held_object'):
+                        lib = lib.held_object
+                    ldflags.update(self._get_link_args(state, lib, depends, include_rpath))
+                    libdepflags = self._get_dependencies_flags(lib.get_external_deps(), state, depends, include_rpath,
+                                                               use_gir_args)
                     cflags.update(libdepflags[0])
                     ldflags.update(libdepflags[1])
                     gi_includes.update(libdepflags[2])
-                extdepflags = self._get_dependencies_flags(dep.ext_deps, state, depends, include_rpath)
+                extdepflags = self._get_dependencies_flags(dep.ext_deps, state, depends, include_rpath,
+                                                           use_gir_args)
                 cflags.update(extdepflags[0])
                 ldflags.update(extdepflags[1])
                 gi_includes.update(extdepflags[2])
                 for source in dep.sources:
-                    if hasattr(source, 'held_object') and isinstance(source.held_object, GirTarget):
+                    if hasattr(source, 'held_object'):
+                        source = source.held_object
+                    if isinstance(source, GirTarget):
                         gi_includes.update([os.path.join(state.environment.get_build_dir(),
-                                        source.held_object.get_subdir())])
+                                            source.get_subdir())])
             # This should be any dependency other than an internal one.
             elif isinstance(dep, Dependency):
                 cflags.update(dep.get_compile_args())
@@ -339,7 +367,7 @@ can not be used with the current version of glib-compiled-resources, due to
                     # Hack to avoid passing some compiler options in
                     if lib.startswith("-W"):
                         continue
-                    if gir_has_extra_lib_arg():
+                    if gir_has_extra_lib_arg() and use_gir_args:
                         lib = lib.replace('-l', '--extra-library=')
                     ldflags.update([lib])
 
@@ -348,14 +376,17 @@ can not be used with the current version of glib-compiled-resources, due to
                     if girdir:
                         gi_includes.update([girdir])
             elif isinstance(dep, (build.StaticLibrary, build.SharedLibrary)):
-                for incd in dep.get_include_dirs():
-                    cflags.update(incd.get_incdirs())
+                cflags.update(get_include_args(dep.get_include_dirs()))
             else:
                 mlog.log('dependency %s not handled to build gir files' % dep)
                 continue
 
         return cflags, ldflags, gi_includes
 
+    @permittedKwargs({'sources', 'nsversion', 'namespace', 'symbol_prefix', 'identifier_prefix',
+                      'export_packages', 'includes', 'dependencies', 'link_with', 'include_directories',
+                      'install', 'install_dir_gir', 'install_dir_typelib', 'extra_args',
+                      'packages'})
     def generate_gir(self, state, args, kwargs):
         if len(args) != 1:
             raise MesonException('Gir takes one argument')
@@ -375,11 +406,7 @@ can not be used with the current version of glib-compiled-resources, due to
                                                    {'native': True})
             pkgargs = self.gir_dep.get_compile_args()
         except Exception:
-            global girwarning_printed
-            if not girwarning_printed:
-                mlog.warning('gobject-introspection dependency was not found, disabling gir generation.')
-                girwarning_printed = True
-            return []
+            raise MesonException('gobject-introspection dependency was not found, gir cannot be generated.')
         ns = kwargs.pop('namespace')
         nsversion = kwargs.pop('nsversion')
         libsources = kwargs.pop('sources')
@@ -387,23 +414,24 @@ can not be used with the current version of glib-compiled-resources, due to
         depends = [girtarget]
         gir_inc_dirs = []
 
-        scan_command = giscanner.get_command() + ['@INPUT@']
+        scan_command = [giscanner, '@INPUT@']
         scan_command += pkgargs
-        scan_command += ['--no-libtool', '--namespace='+ns, '--nsversion=' + nsversion, '--warn-all',
+        scan_command += ['--no-libtool', '--namespace=' + ns, '--nsversion=' + nsversion, '--warn-all',
                          '--output', '@OUTPUT@']
 
         extra_args = mesonlib.stringlistify(kwargs.pop('extra_args', []))
         scan_command += extra_args
         scan_command += ['-I' + os.path.join(state.environment.get_source_dir(), state.subdir),
                          '-I' + os.path.join(state.environment.get_build_dir(), state.subdir)]
-        scan_command += self._get_include_args(state, girtarget.get_include_dirs())
+        scan_command += get_include_args(girtarget.get_include_dirs())
 
         if 'link_with' in kwargs:
             link_with = kwargs.pop('link_with')
             if not isinstance(link_with, list):
                 link_with = [link_with]
             for link in link_with:
-                scan_command += self._get_link_args(state, link.held_object, depends)
+                scan_command += self._get_link_args(state, link.held_object, depends,
+                                                    use_gir_args=True)
 
         if 'includes' in kwargs:
             includes = kwargs.pop('includes')
@@ -428,19 +456,27 @@ can not be used with the current version of glib-compiled-resources, due to
                         'Gir includes must be str, GirTarget, or list of them')
 
         cflags = []
-        if state.global_args.get('c'):
-            cflags += state.global_args['c']
-        if state.project_args.get('c'):
-            cflags += state.project_args['c']
-        if 'c' in state.compilers:
-            compiler = state.compilers['c']
-            sanitize = compiler.get_options().get('b_sanitize')
-            if sanitize:
+        ldflags = []
+        for lang, compiler in girtarget.compilers.items():
+            # XXX: Can you use g-i with any other language?
+            if lang in ('c', 'cpp', 'objc', 'objcpp', 'd'):
+                break
+        else:
+            lang = None
+            compiler = None
+        if lang and compiler:
+            if state.global_args.get(lang):
+                cflags += state.global_args[lang]
+            if state.project_args.get(lang):
+                cflags += state.project_args[lang]
+            if 'b_sanitize' in compiler.base_options:
+                sanitize = state.environment.coredata.base_options['b_sanitize'].value
                 cflags += compilers.sanitizer_compile_args(sanitize)
-        if cflags:
-            scan_command += ['--cflags-begin']
-            scan_command += cflags
-            scan_command += ['--cflags-end']
+                if sanitize == 'address':
+                    ldflags += ['-lasan']
+                # FIXME: Linking directly to libasan is not recommended but g-ir-scanner
+                # does not understand -f LDFLAGS. https://bugzilla.gnome.org/show_bug.cgi?id=783892
+                # ldflags += compilers.sanitizer_link_args(sanitize)
         if kwargs.get('symbol_prefix'):
             sym_prefix = kwargs.pop('symbol_prefix')
             if not isinstance(sym_prefix, str):
@@ -503,8 +539,13 @@ can not be used with the current version of glib-compiled-resources, due to
         # ldflags will be misinterpreted by gir scanner (showing
         # spurious dependencies) but building GStreamer fails if they
         # are not used here.
-        cflags, ldflags, gi_includes = self._get_dependencies_flags(deps, state, depends)
-        scan_command += list(cflags)
+        dep_cflags, dep_ldflags, gi_includes = self._get_dependencies_flags(deps, state, depends,
+                                                                            use_gir_args=True)
+        cflags += list(dep_cflags)
+        ldflags += list(dep_ldflags)
+        scan_command += ['--cflags-begin']
+        scan_command += cflags
+        scan_command += ['--cflags-end']
         # need to put our output directory first as we need to use the
         # generated libraries instead of any possibly installed system/prefix
         # ones.
@@ -521,30 +562,34 @@ can not be used with the current version of glib-compiled-resources, due to
             if not isinstance(incd.held_object, (str, build.IncludeDirs)):
                 raise MesonException(
                     'Gir include dirs should be include_directories().')
-        scan_command += self._get_include_args(state, inc_dirs)
-        scan_command += self._get_include_args(state, gir_inc_dirs + inc_dirs,
-                                               prefix='--add-include-path=')
+        scan_command += get_include_args(inc_dirs)
+        scan_command += get_include_args(gir_inc_dirs + inc_dirs, prefix='--add-include-path=')
 
         if isinstance(girtarget, build.Executable):
             scan_command += ['--program', girtarget]
         elif isinstance(girtarget, build.SharedLibrary):
             libname = girtarget.get_basename()
+            # Needed for the following binutils bug:
+            # https://github.com/mesonbuild/meson/issues/1911
+            # However, g-ir-scanner does not understand -Wl,-rpath
+            # so we need to use -L instead
+            for d in state.backend.determine_rpath_dirs(girtarget):
+                d = os.path.join(state.environment.get_build_dir(), d)
+                scan_command.append('-L' + d)
             scan_command += ['--library', libname]
-        scankwargs = {'output' : girfile,
-                      'input' : libsources,
-                      'command' : scan_command,
-                      'depends' : depends,
-                     }
+        scankwargs = {'output': girfile,
+                      'input': libsources,
+                      'command': scan_command,
+                      'depends': depends}
         if kwargs.get('install'):
             scankwargs['install'] = kwargs['install']
             scankwargs['install_dir'] = kwargs.get('install_dir_gir',
-                os.path.join(state.environment.get_datadir(), 'gir-1.0'))
+                                                   os.path.join(state.environment.get_datadir(), 'gir-1.0'))
         scan_target = GirTarget(girfile, state.subdir, scankwargs)
 
         typelib_output = '%s-%s.typelib' % (ns, nsversion)
-        typelib_cmd = gicompiler.get_command() + [scan_target, '--output', '@OUTPUT@']
-        typelib_cmd += self._get_include_args(state, gir_inc_dirs,
-                                              prefix='--includedir=')
+        typelib_cmd = [gicompiler, scan_target, '--output', '@OUTPUT@']
+        typelib_cmd += get_include_args(gir_inc_dirs, prefix='--includedir=')
         for incdir in typelib_includes:
             typelib_cmd += ["--includedir=" + incdir]
 
@@ -555,17 +600,19 @@ can not be used with the current version of glib-compiled-resources, due to
         if kwargs.get('install'):
             typelib_kwargs['install'] = kwargs['install']
             typelib_kwargs['install_dir'] = kwargs.get('install_dir_typelib',
-                os.path.join(state.environment.get_libdir(), 'girepository-1.0'))
+                                                       os.path.join(state.environment.get_libdir(), 'girepository-1.0'))
         typelib_target = TypelibTarget(typelib_output, state.subdir, typelib_kwargs)
-        return [scan_target, typelib_target]
+        rv = [scan_target, typelib_target]
+        return ModuleReturnValue(rv, rv)
 
+    @noKwargs
     def compile_schemas(self, state, args, kwargs):
-        if len(args) != 0:
+        if args:
             raise MesonException('Compile_schemas does not take positional arguments.')
         srcdir = os.path.join(state.build_to_src, state.subdir)
         outdir = state.subdir
 
-        cmd = find_program('glib-compile-schemas', 'gsettings-compile').get_command()
+        cmd = [find_program('glib-compile-schemas', 'gsettings-compile')]
         cmd += ['--targetdir', outdir, srcdir]
         kwargs['command'] = cmd
         kwargs['input'] = []
@@ -575,8 +622,9 @@ can not be used with the current version of glib-compiled-resources, due to
         else:
             targetname = 'gsettings-compile-' + state.subdir
         target_g = build.CustomTarget(targetname, state.subdir, kwargs)
-        return target_g
+        return ModuleReturnValue(target_g, [target_g])
 
+    @permittedKwargs({'sources', 'media', 'symlink_media', 'languages'})
     def yelp(self, state, args, kwargs):
         if len(args) < 1:
             raise MesonException('Yelp requires a project id')
@@ -592,7 +640,7 @@ can not be used with the current version of glib-compiled-resources, due to
 
         langs = mesonlib.stringlistify(kwargs.pop('languages', []))
         media = mesonlib.stringlistify(kwargs.pop('media', []))
-        symlinks = kwargs.pop('symlink_media', False)
+        symlinks = kwargs.pop('symlink_media', True)
 
         if not isinstance(symlinks, bool):
             raise MesonException('symlink_media must be a boolean')
@@ -602,13 +650,12 @@ can not be used with the current version of glib-compiled-resources, due to
 
         script = [sys.executable, state.environment.get_build_command()]
         args = ['--internal',
-            'yelphelper',
-            'install',
-            '--subdir=' + state.subdir,
-            '--id=' + project_id,
-            '--installdir=' + os.path.join(state.environment.get_datadir(), 'help'),
-            '--sources=' + source_str,
-        ]
+                'yelphelper',
+                'install',
+                '--subdir=' + state.subdir,
+                '--id=' + project_id,
+                '--installdir=' + os.path.join(state.environment.get_datadir(), 'help'),
+                '--sources=' + source_str]
         if symlinks:
             args.append('--symlinks=true')
         if media:
@@ -622,18 +669,23 @@ can not be used with the current version of glib-compiled-resources, due to
                    '--id=' + project_id,
                    '--sources=' + source_str]
         pottarget = build.RunTarget('help-' + project_id + '-pot', sys.executable,
-                                     potargs, [], state.subdir)
+                                    potargs, [], state.subdir)
 
         poargs = [state.environment.get_build_command(), '--internal', 'yelphelper', 'update-po',
-                   '--subdir=' + state.subdir,
-                   '--id=' + project_id,
-                   '--sources=' + source_str,
-                   '--langs=' + '@@'.join(langs)]
+                  '--subdir=' + state.subdir,
+                  '--id=' + project_id,
+                  '--sources=' + source_str,
+                  '--langs=' + '@@'.join(langs)]
         potarget = build.RunTarget('help-' + project_id + '-update-po', sys.executable,
-                                     poargs, [], state.subdir)
+                                   poargs, [], state.subdir)
 
-        return [inscript, pottarget, potarget]
+        rv = [inscript, pottarget, potarget]
+        return ModuleReturnValue(None, rv)
 
+    @permittedKwargs({'main_xml', 'main_sgml', 'src_dir', 'dependencies', 'install',
+                      'install_dir', 'scan_args', 'scanobjs_args', 'gobject_typesfile',
+                      'fixxref_args', 'html_args', 'html_assets', 'content_files',
+                      'mkdb_args'})
     def gtkdoc(self, state, args, kwargs):
         if len(args) != 1:
             raise MesonException('Gtkdoc must have one positional argument.')
@@ -673,6 +725,8 @@ can not be used with the current version of glib-compiled-resources, due to
                 for inc_dir in src_dir.get_incdirs():
                     header_dirs.append(os.path.join(state.environment.get_source_dir(),
                                                     src_dir.get_curdir(), inc_dir))
+                    header_dirs.append(os.path.join(state.environment.get_build_dir(),
+                                                    src_dir.get_curdir(), inc_dir))
             else:
                 header_dirs.append(src_dir)
 
@@ -691,6 +745,7 @@ can not be used with the current version of glib-compiled-resources, due to
         args += self._unpack_args('--scanobjsargs=', 'scanobjs_args', kwargs)
         args += self._unpack_args('--gobjects-types-file=', 'gobject_typesfile', kwargs, state)
         args += self._unpack_args('--fixxrefargs=', 'fixxref_args', kwargs)
+        args += self._unpack_args('--mkdbargs=', 'mkdb_args', kwargs)
         args += self._unpack_args('--html-assets=', 'html_assets', kwargs, state)
         args += self._unpack_args('--content-files=', 'content_files', kwargs, state)
         args += self._unpack_args('--expand-content-files=', 'expand_content_files', kwargs, state)
@@ -700,7 +755,7 @@ can not be used with the current version of glib-compiled-resources, due to
         res = [build.RunTarget(targetname, command[0], command[1:] + args, [], state.subdir)]
         if kwargs.get('install', True):
             res.append(build.RunScript(command, args))
-        return res
+        return ModuleReturnValue(None, res)
 
     def _get_build_args(self, kwargs, state):
         args = []
@@ -712,7 +767,7 @@ can not be used with the current version of glib-compiled-resources, due to
             if not isinstance(incd.held_object, (str, build.IncludeDirs)):
                 raise MesonException(
                     'Gir include dirs should be include_directories().')
-        cflags.update(self._get_include_args(state, inc_dirs))
+        cflags.update(get_include_args(inc_dirs))
         if cflags:
             args += ['--cflags=%s' % ' '.join(cflags)]
         if ldflags:
@@ -724,13 +779,14 @@ can not be used with the current version of glib-compiled-resources, due to
 
         return args
 
-    def gtkdoc_html_dir(self, state, args, kwarga):
+    @noKwargs
+    def gtkdoc_html_dir(self, state, args, kwargs):
         if len(args) != 1:
             raise MesonException('Must have exactly one argument.')
         modulename = args[0]
         if not isinstance(modulename, str):
             raise MesonException('Argument must be a string')
-        return os.path.join('share/gtkdoc/html', modulename)
+        return ModuleReturnValue(os.path.join('share/gtkdoc/html', modulename), [])
 
     @staticmethod
     def _unpack_args(arg, kwarg_name, kwargs, expend_file_state=None):
@@ -753,25 +809,38 @@ can not be used with the current version of glib-compiled-resources, due to
 
         return []
 
+    @permittedKwargs({'interface_prefix', 'namespace', 'object_manager'})
     def gdbus_codegen(self, state, args, kwargs):
         if len(args) != 2:
             raise MesonException('Gdbus_codegen takes two arguments, name and xml file.')
         namebase = args[0]
         xml_file = args[1]
         target_name = namebase + '-gdbus'
-        cmd = find_program('gdbus-codegen', target_name).get_command()
+        cmd = [find_program('gdbus-codegen', target_name)]
         if 'interface_prefix' in kwargs:
             cmd += ['--interface-prefix', kwargs.pop('interface_prefix')]
         if 'namespace' in kwargs:
             cmd += ['--c-namespace', kwargs.pop('namespace')]
-        cmd += ['--generate-c-code', '@OUTDIR@/' + namebase, '@INPUT@']
-        outputs = [namebase + '.c', namebase + '.h']
-        custom_kwargs = {'input' : xml_file,
-                         'output' : outputs,
-                         'command' : cmd
-                         }
-        return build.CustomTarget(target_name, state.subdir, custom_kwargs)
+        if kwargs.get('object_manager', False):
+            cmd += ['--c-generate-object-manager']
 
+        # https://git.gnome.org/browse/glib/commit/?id=ee09bb704fe9ccb24d92dd86696a0e6bb8f0dc1a
+        if mesonlib.version_compare(self._get_native_glib_version(state), '>= 2.51.3'):
+            cmd += ['--output-directory', '@OUTDIR@', '--generate-c-code', namebase, '@INPUT@']
+        else:
+            self._print_gdbus_warning()
+            cmd += ['--generate-c-code', '@OUTDIR@/' + namebase, '@INPUT@']
+        outputs = [namebase + '.c', namebase + '.h']
+        custom_kwargs = {'input': xml_file,
+                         'output': outputs,
+                         'command': cmd
+                         }
+        ct = build.CustomTarget(target_name, state.subdir, custom_kwargs)
+        return ModuleReturnValue(ct, [ct])
+
+    @permittedKwargs({'sources', 'c_template', 'h_template', 'install_header', 'install_dir',
+                      'comments', 'identifier_prefix', 'symbol_prefix', 'eprod', 'vprod',
+                      'fhead', 'fprod', 'ftail', 'vhead', 'vtail', 'depends'})
     def mkenums(self, state, args, kwargs):
         if len(args) != 1:
             raise MesonException('Mkenums requires one positional argument.')
@@ -816,7 +885,7 @@ can not be used with the current version of glib-compiled-resources, due to
             elif arg not in known_custom_target_kwargs:
                 raise MesonException(
                     'Mkenums does not take a %s keyword argument.' % (arg, ))
-        cmd = find_program('glib-mkenums', 'mkenums').get_command() + cmd
+        cmd = [find_program('glib-mkenums', 'mkenums')] + cmd
         custom_kwargs = {}
         for arg in known_custom_target_kwargs:
             if arg in kwargs:
@@ -865,11 +934,11 @@ can not be used with the current version of glib-compiled-resources, due to
                     state.environment.coredata.get_builtin_option('includedir')
             target = self._make_mkenum_custom_target(state, sources, basename,
                                                      generic_cmd, custom_kwargs)
-            return target
+            return ModuleReturnValue(target, [target])
         elif len(targets) == 1:
-            return targets[0]
+            return ModuleReturnValue(targets[0], [targets[0]])
         else:
-            return targets
+            return ModuleReturnValue(targets, targets)
 
     @staticmethod
     def _make_mkenum_custom_target(state, sources, output, cmd, kwargs):
@@ -881,8 +950,12 @@ can not be used with the current version of glib-compiled-resources, due to
         }
         custom_kwargs.update(kwargs)
         return build.CustomTarget(output, state.subdir, custom_kwargs,
+                                  # https://github.com/mesonbuild/meson/issues/973
                                   absolute_paths=True)
 
+    @permittedKwargs({'sources', 'prefix', 'install_header', 'install_dir', 'stdinc',
+                      'nostdinc', 'internal', 'skip_source', 'valist_marshallers',
+                      'extra_args'})
     def genmarshal(self, state, args, kwargs):
         if len(args) != 1:
             raise MesonException(
@@ -898,15 +971,24 @@ can not be used with the current version of glib-compiled-resources, due to
             raise MesonException(
                 'Sources keyword argument must be a string or array.')
 
-        cmd = find_program('glib-genmarshal', output + '_genmarshal').get_command()
+        new_genmarshal = mesonlib.version_compare(self._get_native_glib_version(state), '>= 2.53.3')
+
+        cmd = [find_program('glib-genmarshal', output + '_genmarshal')]
         known_kwargs = ['internal', 'nostdinc', 'skip_source', 'stdinc',
-                        'valist_marshallers']
+                        'valist_marshallers', 'extra_args']
         known_custom_target_kwargs = ['build_always', 'depends',
                                       'depend_files', 'install_dir',
                                       'install_header']
         for arg, value in kwargs.items():
             if arg == 'prefix':
                 cmd += ['--prefix', value]
+            elif arg == 'extra_args':
+                if new_genmarshal:
+                    cmd += mesonlib.stringlistify(value, [])
+                else:
+                    mlog.warning('The current version of GLib does not support extra arguments \n'
+                                 'for glib-genmarshal. You need at least GLib 2.53.3. See ',
+                                 mlog.bold('https://github.com/mesonbuild/meson/pull/2049'))
             elif arg in known_kwargs and value:
                 cmd += ['--' + arg.replace('_', '-')]
             elif arg not in known_custom_target_kwargs:
@@ -919,24 +1001,37 @@ can not be used with the current version of glib-compiled-resources, due to
 
         custom_kwargs = {
             'input': sources,
-            'capture': True,
         }
+
+        # https://github.com/GNOME/glib/commit/0fbc98097fac4d3e647684f344e508abae109fdf
+        if mesonlib.version_compare(self._get_native_glib_version(state), '>= 2.51.0'):
+            cmd += ['--output', '@OUTPUT@']
+        else:
+            custom_kwargs['capture'] = True
+
         for arg in known_custom_target_kwargs:
             if arg in kwargs:
                 custom_kwargs[arg] = kwargs[arg]
 
-        custom_kwargs['command'] = cmd + ['--header', '--body', '@INPUT@']
+        header_file = output + '.h'
+        custom_kwargs['command'] = cmd + ['--body', '@INPUT@']
+        if mesonlib.version_compare(self._get_native_glib_version(state), '>= 2.53.4'):
+            # Silence any warnings about missing prototypes
+            custom_kwargs['command'] += ['--include-header', header_file]
         custom_kwargs['output'] = output + '.c'
         body = build.CustomTarget(output + '_c', state.subdir, custom_kwargs)
 
         custom_kwargs['install'] = install_header
         if install_dir is not None:
             custom_kwargs['install_dir'] = install_dir
+        if new_genmarshal:
+            cmd += ['--pragma-once']
         custom_kwargs['command'] = cmd + ['--header', '@INPUT@']
-        custom_kwargs['output'] = output + '.h'
+        custom_kwargs['output'] = header_file
         header = build.CustomTarget(output + '_h', state.subdir, custom_kwargs)
 
-        return [body, header]
+        rv = [body, header]
+        return ModuleReturnValue(rv, rv)
 
     @staticmethod
     def _vapi_args_to_command(prefix, variable, kwargs, accept_vapi=False):
@@ -982,7 +1077,7 @@ can not be used with the current version of glib-compiled-resources, due to
                                           target.get_subdir())
                     outdir = os.path.join(state.environment.get_build_dir(),
                                           target.get_subdir())
-                    outfile = target.output[0][:-5] # Strip .vapi
+                    outfile = target.get_outputs()[0][:-5] # Strip .vapi
                     ret.append('--vapidir=' + outdir)
                     ret.append('--girdir=' + outdir)
                     ret.append('--pkg=' + outfile)
@@ -1014,18 +1109,21 @@ can not be used with the current version of glib-compiled-resources, due to
                 link_with += self._get_vapi_link_with(dep)
         return link_with
 
+    @permittedKwargs({'sources', 'packages', 'metadata_dirs', 'gir_dirs',
+                      'vapi_dirs', 'install', 'install_dir'})
     def generate_vapi(self, state, args, kwargs):
         if len(args) != 1:
             raise MesonException('The library name is required')
 
         if not isinstance(args[0], str):
             raise MesonException('The first argument must be the name of the library')
+        created_values = []
 
         library = args[0]
         build_dir = os.path.join(state.environment.get_build_dir(), state.subdir)
         source_dir = os.path.join(state.environment.get_source_dir(), state.subdir)
         pkg_cmd, vapi_depends, vapi_packages, vapi_includes = self._extract_vapi_packages(state, kwargs)
-        cmd = find_program('vapigen', 'Vaapi').get_command()
+        cmd = [find_program('vapigen', 'Vaapi')]
         cmd += ['--quiet', '--library=' + library, '--directory=' + build_dir]
         cmd += self._vapi_args_to_command('--vapidir=', 'vapi_dirs', kwargs)
         cmd += self._vapi_args_to_command('--metadatadir=', 'metadata_dirs', kwargs)
@@ -1044,12 +1142,11 @@ can not be used with the current version of glib-compiled-resources, due to
         for i in inputs:
             if isinstance(i, str):
                 cmd.append(os.path.join(source_dir, i))
-            elif hasattr(i, 'held_object') \
-                 and isinstance(i.held_object, GirTarget):
+            elif hasattr(i, 'held_object') and isinstance(i.held_object, GirTarget):
                 link_with += self._get_vapi_link_with(i.held_object)
                 subdir = os.path.join(state.environment.get_build_dir(),
                                       i.held_object.get_subdir())
-                gir_file = os.path.join(subdir, i.held_object.output[0])
+                gir_file = os.path.join(subdir, i.held_object.get_outputs()[0])
                 cmd.append(gir_file)
             else:
                 raise MesonException('Input must be a str or GirTarget')
@@ -1062,16 +1159,15 @@ can not be used with the current version of glib-compiled-resources, due to
             'depends': vapi_depends,
         }
         install_dir = kwargs.get('install_dir',
-                os.path.join(state.environment.coredata.get_builtin_option('datadir'),
-                             'vala', 'vapi'))
+                                 os.path.join(state.environment.coredata.get_builtin_option('datadir'),
+                                              'vala', 'vapi'))
         if kwargs.get('install'):
             custom_kwargs['install'] = kwargs['install']
             custom_kwargs['install_dir'] = install_dir
 
             # We shouldn't need this locally but we install it
             deps_target = self._generate_deps(state, library, vapi_packages, install_dir)
-            # XXX WRONG, state objects must not be modified! Fix this!
-            state.data.append(deps_target)
+            created_values.append(deps_target)
         vapi_target = VapiTarget(vapi_output, state.subdir, custom_kwargs)
 
         # So to try our best to get this to just work we need:
@@ -1080,7 +1176,9 @@ can not be used with the current version of glib-compiled-resources, due to
         # - add relevant directories to include dirs
         incs = [build.IncludeDirs(state.subdir, ['.'] + vapi_includes, False)]
         sources = [vapi_target] + vapi_depends
-        return InternalDependency(None, incs, [], [], link_with, sources, [])
+        rv = InternalDependency(None, incs, [], [], link_with, sources, [])
+        created_values.append(rv)
+        return ModuleReturnValue(rv, created_values)
 
 def initialize():
     return GnomeModule()

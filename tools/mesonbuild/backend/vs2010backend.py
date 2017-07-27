@@ -23,8 +23,30 @@ from .. import dependencies
 from .. import mlog
 from .. import compilers
 from ..build import BuildTarget
-from ..mesonlib import MesonException, File
+from ..compilers import CompilerArgs
+from ..mesonlib import MesonException, File, get_meson_script
 from ..environment import Environment
+
+def autodetect_vs_version(build):
+    vs_version = os.getenv('VisualStudioVersion', None)
+    vs_install_dir = os.getenv('VSINSTALLDIR', None)
+    if not vs_version and not vs_install_dir:
+        raise MesonException('Could not detect Visual Studio: VisualStudioVersion and VSINSTALLDIR are unset!\n'
+                             'Are we inside a Visual Studio build environment? '
+                             'You can also try specifying the exact backend to use.')
+    # VisualStudioVersion is set since Visual Studio 12.0, but sometimes
+    # vcvarsall.bat doesn't set it, so also use VSINSTALLDIR
+    if vs_version == '14.0' or 'Visual Studio 14' in vs_install_dir:
+        from mesonbuild.backend.vs2015backend import Vs2015Backend
+        return Vs2015Backend(build)
+    if vs_version == '15.0' or 'Visual Studio 17' in vs_install_dir or \
+       'Visual Studio\\2017' in vs_install_dir:
+        from mesonbuild.backend.vs2017backend import Vs2017Backend
+        return Vs2017Backend(build)
+    if 'Visual Studio 10.0' in vs_install_dir:
+        return Vs2010Backend(build)
+    raise MesonException('Could not detect Visual Studio using VisualStudioVersion: {!r} or VSINSTALLDIR: {!r}!\n'
+                         'Please specify the exact backend to use.'.format(vs_version, vs_install_dir))
 
 def split_o_flags_args(args):
     """
@@ -47,7 +69,7 @@ def split_o_flags_args(args):
             o_flags += ['/O' + f for f in flags]
     return o_flags
 
-class RegenInfo():
+class RegenInfo:
     def __init__(self, source_dir, build_dir, depfiles):
         self.source_dir = source_dir
         self.build_dir = build_dir
@@ -61,8 +83,9 @@ class Vs2010Backend(backends.Backend):
         self.sources_conflicts = {}
         self.platform_toolset = None
         self.vs_version = '2010'
+        self.windows_target_platform_version = None
 
-    def object_filename_from_source(self, target, source):
+    def object_filename_from_source(self, target, source, is_unity=False):
         basename = os.path.basename(source.fname)
         filename_without_extension = '.'.join(basename.split('.')[:-1])
         if basename in self.sources_conflicts[target.get_id()]:
@@ -92,12 +115,10 @@ class Vs2010Backend(backends.Backend):
 
     def generate_custom_generator_commands(self, target, parent_node):
         generator_output_files = []
-        commands = []
-        inputs = []
-        outputs = []
         custom_target_include_dirs = []
         custom_target_output_files = []
         target_private_dir = self.relpath(self.get_target_private_dir(target), self.get_target_dir(target))
+        source_target_dir = self.get_target_source_dir(target)
         down = self.target_to_build_root(target)
         for genlist in target.get_generated_sources():
             if isinstance(genlist, build.CustomTarget):
@@ -115,34 +136,31 @@ class Vs2010Backend(backends.Backend):
                 outfilelist = genlist.get_outputs()
                 exe_arr = self.exe_object_to_cmd_array(exe)
                 base_args = generator.get_arglist()
+                idgroup = ET.SubElement(parent_node, 'ItemGroup')
                 for i in range(len(infilelist)):
                     if len(infilelist) == len(outfilelist):
                         sole_output = os.path.join(target_private_dir, outfilelist[i])
                     else:
                         sole_output = ''
                     curfile = infilelist[i]
-                    infilename = os.path.join(self.environment.get_source_dir(), curfile)
+                    infilename = os.path.join(down, curfile.rel_to_builddir(self.build_to_src))
                     outfiles_rel = genlist.get_outputs_for(curfile)
                     outfiles = [os.path.join(target_private_dir, of) for of in outfiles_rel]
                     generator_output_files += outfiles
-                    args = [x.replace("@INPUT@", infilename).replace('@OUTPUT@', sole_output)\
+                    args = [x.replace("@INPUT@", infilename).replace('@OUTPUT@', sole_output)
                             for x in base_args]
                     args = self.replace_outputs(args, target_private_dir, outfiles_rel)
-                    args = [x.replace("@SOURCE_DIR@", self.environment.get_source_dir()).replace("@BUILD_DIR@", target_private_dir)
+                    args = [x.replace("@SOURCE_DIR@", self.environment.get_source_dir())
+                             .replace("@BUILD_DIR@", target_private_dir)
                             for x in args]
-                    fullcmd = exe_arr + self.replace_extra_args(args, genlist)
-                    commands.append(' '.join(self.special_quote(fullcmd)))
-                    inputs.append(infilename)
-                    outputs.extend(outfiles)
-        if len(commands) > 0:
-            idgroup = ET.SubElement(parent_node, 'ItemDefinitionGroup')
-            cbs = ET.SubElement(idgroup, 'CustomBuildStep')
-            ET.SubElement(cbs, 'Command').text = '\r\n'.join(commands)
-            ET.SubElement(cbs, 'Inputs').text = ";".join(inputs)
-            ET.SubElement(cbs, 'Outputs').text = ';'.join(outputs)
-            ET.SubElement(cbs, 'Message').text = 'Generating custom sources.'
-            pg = ET.SubElement(parent_node, 'PropertyGroup')
-            ET.SubElement(pg, 'CustomBuildBeforeTargets').text = 'ClCompile'
+                    args = [x.replace("@CURRENT_SOURCE_DIR@", source_target_dir) for x in args]
+                    args = [x.replace("@SOURCE_ROOT@", self.environment.get_source_dir())
+                             .replace("@BUILD_ROOT@", self.environment.get_build_dir())
+                            for x in args]
+                    cmd = exe_arr + self.replace_extra_args(args, genlist)
+                    cbs = ET.SubElement(idgroup, 'CustomBuild', Include=infilename)
+                    ET.SubElement(cbs, 'Command').text = ' '.join(self.quote_arguments(cmd))
+                    ET.SubElement(cbs, 'Outputs').text = ';'.join(outfiles)
         return generator_output_files, custom_target_output_files, custom_target_include_dirs
 
     def generate(self, interp):
@@ -191,45 +209,58 @@ class Vs2010Backend(backends.Backend):
         result = {}
         for o in obj_list:
             if isinstance(o, build.ExtractedObjects):
-                result[o.target.get_id()] = True
-        return result.keys()
+                result[o.target.get_id()] = o.target
+        return result.items()
 
-    def determine_deps(self, p):
+    def get_target_deps(self, t, recursive=False):
         all_deps = {}
-        target = self.build.targets[p[0]]
-        if isinstance(target, build.CustomTarget):
-            for d in target.get_target_dependencies():
-                all_deps[d.get_id()] = True
-            return all_deps
-        if isinstance(target, build.RunTarget):
-            for d in [target.command] + target.args:
-                if isinstance(d, build.BuildTarget):
-                    all_deps[d.get_id()] = True
-                return all_deps
-        for ldep in target.link_targets:
-            all_deps[ldep.get_id()] = True
-        for objdep in self.get_obj_target_deps(target.objects):
-            all_deps[objdep] = True
-        for gendep in target.generated:
-            if isinstance(gendep, build.CustomTarget):
-                all_deps[gendep.get_id()] = True
+        for target in t.values():
+            if isinstance(target, build.CustomTarget):
+                for d in target.get_target_dependencies():
+                    all_deps[d.get_id()] = d
+            elif isinstance(target, build.RunTarget):
+                for d in [target.command] + target.args:
+                    if isinstance(d, (build.BuildTarget, build.CustomTarget)):
+                        all_deps[d.get_id()] = d
+            elif isinstance(target, build.BuildTarget):
+                for ldep in target.link_targets:
+                    all_deps[ldep.get_id()] = ldep
+                for ldep in target.link_whole_targets:
+                    all_deps[ldep.get_id()] = ldep
+                for obj_id, objdep in self.get_obj_target_deps(target.objects):
+                    all_deps[obj_id] = objdep
+                for gendep in target.get_generated_sources():
+                    if isinstance(gendep, build.CustomTarget):
+                        all_deps[gendep.get_id()] = gendep
+                    else:
+                        gen_exe = gendep.generator.get_exe()
+                        if isinstance(gen_exe, build.Executable):
+                            all_deps[gen_exe.get_id()] = gen_exe
             else:
-                gen_exe = gendep.generator.get_exe()
-                if isinstance(gen_exe, build.Executable):
-                    all_deps[gen_exe.get_id()] = True
-        return all_deps
+                raise MesonException('Unknown target type for target %s' % target)
+        if not t or not recursive:
+            return all_deps
+        ret = self.get_target_deps(all_deps, recursive)
+        ret.update(all_deps)
+        return ret
 
     def generate_solution(self, sln_filename, projlist):
+        default_projlist = self.get_build_by_default_targets()
         with open(sln_filename, 'w') as ofile:
             ofile.write('Microsoft Visual Studio Solution File, Format '
                         'Version 11.00\n')
             ofile.write('# Visual Studio ' + self.vs_version + '\n')
-            prj_templ = prj_line = 'Project("{%s}") = "%s", "%s", "{%s}"\n'
+            prj_templ = 'Project("{%s}") = "%s", "%s", "{%s}"\n'
             for p in projlist:
                 prj_line = prj_templ % (self.environment.coredata.guid,
                                         p[0], p[1], p[2])
                 ofile.write(prj_line)
-                all_deps = self.determine_deps(p)
+                target = self.build.targets[p[0]]
+                t = {target.get_id(): target}
+                # Get direct deps
+                all_deps = self.get_target_deps(t)
+                # Get recursive deps
+                recursive_deps = self.get_target_deps(t, recursive=True)
                 ofile.write('\tProjectSection(ProjectDependencies) = '
                             'postProject\n')
                 regen_guid = self.environment.coredata.regen_guid
@@ -239,6 +270,9 @@ class Vs2010Backend(backends.Backend):
                     ofile.write('\t\t{%s} = {%s}\n' % (guid, guid))
                 ofile.write('EndProjectSection\n')
                 ofile.write('EndProject\n')
+                for dep, target in recursive_deps.items():
+                    if p[0] in default_projlist:
+                        default_projlist[dep] = target
             test_line = prj_templ % (self.environment.coredata.guid,
                                      'RUN_TESTS', 'RUN_TESTS.vcxproj',
                                      self.environment.coredata.test_guid)
@@ -264,11 +298,15 @@ class Vs2010Backend(backends.Backend):
             ofile.write('\t\t{%s}.%s|%s.Build.0 = %s|%s\n' %
                         (self.environment.coredata.regen_guid, self.buildtype,
                          self.platform, self.buildtype, self.platform))
+            # Create the solution configuration
             for p in projlist:
+                # Add to the list of projects in this solution
                 ofile.write('\t\t{%s}.%s|%s.ActiveCfg = %s|%s\n' %
                             (p[2], self.buildtype, self.platform,
                              self.buildtype, self.platform))
-                if not isinstance(self.build.targets[p[0]], build.RunTarget):
+                if p[0] in default_projlist and \
+                   not isinstance(self.build.targets[p[0]], build.RunTarget):
+                    # Add to the list of projects to be built
                     ofile.write('\t\t{%s}.%s|%s.Build.0 = %s|%s\n' %
                                 (p[2], self.buildtype, self.platform,
                                  self.buildtype, self.platform))
@@ -313,39 +351,41 @@ class Vs2010Backend(backends.Backend):
             else:
                 # Everything that is not an object or source file is considered a header.
                 headers.append(i)
-        return (sources, headers, objects, languages)
+        return sources, headers, objects, languages
 
     def target_to_build_root(self, target):
         if target.subdir == '':
             return ''
 
         directories = os.path.normpath(target.subdir).split(os.sep)
-        return os.sep.join(['..']*len(directories))
+        return os.sep.join(['..'] * len(directories))
 
-    def special_quote(self, arr):
-        return ['&quot;%s&quot;' % i for i in arr]
+    def quote_arguments(self, arr):
+        return ['"%s"' % i for i in arr]
 
     def create_basic_crap(self, target):
         project_name = target.name
-        root = ET.Element('Project', {'DefaultTargets' : "Build",
-                                      'ToolsVersion' : '4.0',
-                                      'xmlns' : 'http://schemas.microsoft.com/developer/msbuild/2003'})
-        confitems = ET.SubElement(root, 'ItemGroup', {'Label' : 'ProjectConfigurations'})
+        root = ET.Element('Project', {'DefaultTargets': "Build",
+                                      'ToolsVersion': '4.0',
+                                      'xmlns': 'http://schemas.microsoft.com/developer/msbuild/2003'})
+        confitems = ET.SubElement(root, 'ItemGroup', {'Label': 'ProjectConfigurations'})
         prjconf = ET.SubElement(confitems, 'ProjectConfiguration',
-                                {'Include' : self.buildtype + '|' + self.platform})
+                                {'Include': self.buildtype + '|' + self.platform})
         p = ET.SubElement(prjconf, 'Configuration')
-        p.text= self.buildtype
+        p.text = self.buildtype
         pl = ET.SubElement(prjconf, 'Platform')
         pl.text = self.platform
         globalgroup = ET.SubElement(root, 'PropertyGroup', Label='Globals')
         guidelem = ET.SubElement(globalgroup, 'ProjectGuid')
-        guidelem.text = self.environment.coredata.test_guid
+        guidelem.text = '{%s}' % self.environment.coredata.test_guid
         kw = ET.SubElement(globalgroup, 'Keyword')
         kw.text = self.platform + 'Proj'
         p = ET.SubElement(globalgroup, 'Platform')
-        p.text= self.platform
-        pname= ET.SubElement(globalgroup, 'ProjectName')
+        p.text = self.platform
+        pname = ET.SubElement(globalgroup, 'ProjectName')
         pname.text = project_name
+        if self.windows_target_platform_version:
+            ET.SubElement(globalgroup, 'WindowsTargetPlatformVersion').text = self.windows_target_platform_version
         ET.SubElement(root, 'Import', Project='$(VCTargetsPath)\Microsoft.Cpp.Default.props')
         type_config = ET.SubElement(root, 'PropertyGroup', Label='Configuration')
         ET.SubElement(type_config, 'ConfigurationType')
@@ -371,21 +411,25 @@ class Vs2010Backend(backends.Backend):
         customstep = ET.SubElement(action, 'PostBuildEvent')
         cmd_raw = [target.command] + target.args
         cmd = [sys.executable, os.path.join(self.environment.get_script_dir(), 'commandrunner.py'),
-               self.environment.get_build_dir(), self.environment.get_source_dir(),
-               self.get_target_dir(target)]
+               self.environment.get_build_dir(),
+               self.environment.get_source_dir(),
+               self.get_target_dir(target),
+               get_meson_script(self.environment, 'mesonintrospect')]
         for i in cmd_raw:
             if isinstance(i, build.BuildTarget):
                 cmd.append(os.path.join(self.environment.get_build_dir(), self.get_target_filename(i)))
             elif isinstance(i, dependencies.ExternalProgram):
-                cmd += i.fullpath
+                cmd += i.get_command()
+            elif isinstance(i, File):
+                relfname = i.rel_to_builddir(self.build_to_src)
+                cmd.append(os.path.join(self.environment.get_build_dir(), relfname))
             else:
                 cmd.append(i)
-        cmd_templ = '''"%s" '''*len(cmd)
+        cmd_templ = '''"%s" ''' * len(cmd)
         ET.SubElement(customstep, 'Command').text = cmd_templ % tuple(cmd)
         ET.SubElement(customstep, 'Message').text = 'Running custom command.'
         ET.SubElement(root, 'Import', Project='$(VCTargetsPath)\Microsoft.Cpp.targets')
-        tree = ET.ElementTree(root)
-        tree.write(ofname, encoding='utf-8', xml_declaration=True)
+        self._prettyprint_vcxproj_xml(ET.ElementTree(root), ofname)
 
     def gen_custom_target_vcxproj(self, target, ofname, guid):
         root = self.create_basic_crap(target)
@@ -395,13 +439,22 @@ class Vs2010Backend(backends.Backend):
         # from the target dir, not the build root.
         target.absolute_paths = True
         (srcs, ofilenames, cmd) = self.eval_custom_target_command(target, True)
-        cmd_templ = '''"%s" '''*len(cmd)
-        ET.SubElement(customstep, 'Command').text = cmd_templ % tuple(cmd)
+        depend_files = self.get_custom_target_depend_files(target, True)
+        # Always use a wrapper because MSBuild eats random characters when
+        # there are many arguments.
+        tdir_abs = os.path.join(self.environment.get_build_dir(), self.get_target_dir(target))
+        exe_data = self.serialize_executable(target.command[0], cmd[1:],
+                                             # All targets run from the target dir
+                                             tdir_abs,
+                                             capture=ofilenames[0] if target.capture else None)
+        wrapper_cmd = [sys.executable, self.environment.get_build_command(),
+                       '--internal', 'exe', exe_data]
+        ET.SubElement(customstep, 'Command').text = ' '.join(self.quote_arguments(wrapper_cmd))
         ET.SubElement(customstep, 'Outputs').text = ';'.join(ofilenames)
-        ET.SubElement(customstep, 'Inputs').text = ';'.join(srcs)
+        ET.SubElement(customstep, 'Inputs').text = ';'.join([exe_data] + srcs + depend_files)
         ET.SubElement(root, 'Import', Project='$(VCTargetsPath)\Microsoft.Cpp.targets')
-        tree = ET.ElementTree(root)
-        tree.write(ofname, encoding='utf-8', xml_declaration=True)
+        self.generate_custom_generator_commands(target, root)
+        self._prettyprint_vcxproj_xml(ET.ElementTree(root), ofname)
 
     @classmethod
     def lang_from_source_file(cls, src):
@@ -426,54 +479,55 @@ class Vs2010Backend(backends.Backend):
         pch_out.text = '$(IntDir)$(TargetName)-%s.pch' % lang
 
     def add_additional_options(self, lang, parent_node, file_args):
-        if len(file_args[lang]) == 0:
-            # We only need per file options if they were not set per project.
-            return
-        args = file_args[lang] + ['%(AdditionalOptions)']
+        args = []
+        for arg in file_args[lang].to_native():
+            if arg == '%(AdditionalOptions)':
+                args.append(arg)
+            else:
+                args.append(self.escape_additional_option(arg))
         ET.SubElement(parent_node, "AdditionalOptions").text = ' '.join(args)
 
     def add_preprocessor_defines(self, lang, parent_node, file_defines):
-        if len(file_defines[lang]) == 0:
-            # We only need per file options if they were not set per project.
-            return
-        defines = file_defines[lang] + ['%(PreprocessorDefinitions)']
+        defines = []
+        for define in file_defines[lang]:
+            if define == '%(PreprocessorDefinitions)':
+                defines.append(define)
+            else:
+                defines.append(self.escape_preprocessor_define(define))
         ET.SubElement(parent_node, "PreprocessorDefinitions").text = ';'.join(defines)
 
     def add_include_dirs(self, lang, parent_node, file_inc_dirs):
-        if len(file_inc_dirs[lang]) == 0:
-            # We only need per file options if they were not set per project.
-            return
-        dirs = file_inc_dirs[lang] + ['%(AdditionalIncludeDirectories)']
+        dirs = file_inc_dirs[lang]
         ET.SubElement(parent_node, "AdditionalIncludeDirectories").text = ';'.join(dirs)
 
     @staticmethod
     def has_objects(objects, additional_objects, generated_objects):
-        # Ignore generated objects, those are automatically used by MSBuild for VS2010, because they are part of
-        # the CustomBuildStep Outputs.
+        # Ignore generated objects, those are automatically used by MSBuild because they are part of
+        # the CustomBuild Outputs.
         return len(objects) + len(additional_objects) > 0
 
     @staticmethod
     def add_generated_objects(node, generated_objects):
-        # Do not add generated objects to project file. Those are automatically used by MSBuild for VS2010, because
-        # they are part of the CustomBuildStep Outputs.
+        # Do not add generated objects to project file. Those are automatically used by MSBuild, because
+        # they are part of the CustomBuild Outputs.
         return
 
     @staticmethod
     def escape_preprocessor_define(define):
         # See: https://msdn.microsoft.com/en-us/library/bb383819.aspx
         table = str.maketrans({'%': '%25', '$': '%24', '@': '%40',
-            "'": '%27', ';': '%3B', '?': '%3F', '*': '%2A',
-            # We need to escape backslash because it'll be un-escaped by
-            # Windows during process creation when it parses the arguments
-            # Basically, this converts `\` to `\\`.
-            '\\': '\\\\'})
+                               "'": '%27', ';': '%3B', '?': '%3F', '*': '%2A',
+                               # We need to escape backslash because it'll be un-escaped by
+                               # Windows during process creation when it parses the arguments
+                               # Basically, this converts `\` to `\\`.
+                               '\\': '\\\\'})
         return define.translate(table)
 
     @staticmethod
     def escape_additional_option(option):
         # See: https://msdn.microsoft.com/en-us/library/bb383819.aspx
         table = str.maketrans({'%': '%25', '$': '%24', '@': '%40',
-            "'": '%27', ';': '%3B', '?': '%3F', '*': '%2A', ' ': '%20',})
+                               "'": '%27', ';': '%3B', '?': '%3F', '*': '%2A', ' ': '%20'})
         option = option.translate(table)
         # Since we're surrounding the option with ", if it ends in \ that will
         # escape the " when the process arguments are parsed and the starting
@@ -512,7 +566,7 @@ class Vs2010Backend(backends.Backend):
                     libs.append(arg)
             else:
                 other.append(arg)
-        return (lpaths, libs, other)
+        return lpaths, libs, other
 
     def _get_cl_compiler(self, target):
         for lang, c in target.compilers.items():
@@ -525,6 +579,13 @@ class Vs2010Backend(backends.Backend):
                 if lang in ('c', 'cpp'):
                     return c
         raise MesonException('Could not find a C or C++ compiler. MSVC can only build C/C++ projects.')
+
+    def _prettyprint_vcxproj_xml(self, tree, ofname):
+        tree.write(ofname, encoding='utf-8', xml_declaration=True)
+        # ElementTree can not do prettyprinting so do it manually
+        doc = xml.dom.minidom.parse(ofname)
+        with open(ofname, 'w') as of:
+            of.write(doc.toprettyxml())
 
     def gen_vcxproj(self, target, ofname, guid):
         mlog.debug('Generating vcxproj %s.' % target.name)
@@ -553,33 +614,37 @@ class Vs2010Backend(backends.Backend):
         # Prefix to use to access the source tree's subdir from the vcxproj dir
         proj_to_src_dir = os.path.join(proj_to_src_root, target.subdir)
         (sources, headers, objects, languages) = self.split_sources(target.sources)
+        if self.is_unity(target):
+            sources = self.generate_unity_files(target, sources)
         compiler = self._get_cl_compiler(target)
         buildtype_args = compiler.get_buildtype_args(self.buildtype)
         buildtype_link_args = compiler.get_buildtype_linker_args(self.buildtype)
         project_name = target.name
         target_name = target.name
-        root = ET.Element('Project', {'DefaultTargets' : "Build",
-                                      'ToolsVersion' : '4.0',
-                                      'xmlns' : 'http://schemas.microsoft.com/developer/msbuild/2003'})
-        confitems = ET.SubElement(root, 'ItemGroup', {'Label' : 'ProjectConfigurations'})
+        root = ET.Element('Project', {'DefaultTargets': "Build",
+                                      'ToolsVersion': '4.0',
+                                      'xmlns': 'http://schemas.microsoft.com/developer/msbuild/2003'})
+        confitems = ET.SubElement(root, 'ItemGroup', {'Label': 'ProjectConfigurations'})
         prjconf = ET.SubElement(confitems, 'ProjectConfiguration',
-                                {'Include' : self.buildtype + '|' + self.platform})
+                                {'Include': self.buildtype + '|' + self.platform})
         p = ET.SubElement(prjconf, 'Configuration')
-        p.text= self.buildtype
+        p.text = self.buildtype
         pl = ET.SubElement(prjconf, 'Platform')
         pl.text = self.platform
         # Globals
         globalgroup = ET.SubElement(root, 'PropertyGroup', Label='Globals')
         guidelem = ET.SubElement(globalgroup, 'ProjectGuid')
-        guidelem.text = guid
+        guidelem.text = '{%s}' % guid
         kw = ET.SubElement(globalgroup, 'Keyword')
         kw.text = self.platform + 'Proj'
         ns = ET.SubElement(globalgroup, 'RootNamespace')
         ns.text = target_name
         p = ET.SubElement(globalgroup, 'Platform')
-        p.text= self.platform
-        pname= ET.SubElement(globalgroup, 'ProjectName')
+        p.text = self.platform
+        pname = ET.SubElement(globalgroup, 'ProjectName')
         pname.text = project_name
+        if self.windows_target_platform_version:
+            ET.SubElement(globalgroup, 'WindowsTargetPlatformVersion').text = self.windows_target_platform_version
         ET.SubElement(root, 'Import', Project='$(VCTargetsPath)\Microsoft.Cpp.Default.props')
         # Start configuration
         type_config = ET.SubElement(root, 'PropertyGroup', Label='Configuration')
@@ -639,9 +704,6 @@ class Vs2010Backend(backends.Backend):
             ET.SubElement(type_config, 'Optimization').text = 'MinSpace'
         elif '/Od' in o_flags:
             ET.SubElement(type_config, 'Optimization').text = 'Disabled'
-        # Warning level
-        warning_level = self.environment.coredata.get_builtin_option('warning_level')
-        ET.SubElement(type_config, 'WarningLevel').text = 'Level' + warning_level
         # End configuration
         ET.SubElement(root, 'Import', Project='$(VCTargetsPath)\Microsoft.Cpp.props')
         generated_files, custom_target_output_files, generated_files_include_dirs = self.generate_custom_generator_commands(target, root)
@@ -668,94 +730,143 @@ class Vs2010Backend(backends.Backend):
         # Arguments, include dirs, defines for all files in the current target
         target_args = []
         target_defines = []
-        target_inc_dirs = ['.', self.relpath(self.get_target_private_dir(target),
-                                             self.get_target_dir(target)),
-                           proj_to_src_dir] + generated_files_include_dirs
+        target_inc_dirs = []
         # Arguments, include dirs, defines passed to individual files in
         # a target; perhaps because the args are language-specific
-        file_args = dict((lang, []) for lang in target.compilers)
+        #
+        # file_args is also later split out into defines and include_dirs in
+        # case someone passed those in there
+        file_args = dict((lang, CompilerArgs(comp)) for lang, comp in target.compilers.items())
         file_defines = dict((lang, []) for lang in target.compilers)
         file_inc_dirs = dict((lang, []) for lang in target.compilers)
-        for l, args in self.environment.coredata.external_args.items():
+        # The order in which these compile args are added must match
+        # generate_single_compile() and generate_basic_compiler_args()
+        for l, comp in target.compilers.items():
             if l in file_args:
-                file_args[l] += args
-        for l, args in self.build.global_args.items():
-            if l in file_args:
-                file_args[l] += args
+                file_args[l] += compilers.get_base_compile_args(self.environment.coredata.base_options, comp)
+                file_args[l] += comp.get_option_compile_args(self.environment.coredata.compiler_options)
+        # Add compile args added using add_project_arguments()
         for l, args in self.build.projects_args.get(target.subproject, {}).items():
             if l in file_args:
                 file_args[l] += args
+        # Add compile args added using add_global_arguments()
+        # These override per-project arguments
+        for l, args in self.build.global_args.items():
+            if l in file_args:
+                file_args[l] += args
+        if not target.is_cross:
+            # Compile args added from the env: CFLAGS/CXXFLAGS, etc. We want these
+            # to override all the defaults, but not the per-target compile args.
+            for l, args in self.environment.coredata.external_args.items():
+                if l in file_args:
+                    file_args[l] += args
+        for args in file_args.values():
+            # This is where Visual Studio will insert target_args, target_defines,
+            # etc, which are added later from external deps (see below).
+            args += ['%(AdditionalOptions)', '%(PreprocessorDefinitions)', '%(AdditionalIncludeDirectories)']
+            # Add include dirs from the `include_directories:` kwarg on the target
+            # and from `include_directories:` of internal deps of the target.
+            #
+            # Target include dirs should override internal deps include dirs.
+            # This is handled in BuildTarget.process_kwargs()
+            #
+            # Include dirs from internal deps should override include dirs from
+            # external deps and must maintain the order in which they are
+            # specified. Hence, we must reverse so that the order is preserved.
+            #
+            # These are per-target, but we still add them as per-file because we
+            # need them to be looked in first.
+            for d in reversed(target.get_include_dirs()):
+                for i in d.get_incdirs():
+                    curdir = os.path.join(d.get_curdir(), i)
+                    args.append('-I' + self.relpath(curdir, target.subdir)) # build dir
+                    args.append('-I' + os.path.join(proj_to_src_root, curdir)) # src dir
+                for i in d.get_extra_build_dirs():
+                    curdir = os.path.join(d.get_curdir(), i)
+                    args.append('-I' + self.relpath(curdir, target.subdir))  # build dir
+        # Add per-target compile args, f.ex, `c_args : ['/DFOO']`. We set these
+        # near the end since these are supposed to override everything else.
         for l, args in target.extra_args.items():
             if l in file_args:
-                file_args[l] += compiler.unix_compile_flags_to_native(args)
-        for l, comp in target.compilers.items():
-            if l in file_args:
-                file_args[l] += comp.get_option_compile_args(self.environment.coredata.compiler_options)
-        for d in target.get_external_deps():
+                file_args[l] += args
+        # The highest priority includes. In order of directory search:
+        # target private dir, target build dir, generated sources include dirs,
+        # target source dir
+        for args in file_args.values():
+            t_inc_dirs = ['.', self.relpath(self.get_target_private_dir(target),
+                                            self.get_target_dir(target))]
+            t_inc_dirs += generated_files_include_dirs + [proj_to_src_dir]
+            args += ['-I' + arg for arg in t_inc_dirs]
+
+        # Split preprocessor defines and include directories out of the list of
+        # all extra arguments. The rest go into %(AdditionalOptions).
+        for l, args in file_args.items():
+            for arg in args[:]:
+                if arg.startswith(('-D', '/D')) or arg == '%(PreprocessorDefinitions)':
+                    file_args[l].remove(arg)
+                    # Don't escape the marker
+                    if arg == '%(PreprocessorDefinitions)':
+                        define = arg
+                    else:
+                        define = arg[2:]
+                    # De-dup
+                    if define in file_defines[l]:
+                        file_defines[l].remove(define)
+                    file_defines[l].append(define)
+                elif arg.startswith(('-I', '/I')) or arg == '%(AdditionalIncludeDirectories)':
+                    file_args[l].remove(arg)
+                    # Don't escape the marker
+                    if arg == '%(AdditionalIncludeDirectories)':
+                        inc_dir = arg
+                    else:
+                        inc_dir = arg[2:]
+                    # De-dup
+                    if inc_dir not in file_inc_dirs[l]:
+                        file_inc_dirs[l].append(inc_dir)
+
+        # Split compile args needed to find external dependencies
+        # Link args are added while generating the link command
+        for d in reversed(target.get_external_deps()):
             # Cflags required by external deps might have UNIX-specific flags,
             # so filter them out if needed
-            d_compile_args = compiler.unix_compile_flags_to_native(d.get_compile_args())
+            d_compile_args = compiler.unix_args_to_native(d.get_compile_args())
             for arg in d_compile_args:
                 if arg.startswith(('-D', '/D')):
                     define = arg[2:]
                     # De-dup
-                    if define not in target_defines:
-                        target_defines.append(define)
+                    if define in target_defines:
+                        target_defines.remove(define)
+                    target_defines.append(define)
                 elif arg.startswith(('-I', '/I')):
                     inc_dir = arg[2:]
                     # De-dup
                     if inc_dir not in target_inc_dirs:
                         target_inc_dirs.append(inc_dir)
                 else:
-                    # De-dup
-                    if arg not in target_args:
-                        target_args.append(arg)
-
-        # Split preprocessor defines and include directories out of the list of
-        # all extra arguments. The rest go into %(AdditionalOptions).
-        for l, args in file_args.items():
-            file_args[l] = []
-            for arg in args:
-                if arg.startswith(('-D', '/D')):
-                    define = self.escape_preprocessor_define(arg[2:])
-                    # De-dup
-                    if define not in file_defines[l]:
-                        file_defines[l].append(define)
-                elif arg.startswith(('-I', '/I')):
-                    inc_dir = arg[2:]
-                    # De-dup
-                    if inc_dir not in file_inc_dirs[l]:
-                        file_inc_dirs[l].append(inc_dir)
-                else:
-                    file_args[l].append(self.escape_additional_option(arg))
+                    target_args.append(arg)
 
         languages += gen_langs
         if len(target_args) > 0:
             target_args.append('%(AdditionalOptions)')
             ET.SubElement(clconf, "AdditionalOptions").text = ' '.join(target_args)
 
-        for d in target.include_dirs:
-            for i in d.incdirs:
-                curdir = os.path.join(d.curdir, i)
-                target_inc_dirs.append(self.relpath(curdir, target.subdir)) # build dir
-                target_inc_dirs.append(os.path.join(proj_to_src_root, curdir)) # src dir
-            for i in d.get_extra_build_dirs():
-                curdir = os.path.join(d.curdir, i)
-                target_inc_dirs.append(self.relpath(curdir, target.subdir))  # build dir
-
         target_inc_dirs.append('%(AdditionalIncludeDirectories)')
         ET.SubElement(clconf, 'AdditionalIncludeDirectories').text = ';'.join(target_inc_dirs)
         target_defines.append('%(PreprocessorDefinitions)')
         ET.SubElement(clconf, 'PreprocessorDefinitions').text = ';'.join(target_defines)
-        rebuild = ET.SubElement(clconf, 'MinimalRebuild')
-        rebuild.text = 'true'
-        funclink = ET.SubElement(clconf, 'FunctionLevelLinking')
-        funclink.text = 'true'
+        ET.SubElement(clconf, 'MinimalRebuild').text = 'true'
+        ET.SubElement(clconf, 'FunctionLevelLinking').text = 'true'
         pch_node = ET.SubElement(clconf, 'PrecompiledHeader')
+        # Warning level
+        warning_level = self.get_option_for_target('warning_level', target)
+        ET.SubElement(clconf, 'WarningLevel').text = 'Level' + str(1 + int(warning_level))
+        if self.get_option_for_target('werror', target):
+            ET.SubElement(clconf, 'TreatWarningAsError').text = 'true'
+        # Note: SuppressStartupBanner is /NOLOGO and is 'true' by default
         pch_sources = {}
         for lang in ['c', 'cpp']:
             pch = target.get_pch(lang)
-            if len(pch) == 0:
+            if not pch:
                 continue
             pch_node.text = 'Use'
             pch_sources[lang] = [pch[0], pch[1], lang]
@@ -773,28 +884,44 @@ class Vs2010Backend(backends.Backend):
 
         resourcecompile = ET.SubElement(compiles, 'ResourceCompile')
         ET.SubElement(resourcecompile, 'PreprocessorDefinitions')
+
+        # Linker options
         link = ET.SubElement(compiles, 'Link')
-        # Put all language args here, too.
-        extra_link_args = compiler.get_option_link_args(self.environment.coredata.compiler_options)
+        extra_link_args = CompilerArgs(compiler)
         # FIXME: Can these buildtype linker args be added as tags in the
         # vcxproj file (similar to buildtype compiler args) instead of in
         # AdditionalOptions?
         extra_link_args += compiler.get_buildtype_linker_args(self.buildtype)
-        for l in self.environment.coredata.external_link_args.values():
-            extra_link_args += l
         if not isinstance(target, build.StaticLibrary):
-            extra_link_args += target.link_args
             if isinstance(target, build.SharedModule):
                 extra_link_args += compiler.get_std_shared_module_link_args()
+            # Add link args added using add_project_link_arguments()
+            extra_link_args += self.build.get_project_link_args(compiler, target.subproject)
+            # Add link args added using add_global_link_arguments()
+            # These override per-project link arguments
+            extra_link_args += self.build.get_global_link_args(compiler)
+            if not target.is_cross:
+                # Link args added from the env: LDFLAGS. We want these to
+                # override all the defaults but not the per-target link args.
+                extra_link_args += self.environment.coredata.external_link_args[compiler.get_language()]
+            # Only non-static built targets need link args and link dependencies
+            extra_link_args += target.link_args
             # External deps must be last because target link libraries may depend on them.
             for dep in target.get_external_deps():
-                extra_link_args += dep.get_link_args()
+                # Extend without reordering or de-dup to preserve `-L -l` sets
+                # https://github.com/mesonbuild/meson/issues/1718
+                extra_link_args.extend_direct(dep.get_link_args())
             for d in target.get_dependencies():
                 if isinstance(d, build.StaticLibrary):
                     for dep in d.get_external_deps():
-                        extra_link_args += dep.get_link_args()
-        extra_link_args = compiler.unix_link_flags_to_native(extra_link_args)
-        (additional_libpaths, additional_links, extra_link_args) = self.split_link_args(extra_link_args)
+                        extra_link_args.extend_direct(dep.get_link_args())
+        # Add link args for c_* or cpp_* build options. Currently this only
+        # adds c_winlibs and cpp_winlibs when building for Windows. This needs
+        # to be after all internal and external libraries so that unresolved
+        # symbols from those can be found here. This is needed when the
+        # *_winlibs that we want to link to are static mingw64 libraries.
+        extra_link_args += compiler.get_option_link_args(self.environment.coredata.compiler_options)
+        (additional_libpaths, additional_links, extra_link_args) = self.split_link_args(extra_link_args.to_native())
         if len(extra_link_args) > 0:
             extra_link_args.append('%(AdditionalOptions)')
             ET.SubElement(link, "AdditionalOptions").text = ' '.join(extra_link_args)
@@ -806,6 +933,8 @@ class Vs2010Backend(backends.Backend):
         for t in target.get_dependencies():
             lobj = self.build.targets[t.get_id()]
             linkname = os.path.join(down, self.get_target_filename_for_linking(lobj))
+            if t in target.link_whole_targets:
+                linkname = compiler.get_link_whole_for(linkname)[0]
             additional_links.append(linkname)
         for lib in self.get_custom_target_provided_libraries(target):
             additional_links.append(self.relpath(lib, self.get_target_dir(target)))
@@ -814,7 +943,7 @@ class Vs2010Backend(backends.Backend):
             assert(isinstance(o, str))
             additional_objects.append(o)
         for o in custom_objs:
-            additional_objects.append(self.relpath(o, self.get_target_dir(target)))
+            additional_objects.append(o)
         if len(additional_links) > 0:
             additional_links.append('%(AdditionalDependencies)')
             ET.SubElement(link, 'AdditionalDependencies').text = ';'.join(additional_links)
@@ -822,10 +951,12 @@ class Vs2010Backend(backends.Backend):
         ofile.text = '$(OutDir)%s' % target.get_filename()
         subsys = ET.SubElement(link, 'SubSystem')
         subsys.text = subsystem
-        if isinstance(target, build.SharedLibrary):
+        if (isinstance(target, build.SharedLibrary) or
+            isinstance(target, build.Executable)) and target.get_import_filename():
             # DLLs built with MSVC always have an import library except when
             # they're data-only DLLs, but we don't support those yet.
             ET.SubElement(link, 'ImportLibrary').text = target.get_import_filename()
+        if isinstance(target, build.SharedLibrary):
             # Add module definitions file, if provided
             if target.vs_module_defs:
                 relpath = os.path.join(down, target.vs_module_defs.rel_to_builddir(self.build_to_src))
@@ -855,7 +986,7 @@ class Vs2010Backend(backends.Backend):
             for h in gen_hdrs:
                 ET.SubElement(inc_hdrs, 'CLInclude', Include=h)
             for h in target.extra_files:
-                relpath = os.path.join(proj_to_src_dir, h)
+                relpath = os.path.join(down, h.rel_to_builddir(self.build_to_src))
                 ET.SubElement(inc_hdrs, 'CLInclude', Include=relpath)
 
         if len(sources) + len(gen_src) + len(pch_sources) > 0:
@@ -882,7 +1013,6 @@ class Vs2010Backend(backends.Backend):
                 header, impl, suffix = pch_sources[lang]
                 relpath = os.path.join(proj_to_src_dir, impl)
                 inc_cl = ET.SubElement(inc_src, 'CLCompile', Include=relpath)
-                lang = Vs2010Backend.lang_from_source_file(s)
                 pch = ET.SubElement(inc_cl, 'PrecompiledHeader')
                 pch.text = 'Create'
                 pch_out = ET.SubElement(inc_cl, 'PrecompiledHeaderOutputFile')
@@ -909,40 +1039,30 @@ class Vs2010Backend(backends.Backend):
         ig = ET.SubElement(root, 'ItemGroup')
         pref = ET.SubElement(ig, 'ProjectReference', Include=os.path.join(self.environment.get_build_dir(), 'REGEN.vcxproj'))
         ET.SubElement(pref, 'Project').text = self.environment.coredata.regen_guid
-        tree = ET.ElementTree(root)
-        tree.write(ofname, encoding='utf-8', xml_declaration=True)
-        # ElementTree can not do prettyprinting so do it manually
-        doc = xml.dom.minidom.parse(ofname)
-        with open(ofname, 'w') as of:
-            of.write(doc.toprettyxml())
-        # World of horror! Python insists on not quoting quotes and
-        # fixing the escaped &quot; into &amp;quot; whereas MSVS
-        # requires quoted but not fixed elements. Enter horrible hack.
-        with open(ofname, 'r') as of:
-            txt = of.read()
-        with open(ofname, 'w') as of:
-            of.write(txt.replace('&amp;quot;', '&quot;'))
+        self._prettyprint_vcxproj_xml(ET.ElementTree(root), ofname)
 
     def gen_regenproj(self, project_name, ofname):
         root = ET.Element('Project', {'DefaultTargets': 'Build',
-                                      'ToolsVersion' : '4.0',
-                                      'xmlns' : 'http://schemas.microsoft.com/developer/msbuild/2003'})
-        confitems = ET.SubElement(root, 'ItemGroup', {'Label' : 'ProjectConfigurations'})
+                                      'ToolsVersion': '4.0',
+                                      'xmlns': 'http://schemas.microsoft.com/developer/msbuild/2003'})
+        confitems = ET.SubElement(root, 'ItemGroup', {'Label': 'ProjectConfigurations'})
         prjconf = ET.SubElement(confitems, 'ProjectConfiguration',
-                                {'Include' : self.buildtype + '|' + self.platform})
+                                {'Include': self.buildtype + '|' + self.platform})
         p = ET.SubElement(prjconf, 'Configuration')
-        p.text= self.buildtype
+        p.text = self.buildtype
         pl = ET.SubElement(prjconf, 'Platform')
         pl.text = self.platform
         globalgroup = ET.SubElement(root, 'PropertyGroup', Label='Globals')
         guidelem = ET.SubElement(globalgroup, 'ProjectGuid')
-        guidelem.text = self.environment.coredata.test_guid
+        guidelem.text = '{%s}' % self.environment.coredata.test_guid
         kw = ET.SubElement(globalgroup, 'Keyword')
         kw.text = self.platform + 'Proj'
         p = ET.SubElement(globalgroup, 'Platform')
         p.text = self.platform
-        pname= ET.SubElement(globalgroup, 'ProjectName')
+        pname = ET.SubElement(globalgroup, 'ProjectName')
         pname.text = project_name
+        if self.windows_target_platform_version:
+            ET.SubElement(globalgroup, 'WindowsTargetPlatformVersion').text = self.windows_target_platform_version
         ET.SubElement(root, 'Import', Project='$(VCTargetsPath)\Microsoft.Cpp.Default.props')
         type_config = ET.SubElement(root, 'PropertyGroup', Label='Configuration')
         ET.SubElement(type_config, 'ConfigurationType').text = "Utility"
@@ -998,30 +1118,31 @@ if %%errorlevel%% neq 0 goto :VCEnd'''
         ET.SubElement(custombuild, 'AdditionalInputs').text = ';'.join(deps)
         ET.SubElement(root, 'Import', Project='$(VCTargetsPath)\Microsoft.Cpp.targets')
         ET.SubElement(root, 'ImportGroup', Label='ExtensionTargets')
-        tree = ET.ElementTree(root)
-        tree.write(ofname, encoding='utf-8', xml_declaration=True)
+        self._prettyprint_vcxproj_xml(ET.ElementTree(root), ofname)
 
     def gen_testproj(self, target_name, ofname):
         project_name = target_name
-        root = ET.Element('Project', {'DefaultTargets' : "Build",
-                                      'ToolsVersion' : '4.0',
-                                      'xmlns' : 'http://schemas.microsoft.com/developer/msbuild/2003'})
-        confitems = ET.SubElement(root, 'ItemGroup', {'Label' : 'ProjectConfigurations'})
+        root = ET.Element('Project', {'DefaultTargets': "Build",
+                                      'ToolsVersion': '4.0',
+                                      'xmlns': 'http://schemas.microsoft.com/developer/msbuild/2003'})
+        confitems = ET.SubElement(root, 'ItemGroup', {'Label': 'ProjectConfigurations'})
         prjconf = ET.SubElement(confitems, 'ProjectConfiguration',
-                                {'Include' : self.buildtype + '|' + self.platform})
+                                {'Include': self.buildtype + '|' + self.platform})
         p = ET.SubElement(prjconf, 'Configuration')
-        p.text= self.buildtype
+        p.text = self.buildtype
         pl = ET.SubElement(prjconf, 'Platform')
         pl.text = self.platform
         globalgroup = ET.SubElement(root, 'PropertyGroup', Label='Globals')
         guidelem = ET.SubElement(globalgroup, 'ProjectGuid')
-        guidelem.text = self.environment.coredata.test_guid
+        guidelem.text = '{%s}' % self.environment.coredata.test_guid
         kw = ET.SubElement(globalgroup, 'Keyword')
         kw.text = self.platform + 'Proj'
         p = ET.SubElement(globalgroup, 'Platform')
-        p.text= self.platform
-        pname= ET.SubElement(globalgroup, 'ProjectName')
+        p.text = self.platform
+        pname = ET.SubElement(globalgroup, 'ProjectName')
         pname.text = project_name
+        if self.windows_target_platform_version:
+            ET.SubElement(globalgroup, 'WindowsTargetPlatformVersion').text = self.windows_target_platform_version
         ET.SubElement(root, 'Import', Project='$(VCTargetsPath)\Microsoft.Cpp.Default.props')
         type_config = ET.SubElement(root, 'PropertyGroup', Label='Configuration')
         ET.SubElement(type_config, 'ConfigurationType')
@@ -1050,12 +1171,16 @@ if %%errorlevel%% neq 0 goto :VCEnd'''
         ET.SubElement(midl, 'ProxyFileName').text = '%(Filename)_p.c'
         postbuild = ET.SubElement(action, 'PostBuildEvent')
         ET.SubElement(postbuild, 'Message')
+        # FIXME: No benchmarks?
         test_command = [sys.executable,
-                        self.environment.get_build_command(),
-                        '--internal',
-                        'test']
+                        get_meson_script(self.environment, 'mesontest'),
+                        '--no-rebuild']
+        if not self.environment.coredata.get_builtin_option('stdsplit'):
+            test_command += ['--no-stdsplit']
+        if self.environment.coredata.get_builtin_option('errorlogs'):
+            test_command += ['--print-errorlogs']
         cmd_templ = '''setlocal
-"%s" "%s"
+"%s"
 if %%errorlevel%% neq 0 goto :cmEnd
 :cmEnd
 endlocal & call :cmErrorLevel %%errorlevel%% & goto :cmDone
@@ -1063,12 +1188,8 @@ endlocal & call :cmErrorLevel %%errorlevel%% & goto :cmDone
 exit /b %%1
 :cmDone
 if %%errorlevel%% neq 0 goto :VCEnd'''
-        test_data = self.serialise_tests()[0]
+        self.serialize_tests()
         ET.SubElement(postbuild, 'Command').text =\
-            cmd_templ % ('" "'.join(test_command), test_data)
+            cmd_templ % ('" "'.join(test_command))
         ET.SubElement(root, 'Import', Project='$(VCTargetsPath)\Microsoft.Cpp.targets')
-        tree = ET.ElementTree(root)
-        tree.write(ofname, encoding='utf-8', xml_declaration=True)
-        # ElementTree can not do prettyprinting so do it manually
-        #doc = xml.dom.minidom.parse(ofname)
-        #open(ofname, 'w').write(doc.toprettyxml())
+        self._prettyprint_vcxproj_xml(ET.ElementTree(root), ofname)

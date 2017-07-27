@@ -17,6 +17,8 @@ import contextlib
 import urllib.request, os, hashlib, shutil
 import subprocess
 import sys
+from pathlib import Path
+from . import WrapMode
 
 try:
     import ssl
@@ -36,11 +38,19 @@ def build_ssl_context():
     ctx.load_default_certs()
     return ctx
 
+def quiet_git(cmd, workingdir):
+    pc = subprocess.Popen(['git', '-C', workingdir] + cmd,
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = pc.communicate()
+    if pc.returncode != 0:
+        return False, err
+    return True, out
+
 def open_wrapdburl(urlstring):
     global ssl_warning_printed
     if has_ssl:
         try:
-            return urllib.request.urlopen(urlstring)#, context=build_ssl_context())
+            return urllib.request.urlopen(urlstring)# , context=build_ssl_context())
         except urllib.error.URLError:
             if not ssl_warning_printed:
                 print('SSL connection failed. Falling back to unencrypted connections.')
@@ -86,29 +96,45 @@ class PackageDefinition:
         return 'patch_url' in self.values
 
 class Resolver:
-    def __init__(self, subdir_root):
+    def __init__(self, subdir_root, wrap_mode=WrapMode(1)):
+        self.wrap_mode = wrap_mode
         self.subdir_root = subdir_root
         self.cachedir = os.path.join(self.subdir_root, 'packagecache')
 
     def resolve(self, packagename):
-        fname = os.path.join(self.subdir_root, packagename + '.wrap')
-        dirname = os.path.join(self.subdir_root, packagename)
-        try:
-            if os.listdir(dirname):
-                # The directory is there and not empty? Great, use it.
+        # Check if the directory is already resolved
+        dirname = Path(os.path.join(self.subdir_root, packagename))
+        subprojdir = os.path.join(*dirname.parts[-2:])
+        if dirname.is_dir():
+            if (dirname / 'meson.build').is_file():
+                # The directory is there and has meson.build? Great, use it.
                 return packagename
-            else:
-                mlog.warning('Subproject directory %s is empty, possibly because of an unfinished'
-                      'checkout, removing to reclone' % dirname)
-                os.rmdir(dirname)
-        except NotADirectoryError:
-            raise RuntimeError('%s is not a directory, can not use as subproject.' % dirname)
-        except FileNotFoundError:
-            pass
+            # Is the dir not empty and also not a git submodule dir that is
+            # not checkout properly? Can't do anything, exception!
+            elif next(dirname.iterdir(), None) and not (dirname / '.git').is_file():
+                m = '{!r} is not empty and has no meson.build files'
+                raise RuntimeError(m.format(subprojdir))
+        elif dirname.exists():
+            m = '{!r} already exists and is not a dir; cannot use as subproject'
+            raise RuntimeError(m.format(subprojdir))
 
+        dirname = str(dirname)
+        # Check if the subproject is a git submodule
+        if self.resolve_git_submodule(dirname):
+            return packagename
+
+        # Don't download subproject data based on wrap file if requested.
+        # Git submodules are ok (see above)!
+        if self.wrap_mode is WrapMode.nodownload:
+            m = 'Automatic wrap-based subproject downloading is disabled'
+            raise RuntimeError(m)
+
+        # Check if there's a .wrap file for this subproject
+        fname = os.path.join(self.subdir_root, packagename + '.wrap')
         if not os.path.isfile(fname):
             # No wrap file with this name? Give up.
-            return None
+            m = 'No {}.wrap found for {!r}'
+            raise RuntimeError(m.format(packagename, subprojdir))
         p = PackageDefinition(fname)
         if p.type == 'file':
             if not os.path.isdir(self.cachedir):
@@ -120,8 +146,30 @@ class Resolver:
         elif p.type == "hg":
             self.get_hg(p)
         else:
-            raise RuntimeError('Unreachable code.')
+            raise AssertionError('Unreachable code.')
         return p.get('directory')
+
+    def resolve_git_submodule(self, dirname):
+        # Are we in a git repository?
+        ret, out = quiet_git(['rev-parse'], self.subdir_root)
+        if not ret:
+            return False
+        # Is `dirname` a submodule?
+        ret, out = quiet_git(['submodule', 'status', dirname], self.subdir_root)
+        if not ret:
+            return False
+        # Submodule has not been added, add it
+        if out.startswith(b'-'):
+            if subprocess.call(['git', '-C', self.subdir_root, 'submodule', 'update', '--init', dirname]) != 0:
+                return False
+        # Submodule was added already, but it wasn't populated. Do a checkout.
+        elif out.startswith(b' '):
+            if subprocess.call(['git', 'checkout', '.'], cwd=dirname):
+                return True
+        else:
+            m = 'Unknown git submodule output: {!r}'
+            raise AssertionError(m.format(out))
+        return True
 
     def get_git(self, p):
         checkoutdir = os.path.join(self.subdir_root, p.get('directory'))
@@ -129,13 +177,12 @@ class Resolver:
         is_there = os.path.isdir(checkoutdir)
         if is_there:
             try:
-                subprocess.check_call(['git', 'rev-parse'])
-                is_there = True
+                subprocess.check_call(['git', 'rev-parse'], cwd=checkoutdir)
             except subprocess.CalledProcessError:
                 raise RuntimeError('%s is not empty but is not a valid '
-                                    'git repository, we can not work with it'
-                                    ' as a subproject directory.' % (
-                                        checkoutdir))
+                                   'git repository, we can not work with it'
+                                   ' as a subproject directory.' % (
+                                       checkoutdir))
 
             if revno.lower() == 'head':
                 # Failure to do pull is not a fatal error,
@@ -158,6 +205,7 @@ class Resolver:
                 subprocess.check_call(['git', 'remote', 'set-url',
                                        '--push', 'origin', push_url],
                                       cwd=checkoutdir)
+
     def get_hg(self, p):
         checkoutdir = os.path.join(self.subdir_root, p.get('directory'))
         revno = p.get('revision')
@@ -181,7 +229,7 @@ class Resolver:
                                       cwd=checkoutdir)
 
     def get_data(self, url):
-        blocksize = 10*1024
+        blocksize = 10 * 1024
         if url.startswith('https://wrapdb.mesonbuild.com'):
             resp = open_wrapdburl(url)
         else:
@@ -206,7 +254,7 @@ class Resolver:
                     break
                 downloaded += len(block)
                 blocks.append(block)
-                ratio = int(downloaded/dlsize * 10)
+                ratio = int(downloaded / dlsize * 10)
                 while printed_dots < ratio:
                     print('.', end='')
                     sys.stdout.flush()
@@ -226,7 +274,7 @@ class Resolver:
             mlog.log('Using', mlog.bold(packagename), 'from cache.')
             return
         srcurl = p.get('source_url')
-        mlog.log('Dowloading', mlog.bold(packagename), 'from', mlog.bold(srcurl))
+        mlog.log('Downloading', mlog.bold(packagename), 'from', mlog.bold(srcurl))
         srcdata = self.get_data(srcurl)
         dhash = self.get_hash(srcdata)
         expected = p.get('source_hash')
@@ -253,12 +301,13 @@ class Resolver:
             try:
                 import lzma
                 del lzma
+            except ImportError:
+                pass
+            else:
                 try:
                     shutil.register_unpack_format('xztar', ['.tar.xz', '.txz'], shutil._unpack_tarfile, [], "xz'ed tar-file")
                 except shutil.RegistryError:
                     pass
-            except ImportError:
-                pass
         target_dir = os.path.join(self.subdir_root, package.get('directory'))
         if os.path.isdir(target_dir):
             return

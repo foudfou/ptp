@@ -1,4 +1,4 @@
-# Copyright 2014-2016 The Meson development team
+# Copyright 2014-2017 The Meson development team
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,17 +14,44 @@
 
 import re
 from .mesonlib import MesonException
+from . import mlog
 
 class ParseException(MesonException):
-    def __init__(self, text, lineno, colno):
-        super().__init__(text)
+    def __init__(self, text, line, lineno, colno):
+        # Format as error message, followed by the line with the error, followed by a caret to show the error column.
+        super().__init__("%s\n%s\n%s" % (text, line, '%s^' % (' ' * colno)))
+        self.lineno = lineno
+        self.colno = colno
+
+class BlockParseException(MesonException):
+    def __init__(self, text, line, lineno, colno, start_line, start_lineno, start_colno):
+        # This can be formatted in two ways - one if the block start and end are on the same line, and a different way if they are on different lines.
+
+        if lineno == start_lineno:
+            # If block start and end are on the same line, it is formatted as:
+            # Error message
+            # Followed by the line with the error
+            # Followed by a caret to show the block start
+            # Followed by underscores
+            # Followed by a caret to show the block end.
+            super().__init__("%s\n%s\n%s" % (text, line, '%s^%s^' % (' ' * start_colno, '_' * (colno - start_colno - 1))))
+        else:
+            # If block start and end are on different lines, it is formatted as:
+            # Error message
+            # Followed by the line with the error
+            # Followed by a caret to show the error column.
+            # Followed by a message saying where the block started.
+            # Followed by the line of the block start.
+            # Followed by a caret for the block start.
+            super().__init__("%s\n%s\n%s\nFor a block that started at %d,%d\n%s\n%s" % (text, line, '%s^' % (' ' * colno), start_lineno, start_colno, start_line, "%s^" % (' ' * start_colno)))
         self.lineno = lineno
         self.colno = colno
 
 class Token:
-    def __init__(self, tid, subdir, lineno, colno, bytespan, value):
+    def __init__(self, tid, subdir, line_start, lineno, colno, bytespan, value):
         self.tid = tid
         self.subdir = subdir
+        self.line_start = line_start
         self.lineno = lineno
         self.colno = colno
         self.bytespan = bytespan
@@ -36,7 +63,8 @@ class Token:
         return self.tid == other.tid
 
 class Lexer:
-    def __init__(self):
+    def __init__(self, code):
+        self.code = code
         self.keywords = {'true', 'false', 'if', 'else', 'elif',
                          'endif', 'and', 'or', 'not', 'foreach', 'endforeach'}
         self.token_specification = [
@@ -47,7 +75,7 @@ class Lexer:
             ('eol_cont', re.compile(r'\\\n')),
             ('eol', re.compile(r'\n')),
             ('multiline_string', re.compile(r"'''(.|\n)*?'''", re.M)),
-            ('comment', re.compile(r'\#.*')),
+            ('comment', re.compile(r'#.*')),
             ('lparen', re.compile(r'\(')),
             ('rparen', re.compile(r'\)')),
             ('lbracket', re.compile(r'\[')),
@@ -60,11 +88,11 @@ class Lexer:
             ('plus', re.compile(r'\+')),
             ('dash', re.compile(r'-')),
             ('star', re.compile(r'\*')),
-            ('percent', re.compile(r'\%')),
+            ('percent', re.compile(r'%')),
             ('fslash', re.compile(r'/')),
             ('colon', re.compile(r':')),
             ('equal', re.compile(r'==')),
-            ('nequal', re.compile(r'\!=')),
+            ('nequal', re.compile(r'!=')),
             ('assign', re.compile(r'=')),
             ('le', re.compile(r'<=')),
             ('lt', re.compile(r'<')),
@@ -73,21 +101,25 @@ class Lexer:
             ('questionmark', re.compile(r'\?')),
         ]
 
-    def lex(self, code, subdir):
-        lineno = 1
+    def getline(self, line_start):
+        return self.code[line_start:self.code.find('\n', line_start)]
+
+    def lex(self, subdir):
         line_start = 0
-        loc = 0;
+        lineno = 1
+        loc = 0
         par_count = 0
         bracket_count = 0
         col = 0
-        while(loc < len(code)):
+        while loc < len(self.code):
             matched = False
             value = None
             for (tid, reg) in self.token_specification:
-                mo = reg.match(code, loc)
+                mo = reg.match(self.code, loc)
                 if mo:
                     curline = lineno
-                    col = mo.start()-line_start
+                    curline_start = line_start
+                    col = mo.start() - line_start
                     matched = True
                     span_start = loc
                     loc = mo.end()
@@ -105,10 +137,12 @@ class Lexer:
                     elif tid == 'rbracket':
                         bracket_count -= 1
                     elif tid == 'dblquote':
-                        raise ParseException('Double quotes are not supported. Use single quotes.', lineno, col)
+                        raise ParseException('Double quotes are not supported. Use single quotes.', self.getline(line_start), lineno, col)
                     elif tid == 'string':
-                        value = match_text[1:-1].replace(r"\'", "'").replace(r" \\ ".strip(), r" \ ".strip())\
-                        .replace("\\n", "\n")
+                        value = match_text[1:-1]\
+                            .replace(r"\'", "'")\
+                            .replace(r" \\ ".strip(), r" \ ".strip())\
+                            .replace("\\n", "\n")
                     elif tid == 'multiline_string':
                         tid = 'string'
                         value = match_text[3:-3]
@@ -128,10 +162,10 @@ class Lexer:
                             tid = match_text
                         else:
                             value = match_text
-                    yield Token(tid, subdir, curline, col, bytespan, value)
+                    yield Token(tid, subdir, curline_start, curline, col, bytespan, value)
                     break
             if not matched:
-                raise ParseException('lexer', lineno, col)
+                raise ParseException('lexer', self.getline(line_start), lineno, col)
 
 class ElementaryNode:
     def __init__(self, token):
@@ -176,10 +210,10 @@ class ArrayNode:
         self.args = args
 
 class EmptyNode:
-    def __init__(self):
-        self.subdir =''
-        self.lineno = 0
-        self.colno = 0
+    def __init__(self, lineno, colno):
+        self.subdir = ''
+        self.lineno = lineno
+        self.colno = colno
         self.value = None
 
 class OrNode:
@@ -191,9 +225,10 @@ class OrNode:
         self.right = right
 
 class AndNode:
-    def __init__(self, lineno, colno, left, right):
-        self.lineno = lineno
-        self.colno = colno
+    def __init__(self, left, right):
+        self.subdir = left.subdir
+        self.lineno = left.lineno
+        self.colno = left.colno
         self.left = left
         self.right = right
 
@@ -207,7 +242,7 @@ class ComparisonNode:
         self.ctype = ctype
 
 class ArithmeticNode:
-    def __init__(self,operation, left, right):
+    def __init__(self, operation, left, right):
         self.subdir = left.subdir
         self.lineno = left.lineno
         self.colno = left.colno
@@ -272,7 +307,7 @@ class PlusAssignmentNode:
         assert(isinstance(var_name, str))
         self.value = value
 
-class ForeachClauseNode():
+class ForeachClauseNode:
     def __init__(self, lineno, colno, varname, items, block):
         self.lineno = lineno
         self.colno = colno
@@ -280,28 +315,28 @@ class ForeachClauseNode():
         self.items = items
         self.block = block
 
-class IfClauseNode():
+class IfClauseNode:
     def __init__(self, lineno, colno):
         self.lineno = lineno
         self.colno = colno
         self.ifs = []
-        self.elseblock = EmptyNode()
+        self.elseblock = EmptyNode(lineno, colno)
 
-class UMinusNode():
+class UMinusNode:
     def __init__(self, current_location, value):
         self.subdir = current_location.subdir
         self.lineno = current_location.lineno
         self.colno = current_location.colno
         self.value = value
 
-class IfNode():
+class IfNode:
     def __init__(self, lineno, colno, condition, block):
         self.lineno = lineno
         self.colno = colno
         self.condition = condition
         self.block = block
 
-class TernaryNode():
+class TernaryNode:
     def __init__(self, lineno, colno, condition, trueblock, falseblock):
         self.lineno = lineno
         self.colno = colno
@@ -309,7 +344,7 @@ class TernaryNode():
         self.trueblock = trueblock
         self.falseblock = falseblock
 
-class ArgumentNode():
+class ArgumentNode:
     def __init__(self, token):
         self.lineno = token.lineno
         self.colno = token.colno
@@ -329,9 +364,11 @@ class ArgumentNode():
         if self.num_kwargs() > 0:
             self.order_error = True
         if not isinstance(statement, EmptyNode):
-            self.arguments = self.arguments + [statement]
+            self.arguments += [statement]
 
     def set_kwarg(self, name, value):
+        if name in self.kwargs:
+            mlog.warning('Keyword argument "%s" defined multiple times. This will be a an error in future Meson releases.' % name)
         self.kwargs[name] = value
 
     def num_args(self):
@@ -371,7 +408,9 @@ comparison_map = {'equal': '==',
 
 class Parser:
     def __init__(self, code, subdir):
-        self.stream = Lexer().lex(code, subdir)
+        self.lexer = Lexer(code)
+        self.stream = self.lexer.lex(subdir)
+        self.current = Token('eof', '', 0, 0, 0, (0, 0), None)
         self.getsym()
         self.in_ternary = False
 
@@ -379,7 +418,10 @@ class Parser:
         try:
             self.current = next(self.stream)
         except StopIteration:
-            self.current = Token('eof', '', 0, 0, (0, 0), None)
+            self.current = Token('eof', '', self.current.line_start, self.current.lineno, self.current.colno + self.current.bytespan[1] - self.current.bytespan[0], (0, 0), None)
+
+    def getline(self):
+        return self.lexer.getline(self.current.line_start)
 
     def accept(self, s):
         if self.current.tid == s:
@@ -390,7 +432,12 @@ class Parser:
     def expect(self, s):
         if self.accept(s):
             return True
-        raise ParseException('Expecting %s got %s.' % (s, self.current.tid), self.current.lineno, self.current.colno)
+        raise ParseException('Expecting %s got %s.' % (s, self.current.tid), self.getline(), self.current.lineno, self.current.colno)
+
+    def block_expect(self, s, block_start):
+        if self.accept(s):
+            return True
+        raise BlockParseException('Expecting %s got %s.' % (s, self.current.tid), self.getline(), self.current.lineno, self.current.colno, self.lexer.getline(block_start.line_start), block_start.lineno, block_start.colno)
 
     def parse(self):
         block = self.codeblock()
@@ -405,18 +452,18 @@ class Parser:
         if self.accept('plusassign'):
             value = self.e1()
             if not isinstance(left, IdNode):
-                raise ParseException('Plusassignment target must be an id.', left.lineno, left.colno)
+                raise ParseException('Plusassignment target must be an id.', self.getline(), left.lineno, left.colno)
             return PlusAssignmentNode(left.lineno, left.colno, left.value, value)
         elif self.accept('assign'):
             value = self.e1()
             if not isinstance(left, IdNode):
                 raise ParseException('Assignment target must be an id.',
-                                     left.lineno, left.colno)
+                                     self.getline(), left.lineno, left.colno)
             return AssignmentNode(left.lineno, left.colno, left.value, value)
         elif self.accept('questionmark'):
             if self.in_ternary:
                 raise ParseException('Nested ternary operators are not allowed.',
-                                     left.lineno, left.colno)
+                                     self.getline(), left.lineno, left.colno)
             self.in_ternary = True
             trueblock = self.e1()
             self.expect('colon')
@@ -428,13 +475,19 @@ class Parser:
     def e2(self):
         left = self.e3()
         while self.accept('or'):
+            if isinstance(left, EmptyNode):
+                raise ParseException('Invalid or clause.',
+                                     self.getline(), left.lineno, left.colno)
             left = OrNode(left, self.e3())
         return left
 
     def e3(self):
         left = self.e4()
         while self.accept('and'):
-            left = AndNode(left.lineno, left.colno, left, self.e4())
+            if isinstance(left, EmptyNode):
+                raise ParseException('Invalid and clause.',
+                                     self.getline(), left.lineno, left.colno)
+            left = AndNode(left, self.e4())
         return left
 
     def e4(self):
@@ -486,12 +539,13 @@ class Parser:
 
     def e7(self):
         left = self.e8()
+        block_start = self.current
         if self.accept('lparen'):
             args = self.args()
-            self.expect('rparen')
+            self.block_expect('rparen', block_start)
             if not isinstance(left, IdNode):
                 raise ParseException('Function call must be applied to plain id',
-                                     left.lineno, left.colno)
+                                     self.getline(), left.lineno, left.colno)
             left = FunctionNode(left.subdir, left.lineno, left.colno, left.value, args)
         go_again = True
         while go_again:
@@ -505,13 +559,14 @@ class Parser:
         return left
 
     def e8(self):
+        block_start = self.current
         if self.accept('lparen'):
             e = self.statement()
-            self.expect('rparen')
+            self.block_expect('rparen', block_start)
             return e
         elif self.accept('lbracket'):
             args = self.args()
-            self.expect('rbracket')
+            self.block_expect('rbracket', block_start)
             return ArrayNode(args)
         else:
             return self.e9()
@@ -519,7 +574,7 @@ class Parser:
     def e9(self):
         t = self.current
         if self.accept('true'):
-            return BooleanNode(t, True);
+            return BooleanNode(t, True)
         if self.accept('false'):
             return BooleanNode(t, False)
         if self.accept('id'):
@@ -528,7 +583,7 @@ class Parser:
             return NumberNode(t)
         if self.accept('string'):
             return StringNode(t)
-        return EmptyNode()
+        return EmptyNode(self.current.lineno, self.current.colno)
 
     def args(self):
         s = self.statement()
@@ -542,7 +597,7 @@ class Parser:
             elif self.accept('colon'):
                 if not isinstance(s, IdNode):
                     raise ParseException('Keyword argument must be a plain identifier.',
-                                         s.lineno, s.colno)
+                                         self.getline(), s.lineno, s.colno)
                 a.set_kwarg(s.value, self.statement())
                 potential = self.current
                 if not self.accept('comma'):
@@ -558,7 +613,7 @@ class Parser:
         methodname = self.e9()
         if not(isinstance(methodname, IdNode)):
             raise ParseException('Method name must be plain id',
-                                 self.current.lineno, self.current.colno)
+                                 self.getline(), self.current.lineno, self.current.colno)
         self.expect('lparen')
         args = self.args()
         self.expect('rparen')
@@ -584,6 +639,7 @@ class Parser:
     def ifblock(self):
         condition = self.statement()
         clause = IfClauseNode(condition.lineno, condition.colno)
+        self.expect('eol')
         block = self.codeblock()
         clause.ifs.append(IfNode(clause.lineno, clause.colno, condition, block))
         self.elseifblock(clause)
@@ -603,15 +659,16 @@ class Parser:
             return self.codeblock()
 
     def line(self):
+        block_start = self.current
         if self.current == 'eol':
-            return EmptyNode()
+            return EmptyNode(self.current.lineno, self.current.colno)
         if self.accept('if'):
             block = self.ifblock()
-            self.expect('endif')
+            self.block_expect('endif', block_start)
             return block
         if self.accept('foreach'):
             block = self.foreachblock()
-            self.expect('endforeach')
+            self.block_expect('endforeach', block_start)
             return block
         return self.statement()
 

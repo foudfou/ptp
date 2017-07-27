@@ -62,21 +62,29 @@ def ComboParser(name, description, kwargs):
             raise OptionException('Combo choice elements must be strings.')
     return coredata.UserComboOption(name, description, choices, kwargs.get('value', choices[0]))
 
-option_types = {'string' : StringParser,
-                'boolean' : BooleanParser,
-                'combo' : ComboParser,
-               }
+option_types = {'string': StringParser,
+                'boolean': BooleanParser,
+                'combo': ComboParser,
+                }
 
 class OptionInterpreter:
     def __init__(self, subproject, command_line_options):
         self.options = {}
         self.subproject = subproject
+        self.sbprefix = subproject + ':'
         self.cmd_line_options = {}
         for o in command_line_options:
+            if self.subproject != '': # Strip the beginning.
+                # Ignore options that aren't for this subproject
+                if not o.startswith(self.sbprefix):
+                    continue
             try:
                 (key, value) = o.split('=', 1)
             except ValueError:
                 raise OptionException('Option {!r} must have a value separated by equals sign.'.format(o))
+            # Ignore subproject options if not fetching subproject options
+            if self.subproject == '' and ':' in key:
+                continue
             self.cmd_line_options[key] = value
 
     def process(self, option_file):
@@ -121,7 +129,7 @@ class OptionInterpreter:
                 raise OptionException('Keyword argument name is not a string.')
             a = args.kwargs[key]
             reduced_kw[key] = self.reduce_single(a)
-        return (reduced_pos, reduced_kw)
+        return reduced_pos, reduced_kw
 
     def evaluate_statement(self, node):
         if not isinstance(node, mparser.FunctionNode):

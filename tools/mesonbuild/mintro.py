@@ -23,6 +23,7 @@ import json, pickle
 from . import coredata, build
 import argparse
 import sys, os
+import pathlib
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--targets', action='store_true', dest='list_targets', default=False,
@@ -40,10 +41,10 @@ parser.add_argument('--tests', action='store_true', dest='tests', default=False,
 parser.add_argument('--benchmarks', action='store_true', dest='benchmarks', default=False,
                     help='List all benchmarks.')
 parser.add_argument('--dependencies', action='store_true', dest='dependencies', default=False,
-                    help='list external dependencies.')
+                    help='List external dependencies.')
 parser.add_argument('--projectinfo', action='store_true', dest='projectinfo', default=False,
-                    help='information about projects.')
-parser.add_argument('args', nargs='+')
+                    help='Information about projects.')
+parser.add_argument('builddir', nargs='?', help='The build directory')
 
 def determine_installed_path(target, installdata):
     install_target = None
@@ -56,23 +57,29 @@ def determine_installed_path(target, installdata):
     fname = i[0]
     outdir = i[1]
     outname = os.path.join(installdata.prefix, outdir, os.path.split(fname)[-1])
-    return outname
+    # Normalize the path by using os.path.sep consistently, etc.
+    # Does not change the effective path.
+    return str(pathlib.PurePath(outname))
 
 
 def list_installed(installdata):
     res = {}
-    for path, installpath in installdata.data:
-        res[path] = os.path.join(installdata.prefix, installpath)
-
+    if installdata is not None:
+        for path, installdir, aliases, unknown1, unknown2 in installdata.targets:
+            res[os.path.join(installdata.build_dir, path)] = os.path.join(installdata.prefix, installdir, os.path.basename(path))
+        for path, installpath, unused_prefix in installdata.data:
+            res[path] = os.path.join(installdata.prefix, installpath)
+        for path, installdir in installdata.headers:
+            res[path] = os.path.join(installdata.prefix, installdir, os.path.basename(path))
+        for path, installpath in installdata.man:
+            res[path] = os.path.join(installdata.prefix, installpath)
     print(json.dumps(res))
 
 
 def list_targets(coredata, builddata, installdata):
     tlist = []
     for (idname, target) in builddata.get_targets().items():
-        t = {}
-        t['name'] = target.get_basename()
-        t['id'] = idname
+        t = {'name': target.get_basename(), 'id': idname}
         fname = target.get_filename()
         if isinstance(fname, list):
             fname = [os.path.join(target.subdir, x) for x in fname]
@@ -92,7 +99,7 @@ def list_targets(coredata, builddata, installdata):
         else:
             typename = 'unknown'
         t['type'] = typename
-        if target.should_install():
+        if installdata and target.should_install():
             t['installed'] = True
             t['install_filename'] = determine_installed_path(target, installdata)
         else:
@@ -111,23 +118,11 @@ def list_target_files(target_name, coredata, builddata):
     print(json.dumps(sources))
 
 def list_buildoptions(coredata, builddata):
-    buildtype= {'choices': ['plain', 'debug', 'debugoptimized', 'release', 'minsize'],
-                'type' : 'combo',
-                'value' : coredata.get_builtin_option('buildtype'),
-                'description' : 'Build type',
-                'name' : 'type'}
-    strip = {'value' : coredata.get_builtin_option('strip'),
-             'type' : 'boolean',
-             'description' : 'Strip on install',
-             'name' : 'strip'}
-    unity = {'value' : coredata.get_builtin_option('unity'),
-             'type' : 'boolean',
-             'description' : 'Unity build',
-             'name' : 'unity'}
-    optlist = [buildtype, strip, unity]
+    optlist = []
     add_keys(optlist, coredata.user_options)
     add_keys(optlist, coredata.compiler_options)
     add_keys(optlist, coredata.base_options)
+    add_keys(optlist, coredata.builtins)
     print(json.dumps(optlist))
 
 def add_keys(optlist, options):
@@ -135,9 +130,7 @@ def add_keys(optlist, options):
     keys.sort()
     for key in keys:
         opt = options[key]
-        optdict = {}
-        optdict['name'] = key
-        optdict['value'] = opt.value
+        optdict = {'name': key, 'value': opt.value}
         if isinstance(opt, coredata.UserStringOption):
             typestr = 'string'
         elif isinstance(opt, coredata.UserBooleanOption):
@@ -164,12 +157,12 @@ def list_buildsystem_files(coredata, builddata):
     print(json.dumps(filelist))
 
 def list_deps(coredata):
-    result = {}
+    result = []
     for d in coredata.deps.values():
         if d.found():
-            args = {'compile_args': d.get_compile_args(),
-                    'link_args': d.get_link_args()}
-            result[d.name] = args
+            result += [{'name': d.name,
+                        'compile_args': d.get_compile_args(),
+                        'link_args': d.get_link_args()}]
     print(json.dumps(result))
 
 def list_tests(testdata):
@@ -193,31 +186,32 @@ def list_tests(testdata):
     print(json.dumps(result))
 
 def list_projinfo(builddata):
-    result = {}
-    result['name'] = builddata.project_name
-    result['version'] = builddata.project_version
+    result = {'name': builddata.project_name, 'version': builddata.project_version}
     subprojects = []
     for k, v in builddata.subprojects.items():
-        c = {'name' : k,
-             'version' : v}
+        c = {'name': k,
+             'version': v}
         subprojects.append(c)
     result['subprojects'] = subprojects
     print(json.dumps(result))
 
 def run(args):
+    datadir = 'meson-private'
     options = parser.parse_args(args)
-    if len(options.args) > 1:
-        print('Too many arguments')
+    if options.builddir is not None:
+        datadir = os.path.join(options.builddir, datadir)
+    if not os.path.isdir(datadir):
+        print('Current directory is not a build dir. Please specify it or '
+              'change the working directory to it.')
         return 1
-    elif len(options.args) == 1:
-        bdir = options.args[0]
-    else:
-        bdir = ''
-    corefile = os.path.join(bdir, 'meson-private/coredata.dat')
-    buildfile = os.path.join(bdir, 'meson-private/build.dat')
-    installfile = os.path.join(bdir, 'meson-private/install.dat')
-    testfile = os.path.join(bdir, 'meson-private/meson_test_setup.dat')
-    benchmarkfile = os.path.join(bdir, 'meson-private/meson_benchmark_setup.dat')
+
+    corefile = os.path.join(datadir, 'coredata.dat')
+    buildfile = os.path.join(datadir, 'build.dat')
+    installfile = os.path.join(datadir, 'install.dat')
+    testfile = os.path.join(datadir, 'meson_test_setup.dat')
+    benchmarkfile = os.path.join(datadir, 'meson_benchmark_setup.dat')
+
+    # Load all data files
     with open(corefile, 'rb') as f:
         coredata = pickle.load(f)
     with open(buildfile, 'rb') as f:
@@ -226,8 +220,13 @@ def run(args):
         testdata = pickle.load(f)
     with open(benchmarkfile, 'rb') as f:
         benchmarkdata = pickle.load(f)
-    with open(installfile, 'rb') as f:
-        installdata = pickle.load(f)
+    # Install data is only available with the Ninja backend
+    if os.path.isfile(installfile):
+        with open(installfile, 'rb') as f:
+            installdata = pickle.load(f)
+    else:
+        installdata = None
+
     if options.list_targets:
         list_targets(coredata, builddata, installdata)
     elif options.list_installed:
