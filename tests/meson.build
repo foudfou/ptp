@@ -10,9 +10,9 @@ tests_lib = [
     ['aatree', 'aatree.c'],
     ['lookup', 'lookup.c'],
     ['u64', 'u64.c'],
-    ['kad/bencode', 'kad/bencode.c'],
-    ['kad/dht', 'kad/dht.c'],
-    ['kad/rpc', 'kad/rpc.c'],
+    ['kad_bencode', 'kad/bencode.c'],
+    ['kad_dht', 'kad/dht.c'],
+    ['kad_rpc', 'kad/rpc.c'],
 ]
 
 foreach t : tests_lib
