@@ -2,25 +2,26 @@
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 tests_lib = [
-    ['bits', 'bits.c'],
-    ['list', 'list.c'],
-    ['hash', 'hash.c'],
-    ['bstree', 'bstree.c'],
-    ['rbtree', 'rbtree.c'],
-    ['aatree', 'aatree.c'],
-    ['lookup', 'lookup.c'],
-    ['u64', 'u64.c'],
-    ['kad_bencode', 'kad/bencode.c'],
-    ['kad_dht', 'kad/dht.c'],
-    ['kad_rpc', 'kad/rpc.c'],
+    'bits.c',
+    'list.c',
+    'hash.c',
+    'bstree.c',
+    'rbtree.c',
+    'aatree.c',
+    'lookup.c',
+    'u64.c',
+    'kad/bencode.c',
+    'kad/dht.c',
+    'kad/rpc.c',
 ]
 
-foreach t : tests_lib
-  exe = executable(t.get(0), t.get(1),
+foreach fname : tests_lib
+  test_name = fname.split('.').get(0).underscorify()
+  exe = executable(test_name, fname,
                    include_directories : inc,
                    # propagated for inclusion of .c files in tests.
                    c_args : lib_cargs,
                    link_with : lib_exe,
   )
-  test(t.get(0), exe)
+  test(fname, exe)
 endforeach
