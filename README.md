@@ -14,7 +14,8 @@ You need [ninja](https://ninja-build.org/) installed first.
 
     mkdir build
     cd build
-    ../tools/meson.py ..
+    ../tools/meson.py
+    #../tools/mesonconf.py -Db_coverage=true -Db_sanitize=address
     ninja
 
 Clang may wrongly [complain for missing field initializers](https://llvm.org/bugs/show_bug.cgi?id=21689).
