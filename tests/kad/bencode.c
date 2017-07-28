@@ -8,6 +8,8 @@
 
 int main ()
 {
+    // Basic parsing
+
     char buf[BENC_PARSER_BUF_MAX] = "i-300e";
     size_t slen = strlen(buf);
     struct benc_parser parser;
@@ -57,6 +59,9 @@ int main ()
 
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
 
+
+    // Message decoding
+
     struct kad_rpc_msg msg = {0};
 
     // fail: incomplete
@@ -80,31 +85,61 @@ int main ()
     slen = strlen(buf);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
+    assert(msg.tx_id[0] == 'a' && msg.tx_id[1] == 'a');
+    assert(msg.type == KAD_RPC_TYPE_ERROR);
+    assert(msg.err_code == 201);
+    assert(strcmp(msg.err_msg, "A Generic Error Ocurred") == 0);
 
     strcpy(buf, KAD_TEST_PING_QUERY);
     slen = strlen(buf);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
+    assert(msg.tx_id[0] == 'a' && msg.tx_id[1] == 'a');
+    assert(msg.type == KAD_RPC_TYPE_QUERY);
+    assert(msg.meth == KAD_RPC_METH_PING);
+    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "abcdefghij0123456789"}));
 
     strcpy(buf, KAD_TEST_PING_RESPONSE);
     slen = strlen(buf);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
+    assert(msg.tx_id[0] == 'a' && msg.tx_id[1] == 'a');
+    assert(msg.type == KAD_RPC_TYPE_RESPONSE);
+    assert(msg.meth == KAD_RPC_METH_NONE);
+    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "mnopqrstuvwxyz123456"}));
 
     strcpy(buf, KAD_TEST_FIND_NODE_QUERY);
     slen = strlen(buf);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
+    assert(msg.tx_id[0] == 'a' && msg.tx_id[1] == 'a');
+    assert(msg.type == KAD_RPC_TYPE_QUERY);
+    assert(msg.meth == KAD_RPC_METH_FIND_NODE);
+    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "abcdefghij0123456789"}));
+    assert(kad_guid_eq(&msg.target, &(kad_guid){.b = "mnopqrstuvwxyz123456"}));
 
     strcpy(buf, KAD_TEST_FIND_NODE_RESPONSE);
     slen = strlen(buf);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, slen));
+    assert(msg.tx_id[0] == 'a' && msg.tx_id[1] == 'a');
+    assert(msg.type == KAD_RPC_TYPE_RESPONSE);
+    assert(msg.meth == KAD_RPC_METH_NONE);
+    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "0123456789abcdefghij"}));
+    assert(msg.nodes_len == 2);
+    assert(strcmp(msg.nodes[0].host, "192.168.168.1") == 0);
+    assert(strcmp(msg.nodes[0].service, "12120") == 0);
+    assert(kad_guid_eq(&msg.nodes[1].id, &(kad_guid){.b = "mnopqrstuvwxyz123456"}));
+    assert(strcmp(msg.nodes[1].host, "192.168.168.2") == 0);
+    assert(strcmp(msg.nodes[1].service, "12121") == 0);
 
     strcpy(buf, KAD_TEST_FIND_NODE_RESPONSE_BOGUS);
     slen = strlen(buf);
     memset(&msg, 0, sizeof(msg));
     assert(!benc_decode(&msg, buf, slen));
+
+
+    iobuf_reset(&msgbuf);
 
     log_shutdown(LOG_TYPE_STDOUT);
 

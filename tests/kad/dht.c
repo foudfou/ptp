@@ -23,6 +23,16 @@ int main ()
         &(kad_guid){.b = {[0]=0x7f, [1]=0x0}});
     assert(bkt_idx == KAD_GUID_SPACE_IN_BITS-1);
 
+    assert(!kad_guid_eq(
+        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
+        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}}));
+    assert(!kad_guid_eq(
+        &(kad_guid){.b = "abcdefghij0123456789"},
+        &(kad_guid){.b = "\x00""bcdefghij0123456789"}));
+    assert(kad_guid_eq(
+        &(kad_guid){.b = "\x00""bcdefghij0123456789"},
+        &(kad_guid){.b = "\x00""bcdefghij0123456789"}));
+
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_dht *dht = dht_init();
 
