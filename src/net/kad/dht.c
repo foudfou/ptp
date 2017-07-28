@@ -176,7 +176,7 @@ bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info)
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->info.id);
     struct list_item *bucket = &dht->buckets[bkt_idx];
     size_t count = kad_bucket_count(bucket);
-    if (count <= KAD_K_CONST) {
+    if (count < KAD_K_CONST) {
         list_append(&dht->buckets[bkt_idx], &node->item);
         log_debug("DHT insert into bucket %zu.",bkt_idx);
     }
