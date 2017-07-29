@@ -513,3 +513,86 @@ bool benc_decode(struct kad_rpc_msg *msg, const char buf[], const size_t slen)
 
     return ret;
 }
+
+bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
+{
+    char tmp_str[2048];
+
+    /* we avoid the burden of looking up into kad_rpc_msg_field_names just for single chars. */
+    sprintf(tmp_str, "d1:t%d:%.*s", KAD_RPC_MSG_TX_ID_LEN,
+            KAD_RPC_MSG_TX_ID_LEN, (char*)msg->tx_id);
+    iobuf_append(buf, tmp_str, strlen(tmp_str)); // tx
+    iobuf_append(buf, "1:y1:", 5); // type
+    iobuf_append(buf, lookup_by_id(kad_rpc_type_names, msg->type), 1);
+
+    if (msg->type == KAD_RPC_TYPE_ERROR) {
+        sprintf(tmp_str, "1:eli%llue%zu:%se", msg->err_code,
+                strlen(msg->err_msg), msg->err_msg);
+        iobuf_append(buf, tmp_str, strlen(tmp_str));
+    }
+    else {
+
+        if (msg->type == KAD_RPC_TYPE_QUERY) {
+            const char * meth_name = lookup_by_id(kad_rpc_meth_names, msg->meth);
+            sprintf(tmp_str, "1:q%zu:%s", strlen(meth_name), meth_name);
+            iobuf_append(buf, tmp_str, strlen(tmp_str));
+
+            if (msg->meth == KAD_RPC_METH_PING) {
+                iobuf_append(buf, "1:ad2:id", 8);
+            }
+            else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
+                const char *field_target = lookup_by_id(
+                    kad_rpc_msg_field_names, KAD_RPC_MSG_FIELD_TARGET);
+                sprintf(tmp_str, "1:ad%zu:%s%d:%.*s2:id",
+                        strlen(field_target), field_target,
+                        KAD_GUID_SPACE_IN_BYTES, KAD_GUID_SPACE_IN_BYTES,
+                        (char*)msg->target.b);
+                iobuf_append(buf, tmp_str, strlen(tmp_str)); // target
+            }
+            else {
+                log_error("Unsupported msg method while encoding.");
+                return false;
+            }
+
+        }
+        else if (msg->type == KAD_RPC_TYPE_RESPONSE) {
+
+            if (msg->meth == KAD_RPC_METH_PING) {
+                iobuf_append(buf, "1:rd2:id", 8);
+            }
+            else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
+                const char *field_nodes = lookup_by_id(
+                    kad_rpc_msg_field_names, KAD_RPC_MSG_FIELD_NODES_ID);
+                sprintf(tmp_str, "1:rd%zu:%sl", strlen(field_nodes), field_nodes);
+                iobuf_append(buf, tmp_str, strlen(tmp_str));
+                for (size_t i = 0; i < msg->nodes_len; i++) {
+                    sprintf(tmp_str, "%d:%.*s%zu:%s%zu:%s",
+                            KAD_GUID_SPACE_IN_BYTES, KAD_GUID_SPACE_IN_BYTES,
+                            (char*)msg->nodes[i].id.b,
+                            strlen(msg->nodes[i].host), msg->nodes[i].host,
+                            strlen(msg->nodes[i].service), msg->nodes[i].service);
+                    iobuf_append(buf, tmp_str, strlen(tmp_str)); // nodes
+                }
+                iobuf_append(buf, "e2:id", 5);
+            }
+            else {
+                log_error("Unsupported msg method while encoding.");
+                return false;
+            }
+
+        }
+        else {
+            log_error("Unsupported msg type while encoding.");
+            return false;
+        }
+
+        sprintf(tmp_str, "%d:%.*s", KAD_GUID_SPACE_IN_BYTES,
+                KAD_GUID_SPACE_IN_BYTES, (char*)msg->node_id.b);
+        iobuf_append(buf, tmp_str, strlen(tmp_str)); // node_id
+
+        iobuf_append(buf, "e", 1);
+    }
+
+    iobuf_append(buf, "e", 1);
+    return true;
+}
