@@ -148,7 +148,7 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
     if (!benc_decode(&msg, buf, slen) || !kad_rpc_msg_validate(&msg)) {
         log_error("Invalid message received.");
         struct kad_rpc_msg rspmsg = {0};
-        if (rspmsg.tx_id)  // just consider 0x0 as a reserved value
+        if (msg.tx_id)  // just consider 0x0 as a reserved value
             memcpy(&rspmsg.tx_id, &msg.tx_id, KAD_RPC_MSG_TX_ID_LEN);
         else
             kad_rpc_generate_tx_id(rspmsg.tx_id); // TODO: track this tx ?
