@@ -12,6 +12,10 @@
 #define KAD_TEST_PING_RESPONSE "d1:rd2:id20:mnopqrstuvwxyz123456e1:t2:aa" \
     "1:y1:re"
 
+#define KAD_TEST_PING_RESPONSE_BIN_ID "d1:t2:aa1:y1:r1:rd2:id20:\x17\x45" \
+    "\xc4\xed\xca\x16\x33\xf0\x51\x8e\x1f\x36\x0a\xc7\xe1\xad\x27\x41" \
+    "\x86\x33""ee"
+
 // {"t":"aa", "y":"q", "q":"find_node", "a": {"id":"abcdefghij0123456789", "target":"mnopqrstuvwxyz123456"}}
 #define KAD_TEST_FIND_NODE_QUERY "d1:ad2:id20:abcdefghij01234567896:target" \
     "20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe"

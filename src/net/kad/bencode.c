@@ -514,6 +514,9 @@ bool benc_decode(struct kad_rpc_msg *msg, const char buf[], const size_t slen)
     return ret;
 }
 
+/**
+ * Straight-forward serialization. NO VALIDATION is performed.
+ */
 bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
 {
     char tmp_str[2048];

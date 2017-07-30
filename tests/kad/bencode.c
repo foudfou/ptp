@@ -126,6 +126,13 @@ int main ()
     assert(msg.meth == KAD_RPC_METH_NONE);
     assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "mnopqrstuvwxyz123456"}));
 
+    strcpy(buf, KAD_TEST_PING_RESPONSE_BIN_ID);
+    memset(&msg, 0, sizeof(msg));
+    assert(benc_decode(&msg, buf, strlen(buf)));
+    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "\x17\x45\xc4\xed" \
+                    "\xca\x16\x33\xf0\x51\x8e\x1f\x36\x0a\xc7\xe1\xad" \
+                    "\x27\x41\x86\x33"}));
+
     strcpy(buf, KAD_TEST_FIND_NODE_QUERY);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, strlen(buf)));
