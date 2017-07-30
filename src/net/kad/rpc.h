@@ -7,6 +7,7 @@
  */
 
 #include <stdbool.h>
+#include "net/iobuf.h"
 #include "net/kad/dht.h"
 #include "utils/list.h"
 #include "utils/lookup.h"
@@ -64,6 +65,23 @@ static const lookup_entry kad_rpc_msg_field_names[] = {
     { 0,                          NULL },
 };
 
+enum kad_rpc_err {
+    KAD_RPC_ERR_NONE,
+    KAD_RPC_ERR_GENERIC      = 201,
+    KAD_RPC_ERR_SERVER       = 202,
+    KAD_RPC_ERR_PROTOCOL     = 203, // « such as a malformed packet, invalid
+                                    // arguments, or bad token »
+    KAD_RPC_ERR_METH_UNKNOWN = 204,
+};
+
+static const lookup_entry kad_rpc_err_names[] = {
+    { KAD_RPC_ERR_GENERIC,      "Generic Error" },
+    { KAD_RPC_ERR_SERVER,       "Server Error" },
+    { KAD_RPC_ERR_PROTOCOL,     "Protocol Error" },
+    { KAD_RPC_ERR_METH_UNKNOWN, "Method Unknown" },
+    { 0,                        NULL },
+};
+
 /**
  * Naive flattened dictionary for all possible messages.
  *
@@ -109,8 +127,8 @@ struct kad_ctx {
 bool kad_rpc_init(struct kad_ctx *ctx);
 void kad_rpc_terminate(struct kad_ctx *ctx);
 
-bool kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
-                    const char buf[], const size_t slen);
+int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
+                   const char buf[], const size_t slen, struct iobuf *rsp);
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg);
 
 #endif /* KAD_RPC_H */

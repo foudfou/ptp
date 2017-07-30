@@ -53,29 +53,10 @@ kad_rpc_query_find(struct kad_ctx *ctx, const unsigned char tx_id[])
     return m;
 }
 
-/**
- * Returns 0 on success, -1 on failure, 1 if further ping confirmation is
- * needed, in which case @ping is set.
- */
-bool kad_rpc_handle(struct kad_ctx *ctx,
-                    const char host[], const char service[],
-                    const char buf[], const size_t slen)
+static void
+kad_rpc_update_dht(struct kad_ctx *ctx, const char host[], const char service[],
+                   const struct kad_rpc_msg *msg)
 {
-    struct kad_rpc_msg *msg = malloc(sizeof(struct kad_rpc_msg));
-    if (!msg) {
-        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-        return false;
-    }
-    memset(msg, 0, sizeof(*msg));
-    list_init(&(msg->item));
-
-    if (!benc_decode(msg, buf, slen) ||
-        !kad_rpc_msg_validate(msg)) {
-        log_error("Invalid message.");
-        goto fail;
-    }
-    kad_rpc_msg_log(msg);
-
     char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.b, KAD_GUID_SPACE_IN_BYTES);
     struct kad_node_info info = {0};
     info.id = msg->node_id;
@@ -93,38 +74,138 @@ bool kad_rpc_handle(struct kad_ctx *ctx,
     else
         log_warning("Failed to update kad_node (id=%s)", id);
     free_safer(id);
+}
 
-    switch (msg->type) {
-    case KAD_RPC_TYPE_NONE: {
-        log_error("Got msg none");
-        goto fail;
+static bool kad_rpc_handle_error(const struct kad_rpc_msg *msg)
+{
+    log_error("Received error message (%zull) from id(TODO:): %s.",
+              msg->err_code, msg->err_msg);
+    return true;
+}
+
+static bool
+kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
+                     struct iobuf *rsp)
+{
+    switch (msg->meth) {
+    case KAD_RPC_METH_NONE: {
+        log_error("Got query for method none.");
+        return false;
     }
 
-    case KAD_RPC_TYPE_QUERY: {  /* We'll respond immediately */
-        log_debug("Got msg query");
-        break;
-    }
-
-    case KAD_RPC_TYPE_RESPONSE: {
-        log_debug("Got msg response");
-        struct kad_rpc_msg *query = kad_rpc_query_find(ctx, msg->tx_id);
-        if (!query)
-            goto fail;
-
-        list_delete(&query->item);
-        free_safer(query);
-        break;
+    case KAD_RPC_METH_PING: {
+        struct kad_rpc_msg resp = {0};
+        memcpy(&resp.tx_id, &msg->tx_id, KAD_RPC_MSG_TX_ID_LEN);
+        resp.node_id = ctx->dht->self_id;
+        resp.type = KAD_RPC_TYPE_RESPONSE;
+        resp.meth = KAD_RPC_METH_PING;
+        if (!benc_encode(&resp, rsp)) {
+            log_error("Error while encoding ping response.");
+            return false;
+        }
     }
 
     default:
         break;
     }
-
-    free_safer(msg);
     return true;
-  fail:
+}
+
+static bool
+kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
+{
+    struct kad_rpc_msg *query = kad_rpc_query_find(ctx, msg->tx_id);
+    if (!query) {
+        log_error("Query for response id(TODO:) not found.");
+        return false;
+    }
+
+    list_delete(&query->item);
+    free_safer(query);
+    return true;
+}
+
+static void kad_rpc_generate_tx_id(unsigned char tx_id[])
+{
+    for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; i++)
+        tx_id[i] = (unsigned char)random();
+}
+
+/**
+ * Processes the incoming message in `buf` and places the response, if any,
+ * into the provided `rsp` buffer.
+ *
+ * Returns 0 on success, -1 on failure, 1 if a response is ready.
+ */
+int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
+                   const char buf[], const size_t slen, struct iobuf *rsp)
+{
+    int ret = 0;
+
+    struct kad_rpc_msg *msg = malloc(sizeof(struct kad_rpc_msg));
+    if (!msg) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        return -1;
+    }
+    memset(msg, 0, sizeof(*msg));
+    list_init(&(msg->item));
+
+    if (!benc_decode(msg, buf, slen) || !kad_rpc_msg_validate(msg)) {
+        log_error("Invalid message.");
+        struct kad_rpc_msg rspmsg = {0};
+        if (rspmsg.tx_id)  // just consider 0x0 as a reserved value
+            memcpy(&rspmsg.tx_id, &msg->tx_id, KAD_RPC_MSG_TX_ID_LEN);
+        else
+            kad_rpc_generate_tx_id(rspmsg.tx_id); // TODO: track this tx ?
+        rspmsg.node_id = ctx->dht->self_id;
+        rspmsg.type = KAD_RPC_TYPE_ERROR;
+        rspmsg.err_code = KAD_RPC_ERR_PROTOCOL;
+        strcpy(rspmsg.err_msg, lookup_by_id(kad_rpc_err_names,
+                                            KAD_RPC_ERR_PROTOCOL));
+        if (!benc_encode(&rspmsg, rsp)) {
+            log_error("Error while encoding error response.");
+            ret = -1;
+        }
+        else
+            ret = 1;
+        goto end;
+    }
+    kad_rpc_msg_log(msg); // TESTING
+
+    kad_rpc_update_dht(ctx, host, service, msg);
+
+    switch (msg->type) {
+    case KAD_RPC_TYPE_NONE: {
+        log_error("Got msg of type none.");
+        ret = -1;
+        break;
+    }
+
+    case KAD_RPC_TYPE_ERROR: {
+        if (!kad_rpc_handle_error(msg))
+            ret = -1;
+        break;
+    }
+
+    case KAD_RPC_TYPE_QUERY: {  /* We'll respond immediately */
+        ret = kad_rpc_handle_query(ctx, msg, rsp) ? 1 : -1;
+        break;
+    }
+
+    case KAD_RPC_TYPE_RESPONSE: {
+        if (!kad_rpc_handle_response(ctx, msg))
+            ret = -1;
+        break;
+    }
+
+    default:
+        log_error("Unknown msg type.");
+        break;
+    }
+
+  end:
     free_safer(msg);
-    return false;
+    return ret;
 }
 
 /**

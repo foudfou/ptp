@@ -8,8 +8,6 @@
 #define IOBUF_SIZE_INITIAL 512
 #define IOBUF_SIZE_FACTOR  2
 
-/* TODO: this is probably the skeleton of a de-/serialization framework. See
-   http://stackoverflow.com/a/6002598/421846 */
 struct iobuf {
     char     *buf;
     size_t    pos;

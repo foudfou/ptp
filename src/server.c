@@ -425,7 +425,25 @@ static bool node_handle_data(int sock, struct kad_ctx *kctx)
         return false;
     }
 
-    kad_rpc_handle(kctx, host, service, buf, (size_t)slen);
+    struct iobuf rsp = {0};
+    int has_resp = kad_rpc_handle(kctx, host, service, buf, (size_t)slen, &rsp);
+    if (has_resp > 0) {
+        if (rsp.pos <= SERVER_UDP_BUFLEN) {
+            slen = sendto(sock, rsp.buf, rsp.pos, 0,
+                          (struct sockaddr *)&node_addr, node_addr_len);
+            if (slen < 0) {
+                if (errno != EWOULDBLOCK) {
+                    log_perror(LOG_ERR, "Failed sendto: %s", errno);
+                    return false;
+                }
+                goto end;
+            }
+            log_debug("Sent %d bytes.", slen);
+        }
+        else
+            log_error("Response too long.");
+    }
+    iobuf_reset(&rsp);
 
   end:
     return true;

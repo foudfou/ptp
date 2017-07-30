@@ -1,3 +1,4 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #ifndef DHT_H
 #define DHT_H
 
@@ -15,8 +16,8 @@
 #include "utils/safer.h"
 
 #define KAD_GUID_SPACE_IN_BYTES 20
-#define KAD_GUID_SPACE_IN_BITS      8*KAD_GUID_SPACE_IN_BYTES
-#define KAD_K_CONST         8
+#define KAD_GUID_SPACE_IN_BITS  8*KAD_GUID_SPACE_IN_BYTES
+#define KAD_K_CONST             8
 
 #define list_free_all(itemp, type, field)                               \
     while (!list_is_empty(itemp)) {                                     \
@@ -47,10 +48,11 @@ struct kad_node {
 struct kad_dht {
     kad_guid         self_id;
     /* The routing table is implemented as hash table: an array of lists
-       (buckets) of at most KAD_K_CONST. Instead of using a generic hash table
-       implementation, we build a specialized one for specific operations on
-       each list. Lists are sorted by construction: either we append new nodes
-       at the end, or we update nodes and move them to the end. */
+       (buckets) of at most KAD_K_CONST node entries. Instead of using a
+       generic hash table implementation, we build a specialized one for
+       specific operations on each list. Lists are sorted by construction:
+       either we append new nodes at the end, or we update nodes and move them
+       to the end. */
     struct list_item buckets[KAD_GUID_SPACE_IN_BITS]; // kad_node list
     /* « To reduce traffic, Kademlia delays probing contacts until it has
        useful messages to send them. When a Kademlia node receives an RPC from

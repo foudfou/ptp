@@ -32,8 +32,8 @@ struct kad_dht *dht_init()
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return NULL;
     }
-    /* Although the node_id should be assigned by the network, it seems a
-       common practice to have peers generate a random id themselves. */
+    /* « Node IDs are currently just random 160-bit identifiers, though they
+       could equally well be constructed as in Chord. » */
     kad_generate_id(&dht->self_id);
     char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.b, KAD_GUID_SPACE_IN_BYTES);
     log_debug("node_id=%s", id);
@@ -57,24 +57,16 @@ void dht_terminate(struct kad_dht * dht)
     free_safer(dht);
 }
 
-static inline size_t kad_bucket_count(const struct list_item *bucket)
-{
-    size_t count = 0;
-    const struct list_item *it = bucket;
-    list_for(it, bucket)
-        count++;
-    return count;
-}
-
-/* [Kademlia] For each 0 ≤ i < 160, every node keeps a list of (IP address, UDP
-port, Node ID) triples for nodes of distance between 2^i and 2^i+1 from itself,
-sorted by time last seen (least-recently seen node at the head). We call these
-lists k-buckets. Ex: In a 4 bits space, for node 0 and k=3,
-bucket 0 has nodes of distance 1..2
-bucket 1 has nodes of distance 2..4
-bucket 2 has nodes of distance 4..8
-bucket 3 has nodes of distance 8..16
-Each bucket will hold up to k active nodes. */
+/* « [Kademlia] For each 0 ≤ i < 160, every node keeps a list of (IP address,
+   UDP port, Node ID) triples for nodes of distance between 2^i and 2^i+1 from
+   itself, sorted by time last seen (least-recently seen node at the head). We
+   call these lists k-buckets. » Ex: In a 4 bits space, for node 0 and k=3,
+   bucket 0 has nodes of distance 0..2  = node  0001
+   bucket 1 has nodes of distance 2..4  = nodes 001x
+   bucket 2 has nodes of distance 4..8  = nodes 01xx
+   bucket 3 has nodes of distance 8..16 = nodes 1xxx
+   Each bucket will hold up to k active nodes.
+*/
 static inline size_t kad_bucket_hash(const kad_guid *self_id,
                                      const kad_guid *peer_id)
 {
@@ -91,6 +83,15 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
     }
   guid_end:
     return bucket_idx;
+}
+
+static inline size_t kad_bucket_count(const struct list_item *bucket)
+{
+    size_t count = 0;
+    const struct list_item *it = bucket;
+    list_for(it, bucket)
+        count++;
+    return count;
 }
 
 static inline struct kad_node*
