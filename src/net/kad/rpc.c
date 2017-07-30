@@ -142,19 +142,14 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
 {
     int ret = 0;
 
-    struct kad_rpc_msg *msg = malloc(sizeof(struct kad_rpc_msg));
-    if (!msg) {
-        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-        return -1;
-    }
-    memset(msg, 0, sizeof(*msg));
-    list_init(&(msg->item));
+    struct kad_rpc_msg msg = {0};
+    list_init(&(msg.item));
 
-    if (!benc_decode(msg, buf, slen) || !kad_rpc_msg_validate(msg)) {
-        log_error("Invalid message.");
+    if (!benc_decode(&msg, buf, slen) || !kad_rpc_msg_validate(&msg)) {
+        log_error("Invalid message received.");
         struct kad_rpc_msg rspmsg = {0};
         if (rspmsg.tx_id)  // just consider 0x0 as a reserved value
-            memcpy(&rspmsg.tx_id, &msg->tx_id, KAD_RPC_MSG_TX_ID_LEN);
+            memcpy(&rspmsg.tx_id, &msg.tx_id, KAD_RPC_MSG_TX_ID_LEN);
         else
             kad_rpc_generate_tx_id(rspmsg.tx_id); // TODO: track this tx ?
         rspmsg.node_id = ctx->dht->self_id;
@@ -170,11 +165,11 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
             ret = 1;
         goto end;
     }
-    kad_rpc_msg_log(msg); // TESTING
+    kad_rpc_msg_log(&msg); // TESTING
 
-    kad_rpc_update_dht(ctx, host, service, msg);
+    kad_rpc_update_dht(ctx, host, service, &msg);
 
-    switch (msg->type) {
+    switch (msg.type) {
     case KAD_RPC_TYPE_NONE: {
         log_error("Got msg of type none.");
         ret = -1;
@@ -182,18 +177,18 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
     }
 
     case KAD_RPC_TYPE_ERROR: {
-        if (!kad_rpc_handle_error(msg))
+        if (!kad_rpc_handle_error(&msg))
             ret = -1;
         break;
     }
 
     case KAD_RPC_TYPE_QUERY: {  /* We'll respond immediately */
-        ret = kad_rpc_handle_query(ctx, msg, rsp) ? 1 : -1;
+        ret = kad_rpc_handle_query(ctx, &msg, rsp) ? 1 : -1;
         break;
     }
 
     case KAD_RPC_TYPE_RESPONSE: {
-        if (!kad_rpc_handle_response(ctx, msg))
+        if (!kad_rpc_handle_response(ctx, &msg))
             ret = -1;
         break;
     }
@@ -204,7 +199,6 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
     }
 
   end:
-    free_safer(msg);
     return ret;
 }
 
