@@ -1,7 +1,7 @@
 # -*- mode: python -*-
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
-tests_lib = [
+tests_sources = [
     'bits.c',
     'list.c',
     'hash.c',
@@ -15,7 +15,7 @@ tests_lib = [
     'kad/rpc.c',
 ]
 
-foreach fname : tests_lib
+foreach fname : tests_sources
   test_name = fname.split('.').get(0).underscorify()
   exe = executable(test_name, fname,
                    include_directories : inc,
@@ -25,3 +25,5 @@ foreach fname : tests_lib
   )
   test(fname, exe)
 endforeach
+
+subdir('integration')
