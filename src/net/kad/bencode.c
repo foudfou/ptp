@@ -519,26 +519,29 @@ bool benc_decode(struct kad_rpc_msg *msg, const char buf[], const size_t slen)
  */
 bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
 {
-    char tmp_str[2048];
+    char tmps[2048];
+    size_t tmps_len = 0;
 
     /* we avoid the burden of looking up into kad_rpc_msg_field_names just for single chars. */
-    sprintf(tmp_str, "d1:t%d:%.*s", KAD_RPC_MSG_TX_ID_LEN,
-            KAD_RPC_MSG_TX_ID_LEN, (char*)msg->tx_id);
-    iobuf_append(buf, tmp_str, strlen(tmp_str)); // tx
+    sprintf(tmps, "d1:t%d:", KAD_RPC_MSG_TX_ID_LEN);
+    tmps_len += strlen(tmps);
+    memcpy(tmps + tmps_len, (char*)msg->tx_id, KAD_RPC_MSG_TX_ID_LEN);
+    tmps_len += KAD_RPC_MSG_TX_ID_LEN;
+    iobuf_append(buf, tmps, tmps_len); // tx
     iobuf_append(buf, "1:y1:", 5); // type
     iobuf_append(buf, lookup_by_id(kad_rpc_type_names, msg->type), 1);
 
     if (msg->type == KAD_RPC_TYPE_ERROR) {
-        sprintf(tmp_str, "1:eli%llue%zu:%se", msg->err_code,
+        sprintf(tmps, "1:eli%llue%zu:%se", msg->err_code,
                 strlen(msg->err_msg), msg->err_msg);
-        iobuf_append(buf, tmp_str, strlen(tmp_str));
+        iobuf_append(buf, tmps, strlen(tmps));
     }
     else {
 
         if (msg->type == KAD_RPC_TYPE_QUERY) {
             const char * meth_name = lookup_by_id(kad_rpc_meth_names, msg->meth);
-            sprintf(tmp_str, "1:q%zu:%s", strlen(meth_name), meth_name);
-            iobuf_append(buf, tmp_str, strlen(tmp_str));
+            sprintf(tmps, "1:q%zu:%s", strlen(meth_name), meth_name);
+            iobuf_append(buf, tmps, strlen(tmps));
 
             if (msg->meth == KAD_RPC_METH_PING) {
                 iobuf_append(buf, "1:ad2:id", 8);
@@ -546,11 +549,15 @@ bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
             else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
                 const char *field_target = lookup_by_id(
                     kad_rpc_msg_field_names, KAD_RPC_MSG_FIELD_TARGET);
-                sprintf(tmp_str, "1:ad%zu:%s%d:%.*s2:id",
-                        strlen(field_target), field_target,
-                        KAD_GUID_SPACE_IN_BYTES, KAD_GUID_SPACE_IN_BYTES,
-                        (char*)msg->target.b);
-                iobuf_append(buf, tmp_str, strlen(tmp_str)); // target
+                sprintf(tmps, "1:ad%zu:%s%d:", strlen(field_target),
+                        field_target, KAD_GUID_SPACE_IN_BYTES);
+                tmps_len = strlen(tmps);
+                memcpy(tmps + tmps_len, (char*)msg->target.b,
+                       KAD_GUID_SPACE_IN_BYTES);
+                tmps_len += KAD_GUID_SPACE_IN_BYTES;
+                memcpy(tmps + tmps_len, "2:id", 4);
+                tmps_len += 4;
+                iobuf_append(buf, tmps, tmps_len); // target
             }
             else {
                 log_error("Unsupported msg method while encoding.");
@@ -566,15 +573,18 @@ bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
             else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
                 const char *field_nodes = lookup_by_id(
                     kad_rpc_msg_field_names, KAD_RPC_MSG_FIELD_NODES_ID);
-                sprintf(tmp_str, "1:rd%zu:%sl", strlen(field_nodes), field_nodes);
-                iobuf_append(buf, tmp_str, strlen(tmp_str));
+                sprintf(tmps, "1:rd%zu:%sl", strlen(field_nodes), field_nodes);
+                iobuf_append(buf, tmps, strlen(tmps));
                 for (size_t i = 0; i < msg->nodes_len; i++) {
-                    sprintf(tmp_str, "%d:%.*s%zu:%s%zu:%s",
-                            KAD_GUID_SPACE_IN_BYTES, KAD_GUID_SPACE_IN_BYTES,
-                            (char*)msg->nodes[i].id.b,
+                    sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES);
+                    tmps_len = strlen(tmps);
+                    memcpy(tmps + tmps_len, (char*)msg->nodes[i].id.b,
+                           KAD_GUID_SPACE_IN_BYTES);
+                    tmps_len += KAD_GUID_SPACE_IN_BYTES;
+                    sprintf(tmps + tmps_len, "%zu:%s%zu:%s",
                             strlen(msg->nodes[i].host), msg->nodes[i].host,
                             strlen(msg->nodes[i].service), msg->nodes[i].service);
-                    iobuf_append(buf, tmp_str, strlen(tmp_str)); // nodes
+                    iobuf_append(buf, tmps, strlen(tmps)); // nodes
                 }
                 iobuf_append(buf, "e2:id", 5);
             }
@@ -589,9 +599,12 @@ bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
             return false;
         }
 
-        sprintf(tmp_str, "%d:%.*s", KAD_GUID_SPACE_IN_BYTES,
-                KAD_GUID_SPACE_IN_BYTES, (char*)msg->node_id.b);
-        iobuf_append(buf, tmp_str, strlen(tmp_str)); // node_id
+        sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES);
+        tmps_len = strlen(tmps);
+        memcpy(tmps + tmps_len, (char*)msg->node_id.b,
+               KAD_GUID_SPACE_IN_BYTES);
+        tmps_len += KAD_GUID_SPACE_IN_BYTES;
+        iobuf_append(buf, tmps, tmps_len); // node_id
 
         iobuf_append(buf, "e", 1);
     }
