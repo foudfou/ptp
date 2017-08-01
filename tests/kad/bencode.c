@@ -118,7 +118,7 @@ int main ()
     assert(check_expected_tx_id(&msg.tx_id));
     assert(msg.type == KAD_RPC_TYPE_QUERY);
     assert(msg.meth == KAD_RPC_METH_PING);
-    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "abcdefghij0123456789"}));
+    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "abcdefghij0123456789", .is_set = true}));
 
     strcpy(buf, KAD_TEST_PING_RESPONSE);
     memset(&msg, 0, sizeof(msg));
@@ -126,14 +126,14 @@ int main ()
     assert(check_expected_tx_id(&msg.tx_id));
     assert(msg.type == KAD_RPC_TYPE_RESPONSE);
     assert(msg.meth == KAD_RPC_METH_NONE);
-    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "mnopqrstuvwxyz123456"}));
+    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "mnopqrstuvwxyz123456", .is_set = true}));
 
     strcpy(buf, KAD_TEST_PING_RESPONSE_BIN_ID);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, strlen(buf)));
     assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "\x17\x45\xc4\xed" \
                     "\xca\x16\x33\xf0\x51\x8e\x1f\x36\x0a\xc7\xe1\xad" \
-                    "\x27\x41\x86\x33"}));
+                    "\x27\x41\x86\x33", .is_set = true}));
 
     strcpy(buf, KAD_TEST_FIND_NODE_QUERY);
     memset(&msg, 0, sizeof(msg));
@@ -141,8 +141,8 @@ int main ()
     assert(check_expected_tx_id(&msg.tx_id));
     assert(msg.type == KAD_RPC_TYPE_QUERY);
     assert(msg.meth == KAD_RPC_METH_FIND_NODE);
-    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "abcdefghij0123456789"}));
-    assert(kad_guid_eq(&msg.target, &(kad_guid){.b = "mnopqrstuvwxyz123456"}));
+    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "abcdefghij0123456789", .is_set = true}));
+    assert(kad_guid_eq(&msg.target, &(kad_guid){.b = "mnopqrstuvwxyz123456", .is_set = true}));
 
     strcpy(buf, KAD_TEST_FIND_NODE_RESPONSE);
     memset(&msg, 0, sizeof(msg));
@@ -150,11 +150,11 @@ int main ()
     assert(check_expected_tx_id(&msg.tx_id));
     assert(msg.type == KAD_RPC_TYPE_RESPONSE);
     assert(msg.meth == KAD_RPC_METH_NONE);
-    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "0123456789abcdefghij"}));
+    assert(kad_guid_eq(&msg.node_id, &(kad_guid){.b = "0123456789abcdefghij", .is_set = true}));
     assert(msg.nodes_len == 2);
     assert(strcmp(msg.nodes[0].host, "192.168.168.1") == 0);
     assert(strcmp(msg.nodes[0].service, "12120") == 0);
-    assert(kad_guid_eq(&msg.nodes[1].id, &(kad_guid){.b = "mnopqrstuvwxyz123456"}));
+    assert(kad_guid_eq(&msg.nodes[1].id, &(kad_guid){.b = "mnopqrstuvwxyz123456", .is_set = true}));
     assert(strcmp(msg.nodes[1].host, "192.168.168.2") == 0);
     assert(strcmp(msg.nodes[1].service, "12121") == 0);
 

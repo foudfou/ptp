@@ -72,6 +72,8 @@ struct kad_dht {
 
 static inline bool kad_guid_eq(const kad_guid *ida, const kad_guid *idb)
 {
+    if (ida->is_set != idb->is_set)
+        return false;
     for (int i = 0; i < KAD_GUID_SPACE_IN_BYTES; i++)
         if (ida->b[i] != idb->b[i])
             return false;

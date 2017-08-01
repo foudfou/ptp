@@ -264,12 +264,13 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
         else if (p->msg_field == KAD_RPC_MSG_FIELD_TARGET) {
             if (!cpy_id(msg->target.b, val, KAD_GUID_SPACE_IN_BYTES))
                 goto fail;
+            msg->target.is_set = true;
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NONE ||
             p->msg_field == KAD_RPC_MSG_FIELD_ERR ||
             p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
-            // ignored
+            log_warning("Field (%d) as dict value ignored.", p->msg_field);
         }
 
         else {
@@ -309,6 +310,7 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
             if (!cpy_id(msg->nodes[msg->nodes_len].id.b, val,
                         KAD_GUID_SPACE_IN_BYTES))
                 goto fail;
+            msg->nodes[msg->nodes_len].id.is_set = true;
             p->msg_field = KAD_RPC_MSG_FIELD_NODES_HOST;
         }
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_HOST) {
