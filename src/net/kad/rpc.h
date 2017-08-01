@@ -15,6 +15,9 @@
 #define KAD_RPC_STR_MAX       256
 #define KAD_RPC_MSG_TX_ID_LEN 2
 
+#define KAD_RPC_MSG_INIT(msg) msg = (struct kad_rpc_msg){0};    \
+    list_init(&(msg.item))
+
 enum kad_rpc_type {
     KAD_RPC_TYPE_NONE,
     KAD_RPC_TYPE_ERROR,
@@ -82,8 +85,15 @@ static const lookup_entry kad_rpc_err_names[] = {
     { 0,                        NULL },
 };
 
+typedef struct {
+    bool          is_set;
+    unsigned char b[KAD_RPC_MSG_TX_ID_LEN];
+} kad_rpc_msg_tx_id;
+
 /**
  * Naive flattened dictionary for all possible messages.
+ *
+ * Please use the KAD_RPC_MSG_INIT() initializing.
  *
  * The protocol being relatively tiny, data size considered limited (a Kad
  * message must fit into an UDP buffer: no application flow control), every
@@ -96,7 +106,7 @@ static const lookup_entry kad_rpc_err_names[] = {
  */
 struct kad_rpc_msg {
     struct list_item     item;
-    unsigned char        tx_id[KAD_RPC_MSG_TX_ID_LEN]; /* t */
+    kad_rpc_msg_tx_id    tx_id; /* t */
     kad_guid             node_id; /* from {a,r} dict: id_str */
     enum kad_rpc_type    type;  /* y {q,r,e} */
     unsigned long long   err_code;

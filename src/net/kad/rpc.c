@@ -32,14 +32,14 @@ bool kad_rpc_msg_validate(const struct kad_rpc_msg *msg)
 }
 
 struct kad_rpc_msg *
-kad_rpc_query_find(struct kad_ctx *ctx, const unsigned char tx_id[])
+kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
 {
     struct kad_rpc_msg *m;
     struct list_item * it = &ctx->queries;
     list_for(it, &ctx->queries) {
         m = cont(it, struct kad_rpc_msg, item);
         for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; ++i) {
-            if (m->tx_id[i] != tx_id[i])
+            if (m->tx_id.b[i] != tx_id->b[i])
                 continue;
             break;
         }
@@ -94,8 +94,9 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
     }
 
     case KAD_RPC_METH_PING: {
-        struct kad_rpc_msg resp = {0};
-        memcpy(&resp.tx_id, &msg->tx_id, KAD_RPC_MSG_TX_ID_LEN);
+        struct kad_rpc_msg resp;
+        KAD_RPC_MSG_INIT(resp);
+        resp.tx_id = msg->tx_id;
         resp.node_id = ctx->dht->self_id;
         resp.type = KAD_RPC_TYPE_RESPONSE;
         resp.meth = KAD_RPC_METH_PING;
@@ -114,7 +115,7 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
 static bool
 kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 {
-    struct kad_rpc_msg *query = kad_rpc_query_find(ctx, msg->tx_id);
+    struct kad_rpc_msg *query = kad_rpc_query_find(ctx, &msg->tx_id);
     if (!query) {
         log_error("Query for response id(TODO:) not found.");
         return false;
@@ -125,10 +126,11 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
     return true;
 }
 
-static void kad_rpc_generate_tx_id(unsigned char tx_id[])
+static void kad_rpc_generate_tx_id(kad_rpc_msg_tx_id *tx_id)
 {
     for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; i++)
-        tx_id[i] = (unsigned char)random();
+        tx_id->b[i] = (unsigned char)random();
+    tx_id->is_set = true;
 }
 
 /**
@@ -142,32 +144,33 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
 {
     int ret = 0;
 
-    struct kad_rpc_msg msg = {0};
-    list_init(&(msg.item));
+    struct kad_rpc_msg msg;
+    KAD_RPC_MSG_INIT(msg);
 
     if (!benc_decode(&msg, buf, slen) || !kad_rpc_msg_validate(&msg)) {
         log_error("Invalid message received.");
-        struct kad_rpc_msg rspmsg = {0};
-        if (msg.tx_id)  // just consider 0x0 as a reserved value
-            memcpy(&rspmsg.tx_id, &msg.tx_id, KAD_RPC_MSG_TX_ID_LEN);
+        struct kad_rpc_msg rspmsg;
+        KAD_RPC_MSG_INIT(rspmsg);
+        if (msg.tx_id.is_set)
+            rspmsg.tx_id = msg.tx_id;
         else
-            kad_rpc_generate_tx_id(rspmsg.tx_id); // TODO: track this tx ?
+            kad_rpc_generate_tx_id(&rspmsg.tx_id); // TODO: track this tx ?
         rspmsg.node_id = ctx->dht->self_id;
         rspmsg.type = KAD_RPC_TYPE_ERROR;
         rspmsg.err_code = KAD_RPC_ERR_PROTOCOL;
         strcpy(rspmsg.err_msg, lookup_by_id(kad_rpc_err_names,
                                             KAD_RPC_ERR_PROTOCOL));
-        if (!benc_encode(&rspmsg, rsp)) {
+        if (!benc_encode(&rspmsg, rsp))
             log_error("Error while encoding error response.");
-            ret = -1;
-        }
-        else
-            ret = 1;
+        ret = -1;
         goto end;
     }
     kad_rpc_msg_log(&msg); // TESTING
 
-    kad_rpc_update_dht(ctx, host, service, &msg);
+    if (msg.node_id.is_set)
+        kad_rpc_update_dht(ctx, host, service, &msg);
+    else
+        log_warning("Node id not set, DHT not updated.");
 
     switch (msg.type) {
     case KAD_RPC_TYPE_NONE: {
@@ -207,7 +210,7 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
  */
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
 {
-    char *tx_id = log_fmt_hex(LOG_DEBUG, msg->tx_id, KAD_RPC_MSG_TX_ID_LEN);
+    char *tx_id = log_fmt_hex(LOG_DEBUG, msg->tx_id.b, KAD_RPC_MSG_TX_ID_LEN);
     char *node_id = log_fmt_hex(LOG_DEBUG, msg->node_id.b, KAD_GUID_SPACE_IN_BYTES);
     log_debug(
         "msg={\n  tx_id=0x%s\n  node_id=0x%s\n  type=%d\n  err_code=%lld\n"

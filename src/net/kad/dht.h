@@ -29,7 +29,10 @@
 
 /* Byte arrays are not affected by endian issues.
    http://stackoverflow.com/a/4523537/421846 */
-typedef struct { unsigned char b[KAD_GUID_SPACE_IN_BYTES]; } kad_guid;
+typedef struct {
+    bool          is_set;
+    unsigned char b[KAD_GUID_SPACE_IN_BYTES];
+} kad_guid;
 
 struct kad_node_info {
     kad_guid id;

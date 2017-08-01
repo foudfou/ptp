@@ -18,6 +18,7 @@ static void kad_generate_id(kad_guid *uid)
 {
     for (int i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
         uid->b[i] = (unsigned char)random();
+    uid->is_set = true;
 }
 
 struct kad_dht *dht_init()
