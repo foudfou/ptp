@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include "net/iobuf.h"
 #include "net/kad/dht.h"
+#include "utils/byte_array.h"
 #include "utils/list.h"
 #include "utils/lookup.h"
 
@@ -85,10 +86,7 @@ static const lookup_entry kad_rpc_err_names[] = {
     { 0,                        NULL },
 };
 
-typedef struct {
-    bool          is_set;
-    unsigned char b[KAD_RPC_MSG_TX_ID_LEN];
-} kad_rpc_msg_tx_id;
+BYTE_ARRAY_GENERATE(kad_rpc_msg_tx_id, KAD_RPC_MSG_TX_ID_LEN)
 
 /**
  * Naive flattened dictionary for all possible messages.

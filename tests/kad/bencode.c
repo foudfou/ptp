@@ -9,7 +9,7 @@
 bool check_expected_tx_id(kad_rpc_msg_tx_id *tx_id)
 {
     for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; i++)
-        if (tx_id->b[i] != 'a')
+        if (tx_id->bytes[i] != 'a')
             return false;
     return tx_id->is_set;
 }
@@ -17,7 +17,7 @@ bool check_expected_tx_id(kad_rpc_msg_tx_id *tx_id)
 void set_expected_tx_id(kad_rpc_msg_tx_id *tx_id)
 {
     for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; i++)
-        tx_id->b[i] = 'a';
+        tx_id->bytes[i] = 'a';
     tx_id->is_set = true;
 }
 

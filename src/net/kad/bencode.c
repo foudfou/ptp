@@ -226,7 +226,7 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
     case BENC_CONT_DICT_VAL: {
         // log_debug_val(val);
         if (p->msg_field == KAD_RPC_MSG_FIELD_TX_ID) {
-            if (!cpy_id(msg->tx_id.b, val, KAD_RPC_MSG_TX_ID_LEN))
+            if (!cpy_id(msg->tx_id.bytes, val, KAD_RPC_MSG_TX_ID_LEN))
                 goto fail;
             msg->tx_id.is_set = true;
         }
@@ -534,7 +534,7 @@ bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
     /* we avoid the burden of looking up into kad_rpc_msg_field_names just for single chars. */
     sprintf(tmps, "d1:t%d:", KAD_RPC_MSG_TX_ID_LEN);
     tmps_len += strlen(tmps);
-    memcpy(tmps + tmps_len, msg->tx_id.b, KAD_RPC_MSG_TX_ID_LEN);
+    memcpy(tmps + tmps_len, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
     tmps_len += KAD_RPC_MSG_TX_ID_LEN;
     iobuf_append(buf, tmps, tmps_len); // tx
     iobuf_append(buf, "1:y1:", 5); // type

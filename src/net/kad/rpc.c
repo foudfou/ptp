@@ -39,7 +39,7 @@ kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
     list_for(it, &ctx->queries) {
         m = cont(it, struct kad_rpc_msg, item);
         for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; ++i) {
-            if (m->tx_id.b[i] != tx_id->b[i])
+            if (m->tx_id.bytes[i] != tx_id->bytes[i])
                 continue;
             break;
         }
@@ -130,7 +130,7 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 static void kad_rpc_generate_tx_id(kad_rpc_msg_tx_id *tx_id)
 {
     for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; i++)
-        tx_id->b[i] = (unsigned char)random();
+        tx_id->bytes[i] = (unsigned char)random();
     tx_id->is_set = true;
 }
 
@@ -211,7 +211,7 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
  */
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
 {
-    char *tx_id = log_fmt_hex(LOG_DEBUG, msg->tx_id.b, KAD_RPC_MSG_TX_ID_LEN);
+    char *tx_id = log_fmt_hex(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
     char *node_id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes,
                                 KAD_GUID_SPACE_IN_BYTES);
     log_debug(
