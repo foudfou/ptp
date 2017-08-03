@@ -10,8 +10,12 @@ import socket
 import subprocess as sub
 import sys
 
-HOST = '::1'
-PORT = 22220
+SERVER_HOST = '::1'
+# SERVER_PORT is used by the server and the client. We thus can't simply bind
+# the server to 0 for some random available port. Because we'd have to guess
+# the port somehow for the client to connect. It's just easier to use a fixed
+# value.
+SERVER_PORT = 22220
 TIMEOUT_IN_SEC = 1
 
 MESSAGES = {
@@ -27,7 +31,7 @@ MESSAGES = {
 path = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
 
 server_bin = sys.argv[1]
-command = [server_bin, "-l", "error", "-a", HOST, "-p", str(PORT)]  # pylint: disable=invalid-name
+command = [server_bin, "-l", "error", "-a", SERVER_HOST, "-p", str(SERVER_PORT)]  # pylint: disable=invalid-name
 command.extend(sys.argv[2:])
 # It's generally hard to get the live output of a running subprocess in
 # python. One trick is to use an intermediary fd, and use `os.read(master_fd,
@@ -72,7 +76,7 @@ def check_data(expect, data):
 try:
     with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as s:
         s.settimeout(TIMEOUT_IN_SEC)
-        s.connect((HOST, PORT))
+        s.connect((SERVER_HOST, SERVER_PORT))
 
         failures = 0
         messages_len = len(MESSAGES)
