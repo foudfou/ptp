@@ -38,11 +38,8 @@ kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
     struct list_item * it = &ctx->queries;
     list_for(it, &ctx->queries) {
         m = cont(it, struct kad_rpc_msg, item);
-        for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; ++i) {
-            if (m->tx_id.bytes[i] != tx_id->bytes[i])
-                continue;
+        if (memcmp(m->tx_id.bytes, tx_id->bytes, KAD_RPC_MSG_TX_ID_LEN) == 0)
             break;
-        }
     }
 
     if (it == &ctx->queries) {
@@ -129,9 +126,10 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 
 static void kad_rpc_generate_tx_id(kad_rpc_msg_tx_id *tx_id)
 {
+    unsigned char rand[KAD_RPC_MSG_TX_ID_LEN];
     for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; i++)
-        tx_id->bytes[i] = (unsigned char)random();
-    tx_id->is_set = true;
+        rand[i] = (unsigned char)random();
+    kad_rpc_msg_tx_id_set(tx_id, rand);
 }
 
 /**

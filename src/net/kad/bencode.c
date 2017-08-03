@@ -176,18 +176,36 @@ static bool benc_stack_pop(struct benc_parser *p, size_t n)
     return true;
 }
 
-static bool
-cpy_id(unsigned char *id, const struct benc_val *val, const size_t max)
+// TODO: Couldn't we just use a macro instead of this weird trick ? _Generic ?
+typedef enum {
+    KAD_GUID_T          = KAD_GUID_SPACE_IN_BYTES,
+    KAD_RPC_MSG_TX_ID_T = KAD_RPC_MSG_TX_ID_LEN
+} id_type;
+
+static bool id_copy(id_type t, void *id, const struct benc_val *val)
 {
     if (val->t != BENC_VAL_STR) {
         log_error("Message node id not a string.");
         return false;
     }
-    if (max && val->s.len != max) {
-        log_error("Message node id has wrong length (%zu).", val->s.len);
+    size_t len = (size_t)t;
+    if (len && val->s.len != len) {
+        log_error("Message node/tx id has wrong length (%zu).", val->s.len);
         return false;
     }
-    memcpy(id, val->s.p, val->s.len);
+
+    switch(t) {
+    case KAD_GUID_T:
+        kad_guid_set(id, (unsigned char*)val->s.p);
+        break;
+    case KAD_RPC_MSG_TX_ID_T:
+        kad_rpc_msg_tx_id_set(id, (unsigned char*)val->s.p);
+        break;
+    default:
+        log_error("Unknown id type provided.");
+        return false;
+    }
+
     return true;
 }
 
@@ -226,15 +244,13 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
     case BENC_CONT_DICT_VAL: {
         // log_debug_val(val);
         if (p->msg_field == KAD_RPC_MSG_FIELD_TX_ID) {
-            if (!cpy_id(msg->tx_id.bytes, val, KAD_RPC_MSG_TX_ID_LEN))
+            if (!id_copy(KAD_RPC_MSG_TX_ID_T, &msg->tx_id, val))
                 goto fail;
-            msg->tx_id.is_set = true;
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NODE_ID) {
-            if (!cpy_id(msg->node_id.bytes, val, KAD_GUID_SPACE_IN_BYTES))
+            if (!id_copy(KAD_GUID_T, &msg->node_id, val))
                 goto fail;
-            msg->node_id.is_set = true;
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_TYPE) {
@@ -262,9 +278,8 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_TARGET) {
-            if (!cpy_id(msg->target.bytes, val, KAD_GUID_SPACE_IN_BYTES))
+            if (!id_copy(KAD_GUID_T, &msg->target, val))
                 goto fail;
-            msg->target.is_set = true;
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NONE ||
@@ -307,10 +322,8 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
-            if (!cpy_id(msg->nodes[msg->nodes_len].id.bytes, val,
-                        KAD_GUID_SPACE_IN_BYTES))
+            if (!id_copy(KAD_GUID_T, &msg->nodes[msg->nodes_len].id, val))
                 goto fail;
-            msg->nodes[msg->nodes_len].id.is_set = true;
             p->msg_field = KAD_RPC_MSG_FIELD_NODES_HOST;
         }
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_HOST) {

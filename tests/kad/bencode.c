@@ -6,21 +6,6 @@
 
 #define BENC_PARSER_BUF_MAX 1400
 
-bool check_expected_tx_id(kad_rpc_msg_tx_id *tx_id)
-{
-    for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; i++)
-        if (tx_id->bytes[i] != 'a')
-            return false;
-    return tx_id->is_set;
-}
-
-void set_expected_tx_id(kad_rpc_msg_tx_id *tx_id)
-{
-    for (int i = 0; i < KAD_RPC_MSG_TX_ID_LEN; i++)
-        tx_id->bytes[i] = 'a';
-    tx_id->is_set = true;
-}
-
 bool check_encoded_msg(const struct kad_rpc_msg *msg, struct iobuf *msgbuf,
                        const char str[], const size_t str_len)
 {
@@ -37,8 +22,14 @@ bool check_msg_decode_and_reset(struct kad_rpc_msg *msg, struct iobuf *msgbuf)
     return ret;
 }
 
+
 int main ()
 {
+    kad_rpc_msg_tx_id TX_ID_CONST;
+    memset(TX_ID_CONST.bytes, 'a', sizeof_field(kad_rpc_msg_tx_id, bytes));
+    TX_ID_CONST.is_set = true;
+
+
     // Basic parsing
 
     char buf[BENC_PARSER_BUF_MAX] = "i-300e";
@@ -107,7 +98,7 @@ int main ()
     strcpy(buf, KAD_TEST_ERROR);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, strlen(buf)));
-    assert(check_expected_tx_id(&msg.tx_id));
+    assert(kad_rpc_msg_tx_id_eq(&msg.tx_id, &TX_ID_CONST));
     assert(msg.type == KAD_RPC_TYPE_ERROR);
     assert(msg.err_code == 201);
     assert(strcmp(msg.err_msg, "A Generic Error Ocurred") == 0);
@@ -115,7 +106,7 @@ int main ()
     strcpy(buf, KAD_TEST_PING_QUERY);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, strlen(buf)));
-    assert(check_expected_tx_id(&msg.tx_id));
+    assert(kad_rpc_msg_tx_id_eq(&msg.tx_id, &TX_ID_CONST));
     assert(msg.type == KAD_RPC_TYPE_QUERY);
     assert(msg.meth == KAD_RPC_METH_PING);
     assert(kad_guid_eq(&msg.node_id, &(kad_guid){.bytes = "abcdefghij0123456789", .is_set = true}));
@@ -123,7 +114,7 @@ int main ()
     strcpy(buf, KAD_TEST_PING_RESPONSE);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, strlen(buf)));
-    assert(check_expected_tx_id(&msg.tx_id));
+    assert(kad_rpc_msg_tx_id_eq(&msg.tx_id, &TX_ID_CONST));
     assert(msg.type == KAD_RPC_TYPE_RESPONSE);
     assert(msg.meth == KAD_RPC_METH_NONE);
     assert(kad_guid_eq(&msg.node_id, &(kad_guid){.bytes = "mnopqrstuvwxyz123456", .is_set = true}));
@@ -138,7 +129,7 @@ int main ()
     strcpy(buf, KAD_TEST_FIND_NODE_QUERY);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, strlen(buf)));
-    assert(check_expected_tx_id(&msg.tx_id));
+    assert(kad_rpc_msg_tx_id_eq(&msg.tx_id, &TX_ID_CONST));
     assert(msg.type == KAD_RPC_TYPE_QUERY);
     assert(msg.meth == KAD_RPC_METH_FIND_NODE);
     assert(kad_guid_eq(&msg.node_id, &(kad_guid){.bytes = "abcdefghij0123456789", .is_set = true}));
@@ -147,7 +138,7 @@ int main ()
     strcpy(buf, KAD_TEST_FIND_NODE_RESPONSE);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode(&msg, buf, strlen(buf)));
-    assert(check_expected_tx_id(&msg.tx_id));
+    assert(kad_rpc_msg_tx_id_eq(&msg.tx_id, &TX_ID_CONST));
     assert(msg.type == KAD_RPC_TYPE_RESPONSE);
     assert(msg.meth == KAD_RPC_METH_NONE);
     assert(kad_guid_eq(&msg.node_id, &(kad_guid){.bytes = "0123456789abcdefghij", .is_set = true}));
@@ -172,7 +163,8 @@ int main ()
 
     // KAD_TEST_ERROR
     KAD_RPC_MSG_INIT(msg);
-    set_expected_tx_id(&msg.tx_id);
+    /* set_expected_tx_id(&msg.tx_id); */
+    msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_ERROR;
     msg.err_code = 201;
     strcpy(msg.err_msg, "A Generic Error Ocurred");
@@ -183,7 +175,7 @@ int main ()
 
     // KAD_TEST_PING_QUERY
     KAD_RPC_MSG_INIT(msg);
-    set_expected_tx_id(&msg.tx_id);
+    msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_QUERY;
     msg.meth = KAD_RPC_METH_PING;
     msg.node_id = (kad_guid){.bytes = "abcdefghij0123456789"};
@@ -194,7 +186,7 @@ int main ()
 
     // KAD_TEST_PING_RESPONSE
     KAD_RPC_MSG_INIT(msg);
-    set_expected_tx_id(&msg.tx_id);
+    msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_RESPONSE;
     msg.meth = KAD_RPC_METH_PING;
     msg.node_id = (kad_guid){.bytes = "mnopqrstuvwxyz123456"};
@@ -205,7 +197,7 @@ int main ()
 
     // KAD_TEST_FIND_NODE_QUERY
     KAD_RPC_MSG_INIT(msg);
-    set_expected_tx_id(&msg.tx_id);
+    msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_QUERY;
     msg.meth = KAD_RPC_METH_FIND_NODE;
     msg.node_id = (kad_guid){.bytes = "abcdefghij0123456789"};
@@ -218,7 +210,7 @@ int main ()
 
     // KAD_TEST_FIND_NODE_RESPONSE
     KAD_RPC_MSG_INIT(msg);
-    set_expected_tx_id(&msg.tx_id);
+    msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_RESPONSE;
     msg.meth = KAD_RPC_METH_FIND_NODE;
     msg.node_id = (kad_guid){.bytes = "0123456789abcdefghij"};

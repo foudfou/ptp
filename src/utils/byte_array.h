@@ -8,6 +8,13 @@
 #include <stdbool.h>
 #include <string.h>
 
+/**
+ * Fetching the size of a struct's field.
+ *
+ * https://stackoverflow.com/a/3553321/421846
+ */
+#define sizeof_field(type, field) sizeof(((type *)0)->field)
+
 #define BYTE_ARRAY_GENERATE(name, len)           \
     typedef struct {                             \
         unsigned char bytes[len];                \

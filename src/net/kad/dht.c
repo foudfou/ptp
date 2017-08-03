@@ -16,9 +16,10 @@
 
 static void kad_generate_id(kad_guid *uid)
 {
-    for (int i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
-        uid->bytes[i] = (unsigned char)random();
-    uid->is_set = true;
+    unsigned char rand[KAD_GUID_SPACE_IN_BYTES];
+    for (int i = 0; i < KAD_GUID_SPACE_IN_BYTES; i++)
+        rand[i] = (unsigned char)random();
+    kad_guid_set(uid, rand);
 }
 
 struct kad_dht *dht_init()
@@ -37,7 +38,7 @@ struct kad_dht *dht_init()
        could equally well be constructed as in Chord. » */
     kad_generate_id(&dht->self_id);
     char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
-    log_debug("node_id=%s", id);
+    log_debug("self_id=%s", id);
     free_safer(id);
 
     for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
@@ -71,7 +72,8 @@ void dht_terminate(struct kad_dht * dht)
 static inline size_t kad_bucket_hash(const kad_guid *self_id,
                                      const kad_guid *peer_id)
 {
-    kad_guid dist = {0};
+    kad_guid dist;
+    BYTE_ARRAY_INIT(kad_guid, dist);
     size_t bucket_idx = KAD_GUID_SPACE_IN_BITS;
     for (int i = 0; i < KAD_GUID_SPACE_IN_BYTES; ++i) {
         dist.bytes[i] = self_id->bytes[i] ^ peer_id->bytes[i];
