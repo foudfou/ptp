@@ -14,7 +14,6 @@ int main ()
 
     assert(kad_rpc_handle(&ctx, "::1", "35000", "", 0, &rsp) == -1);
     assert(rsp.pos != 0);
-    printf("%s", rsp.buf);
     iobuf_reset(&rsp);
 
     char buf[] = "d1:t2:aa1:y1:r1:rd2:id20:\x17""E\xc4\xed\xca\x16" \
