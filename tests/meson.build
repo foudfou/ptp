@@ -2,14 +2,15 @@
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 tests_sources = [
-    'bits.c',
-    'list.c',
-    'hash.c',
-    'bstree.c',
-    'rbtree.c',
-    'aatree.c',
-    'lookup.c',
-    'u64.c',
+    'utils/aatree.c',
+    'utils/bits.c',
+    'utils/bstree.c',
+    'utils/byte_array.c',
+    'utils/hash.c',
+    'utils/list.c',
+    'utils/lookup.c',
+    'utils/rbtree.c',
+    'utils/u64.c',
     'kad/bencode.c',
     'kad/dht.c',
     'kad/rpc.c',
