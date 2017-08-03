@@ -43,7 +43,9 @@ kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
     }
 
     if (it == &ctx->queries) {
-        log_warning("Query (tx_id=TODO:) not found.");
+        char *id = log_fmt_hex(LOG_DEBUG, tx_id->bytes, KAD_RPC_MSG_TX_ID_LEN);
+        log_warning("Query (tx_id=%s) not found.", id);
+        free_safer(id);
         return NULL;
     }
 
@@ -54,8 +56,7 @@ static void
 kad_rpc_update_dht(struct kad_ctx *ctx, const char host[], const char service[],
                    const struct kad_rpc_msg *msg)
 {
-    char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes,
-                           KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     struct kad_node_info info = {0};
     info.id = msg->node_id;
     strcpy(info.host, host);
@@ -76,8 +77,10 @@ kad_rpc_update_dht(struct kad_ctx *ctx, const char host[], const char service[],
 
 static bool kad_rpc_handle_error(const struct kad_rpc_msg *msg)
 {
-    log_error("Received error message (%zull) from id(TODO:): %s.",
-              msg->err_code, msg->err_msg);
+    char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    log_error("Received error message (%zull) from id(%s): %s.",
+              msg->err_code, id, msg->err_msg);
+    free_safer(id);
     return true;
 }
 
@@ -115,7 +118,10 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 {
     struct kad_rpc_msg *query = kad_rpc_query_find(ctx, &msg->tx_id);
     if (!query) {
-        log_error("Query for response id(TODO:) not found.");
+        char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes,
+                               KAD_GUID_SPACE_IN_BYTES);
+        log_error("Query for response id(%s) not found.", id);
+        free_safer(id);
         return false;
     }
 
@@ -221,7 +227,7 @@ void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
     free_safer(node_id);
 
     node_id = log_fmt_hex(LOG_DEBUG, msg->target.bytes,
-                          *msg->target.bytes ? KAD_GUID_SPACE_IN_BYTES : 0);
+                          msg->target.is_set ? KAD_GUID_SPACE_IN_BYTES : 0);
     log_debug("  target=0x%s", node_id);
     free_safer(node_id);
 
