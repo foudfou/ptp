@@ -17,7 +17,7 @@
 static void kad_generate_id(kad_guid *uid)
 {
     for (int i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
-        uid->b[i] = (unsigned char)random();
+        uid->bytes[i] = (unsigned char)random();
     uid->is_set = true;
 }
 
@@ -36,7 +36,7 @@ struct kad_dht *dht_init()
     /* « Node IDs are currently just random 160-bit identifiers, though they
        could equally well be constructed as in Chord. » */
     kad_generate_id(&dht->self_id);
-    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.b, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_debug("node_id=%s", id);
     free_safer(id);
 
@@ -74,11 +74,11 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
     kad_guid dist = {0};
     size_t bucket_idx = KAD_GUID_SPACE_IN_BITS;
     for (int i = 0; i < KAD_GUID_SPACE_IN_BYTES; ++i) {
-        dist.b[i] = self_id->b[i] ^ peer_id->b[i];
+        dist.bytes[i] = self_id->bytes[i] ^ peer_id->bytes[i];
 
         for (int j = 0; j < 8; ++j) {
             bucket_idx--;
-            if (BITS_CHK(dist.b[i], (1U << (7 - j))))
+            if (BITS_CHK(dist.bytes[i], (1U << (7 - j))))
                 goto guid_end;
         }
     }
@@ -266,7 +266,7 @@ bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
     struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], node_id);
     if (!node) {
-        char *id = log_fmt_hex(LOG_ERR, node_id->b, KAD_GUID_SPACE_IN_BYTES);
+        char *id = log_fmt_hex(LOG_ERR, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
         log_error("Unknown node (id=%s).", id);
         free_safer(id);
         return false;

@@ -57,7 +57,8 @@ static void
 kad_rpc_update_dht(struct kad_ctx *ctx, const char host[], const char service[],
                    const struct kad_rpc_msg *msg)
 {
-    char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.b, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes,
+                           KAD_GUID_SPACE_IN_BYTES);
     struct kad_node_info info = {0};
     info.id = msg->node_id;
     strcpy(info.host, host);
@@ -211,7 +212,8 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
 {
     char *tx_id = log_fmt_hex(LOG_DEBUG, msg->tx_id.b, KAD_RPC_MSG_TX_ID_LEN);
-    char *node_id = log_fmt_hex(LOG_DEBUG, msg->node_id.b, KAD_GUID_SPACE_IN_BYTES);
+    char *node_id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes,
+                                KAD_GUID_SPACE_IN_BYTES);
     log_debug(
         "msg={\n  tx_id=0x%s\n  node_id=0x%s\n  type=%d\n  err_code=%lld\n"
         "  err_msg=%s\n  meth=%d",
@@ -220,13 +222,14 @@ void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
     free_safer(tx_id);
     free_safer(node_id);
 
-    node_id = log_fmt_hex(LOG_DEBUG, msg->target.b,
-                          *msg->target.b ? KAD_GUID_SPACE_IN_BYTES : 0);
+    node_id = log_fmt_hex(LOG_DEBUG, msg->target.bytes,
+                          *msg->target.bytes ? KAD_GUID_SPACE_IN_BYTES : 0);
     log_debug("  target=0x%s", node_id);
     free_safer(node_id);
 
     for (size_t i = 0; i < msg->nodes_len; i++) {
-        node_id = log_fmt_hex(LOG_DEBUG, msg->nodes[i].id.b, KAD_GUID_SPACE_IN_BYTES);
+        node_id = log_fmt_hex(LOG_DEBUG, msg->nodes[i].id.bytes,
+                              KAD_GUID_SPACE_IN_BYTES);
         log_debug("  nodes[%zu]=0x%s:[%s]:%s", i, node_id,
                   msg->nodes[i].host, msg->nodes[i].service);
         free_safer(node_id);

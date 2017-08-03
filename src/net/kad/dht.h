@@ -12,6 +12,7 @@
 #include <string.h>
 #include <time.h>
 #include "utils/cont.h"
+#include "utils/byte_array.h"
 #include "utils/list.h"
 #include "utils/safer.h"
 
@@ -29,10 +30,7 @@
 
 /* Byte arrays are not affected by endian issues.
    http://stackoverflow.com/a/4523537/421846 */
-typedef struct {
-    bool          is_set;
-    unsigned char b[KAD_GUID_SPACE_IN_BYTES];
-} kad_guid;
+BYTE_ARRAY_GENERATE(kad_guid, KAD_GUID_SPACE_IN_BYTES)
 
 struct kad_node_info {
     kad_guid id;
@@ -69,16 +67,6 @@ struct kad_dht {
        candidate. » */
     struct list_item replacement; // kad_node list
 };
-
-static inline bool kad_guid_eq(const kad_guid *ida, const kad_guid *idb)
-{
-    if (ida->is_set != idb->is_set)
-        return false;
-    for (int i = 0; i < KAD_GUID_SPACE_IN_BYTES; i++)
-        if (ida->b[i] != idb->b[i])
-            return false;
-    return true;
-}
 
 static inline void kad_node_info_cpy(struct kad_node_info *dst,
                                      const struct kad_node_info *src)

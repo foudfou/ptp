@@ -6,37 +6,37 @@
 int main ()
 {
     size_t bkt_idx = kad_bucket_hash(
-        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
-        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
     assert(bkt_idx == 0);
     bkt_idx = kad_bucket_hash(
-        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}},
-        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}},
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
     assert(bkt_idx == 0);
     bkt_idx = kad_bucket_hash(
-        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x8}},
-        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x8}},
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
     assert(bkt_idx == 3);
 
     bkt_idx = kad_bucket_hash(
-        &(kad_guid){.b = {[0]=0xff, [1]=0x0}},
-        &(kad_guid){.b = {[0]=0x7f, [1]=0x0}});
+        &(kad_guid){.bytes = {[0]=0xff, [1]=0x0}},
+        &(kad_guid){.bytes = {[0]=0x7f, [1]=0x0}});
     assert(bkt_idx == KAD_GUID_SPACE_IN_BITS-1);
 
     assert(!kad_guid_eq(
-        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
-        &(kad_guid){.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}}));
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}}));
     assert(!kad_guid_eq(
-        &(kad_guid){.b = "abcdefghij0123456789"},
-        &(kad_guid){.b = "\x00""bcdefghij0123456789"}));
+        &(kad_guid){.bytes = "abcdefghij0123456789"},
+        &(kad_guid){.bytes = "\x00""bcdefghij0123456789"}));
     assert(kad_guid_eq(
-        &(kad_guid){.b = "\x00""bcdefghij0123456789"},
-        &(kad_guid){.b = "\x00""bcdefghij0123456789"}));
+        &(kad_guid){.bytes = "\x00""bcdefghij0123456789"},
+        &(kad_guid){.bytes = "\x00""bcdefghij0123456789"}));
 
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_dht *dht = dht_init();
 
-    struct kad_node_info info = { .id = {.b = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
+    struct kad_node_info info = { .id = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
                                   .host = "1.1.1.1", .service = "22" };
     assert(dht_update(dht, &info) == 1);
     assert(dht_insert(dht, &info));
@@ -53,11 +53,11 @@ int main ()
     // bucket full
     struct kad_node_info opp;
     opp.id = dht->self_id;
-    opp.id.b[0] ^= 0x80;
+    opp.id.bytes[0] ^= 0x80;
     assert(KAD_K_CONST <= 0xff);  // don't want to overflow
     for (int i = 0; i < KAD_K_CONST + 1; ++i) {
         assert(dht_insert(dht, &opp));
-        opp.id.b[KAD_GUID_SPACE_IN_BYTES-1] += 1;
+        opp.id.bytes[KAD_GUID_SPACE_IN_BYTES-1] += 1;
     }
     assert(!list_is_empty(&dht->replacement));
 

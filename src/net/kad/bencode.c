@@ -232,7 +232,7 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NODE_ID) {
-            if (!cpy_id(msg->node_id.b, val, KAD_GUID_SPACE_IN_BYTES))
+            if (!cpy_id(msg->node_id.bytes, val, KAD_GUID_SPACE_IN_BYTES))
                 goto fail;
             msg->node_id.is_set = true;
         }
@@ -262,7 +262,7 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_TARGET) {
-            if (!cpy_id(msg->target.b, val, KAD_GUID_SPACE_IN_BYTES))
+            if (!cpy_id(msg->target.bytes, val, KAD_GUID_SPACE_IN_BYTES))
                 goto fail;
             msg->target.is_set = true;
         }
@@ -307,7 +307,7 @@ static bool benc_msg_push(struct benc_parser *p, struct kad_rpc_msg *msg,
         }
 
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
-            if (!cpy_id(msg->nodes[msg->nodes_len].id.b, val,
+            if (!cpy_id(msg->nodes[msg->nodes_len].id.bytes, val,
                         KAD_GUID_SPACE_IN_BYTES))
                 goto fail;
             msg->nodes[msg->nodes_len].id.is_set = true;
@@ -561,7 +561,7 @@ bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
                 sprintf(tmps, "1:ad%zu:%s%d:", strlen(field_target),
                         field_target, KAD_GUID_SPACE_IN_BYTES);
                 tmps_len = strlen(tmps);
-                memcpy(tmps + tmps_len, (char*)msg->target.b,
+                memcpy(tmps + tmps_len, (char*)msg->target.bytes,
                        KAD_GUID_SPACE_IN_BYTES);
                 tmps_len += KAD_GUID_SPACE_IN_BYTES;
                 memcpy(tmps + tmps_len, "2:id", 4);
@@ -587,7 +587,7 @@ bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
                 for (size_t i = 0; i < msg->nodes_len; i++) {
                     sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES);
                     tmps_len = strlen(tmps);
-                    memcpy(tmps + tmps_len, (char*)msg->nodes[i].id.b,
+                    memcpy(tmps + tmps_len, (char*)msg->nodes[i].id.bytes,
                            KAD_GUID_SPACE_IN_BYTES);
                     tmps_len += KAD_GUID_SPACE_IN_BYTES;
                     sprintf(tmps + tmps_len, "%zu:%s%zu:%s",
@@ -610,7 +610,7 @@ bool benc_encode(const struct kad_rpc_msg *msg, struct iobuf *buf)
 
         sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES);
         tmps_len = strlen(tmps);
-        memcpy(tmps + tmps_len, (char*)msg->node_id.b,
+        memcpy(tmps + tmps_len, (char*)msg->node_id.bytes,
                KAD_GUID_SPACE_IN_BYTES);
         tmps_len += KAD_GUID_SPACE_IN_BYTES;
         iobuf_append(buf, tmps, tmps_len); // node_id
