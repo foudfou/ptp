@@ -1,0 +1,9 @@
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
+#ifndef DEFS_H
+#define DEFS_H
+
+#define KAD_GUID_SPACE_IN_BYTES @guid_size_in_bytes@
+#define KAD_GUID_SPACE_IN_BITS  8*KAD_GUID_SPACE_IN_BYTES
+#define KAD_K_CONST             @k_const@
+
+#endif /* DEFS_H */

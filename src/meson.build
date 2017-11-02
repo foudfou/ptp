@@ -9,12 +9,9 @@ configure_file(input : 'config.h.in',
 
 # A dyn lib is a simple solution to let our test executables build against most
 # of the code, that is except main.o.
-lib_sources = [
+libmain_sources = [
     'log.c',
     'net/iobuf.c',
-    'net/kad/dht.c',
-    'net/kad/rpc.c',
-    'net/kad/bencode.c',
     'net/msg.c',
     'options.c',
     'server.c',
@@ -30,17 +27,31 @@ lib_deps = [rt_dep, thread_dep]
 
 lib_cargs = ['-D_XOPEN_SOURCE=700L', '-D_DEFAULT_SOURCE']
 
-# A shared lib saves us having to propagate `dependencies : lib_deps` to the
-# main exe and the tests.
-lib_exe = shared_library(
-    proj_name, lib_sources,
+subdir('net/kad')
+
+libmain_a = static_library(
+    proj_name, libmain_sources,
     c_args : lib_cargs,
+    include_directories : main_inc,
     dependencies : lib_deps,
-    install : false
+    link_with : libkad_a,
 )
 
 main_exe = executable(
     proj_name, 'main.c',
     c_args : lib_cargs,
-    link_with : lib_exe,
+    include_directories : main_inc,
+    link_with : libmain_a,
+    dependencies : lib_deps,
+    install : true
+)
+
+
+# We use different constants for tests.
+libalt_a = static_library(
+    proj_name+'alt', libmain_sources,
+    c_args : lib_cargs,
+    include_directories : alt_inc,
+    dependencies : lib_deps,
+    link_with : libkadalt_a,
 )

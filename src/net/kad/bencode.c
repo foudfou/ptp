@@ -176,10 +176,9 @@ static bool benc_stack_pop(struct benc_parser *p, size_t n)
     return true;
 }
 
-// TODO: Couldn't we just use a macro instead of this weird trick ? _Generic ?
 typedef enum {
-    KAD_GUID_T          = KAD_GUID_SPACE_IN_BYTES,
-    KAD_RPC_MSG_TX_ID_T = KAD_RPC_MSG_TX_ID_LEN
+    KAD_GUID_T,
+    KAD_RPC_MSG_TX_ID_T
 } id_type;
 
 static bool id_copy(id_type t, void *id, const struct benc_val *val)
@@ -188,17 +187,20 @@ static bool id_copy(id_type t, void *id, const struct benc_val *val)
         log_error("Message node id not a string.");
         return false;
     }
-    size_t len = (size_t)t;
-    if (len && val->s.len != len) {
-        log_error("Message node/tx id has wrong length (%zu).", val->s.len);
-        return false;
-    }
 
     switch(t) {
     case KAD_GUID_T:
+        if (val->s.len != KAD_GUID_SPACE_IN_BYTES) {
+            log_error("Message node id has wrong length (%zu).", val->s.len);
+            return false;
+        }
         kad_guid_set(id, (unsigned char*)val->s.p);
         break;
     case KAD_RPC_MSG_TX_ID_T:
+        if (val->s.len != KAD_RPC_MSG_TX_ID_LEN) {
+            log_error("Message tx id has wrong length (%zu).", val->s.len);
+            return false;
+        }
         kad_rpc_msg_tx_id_set(id, (unsigned char*)val->s.p);
         break;
     default:

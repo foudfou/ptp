@@ -11,14 +11,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include "kad_defs.h"
 #include "utils/cont.h"
 #include "utils/byte_array.h"
 #include "utils/list.h"
 #include "utils/safer.h"
-
-#define KAD_GUID_SPACE_IN_BYTES 20
-#define KAD_GUID_SPACE_IN_BITS  8*KAD_GUID_SPACE_IN_BYTES
-#define KAD_K_CONST             8
 
 #define list_free_all(itemp, type, field)                               \
     while (!list_is_empty(itemp)) {                                     \

@@ -12,7 +12,7 @@ conf.set_quoted('packagecopy',
 
 add_global_arguments('-Wfatal-errors', '-pedantic', '-Wextra', language : 'c')
 
-inc = include_directories(['src'])
+base_inc = include_directories(['src'])
 
 subdir('src')
 subdir('tests')

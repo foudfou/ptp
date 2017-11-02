@@ -19,10 +19,27 @@ tests_sources = [
 foreach fname : tests_sources
   test_name = fname.split('.').get(0).underscorify()
   exe = executable(test_name, fname,
-                   include_directories : inc,
+                   include_directories : main_inc,
                    # propagated for inclusion of .c files in tests.
                    c_args : lib_cargs,
-                   link_with : lib_exe,
+                   dependencies : lib_deps,
+                   link_with : libmain_a,
+  )
+  test(fname, exe)
+endforeach
+
+tests_alt_sources = [
+    # TODO: 'kad/dht_ops.c',
+]
+
+foreach fname : tests_alt_sources
+  test_name = fname.split('.').get(0).underscorify()
+  exe = executable(test_name, fname,
+                   include_directories : alt_inc,
+                   # propagated for inclusion of .c files in tests.
+                   c_args : lib_cargs,
+                   dependencies : lib_deps,
+                   link_with : libalt_a,
   )
   test(fname, exe)
 endforeach
