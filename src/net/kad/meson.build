@@ -7,8 +7,8 @@ libkad_sources = [
     'bencode.c',
 ]
 
-subdir('_full')
-main_inc = [base_inc, include_directories('_full')]
+subdir('.full')
+main_inc = [base_inc, include_directories('.full')]
 
 libkad_a = static_library(
     proj_name+'kad', libkad_sources,
@@ -18,8 +18,8 @@ libkad_a = static_library(
 )
 
 
-subdir('_tiny')
-alt_inc = [base_inc, include_directories('_tiny')]
+subdir('.tiny')
+alt_inc = [base_inc, include_directories('.tiny')]
 
 libkadalt_a = static_library(
     proj_name+'kadalt', libkad_sources,
