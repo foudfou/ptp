@@ -39,7 +39,7 @@ foreach fname : tests_alt_sources
                    # propagated for inclusion of .c files in tests.
                    c_args : lib_cargs,
                    dependencies : lib_deps,
-                   link_with : libalt_a,
+                   link_with : libalt_so,
   )
   test(fname, exe)
 endforeach

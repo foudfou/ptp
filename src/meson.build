@@ -47,8 +47,8 @@ main_exe = executable(
 )
 
 
-# We use different constants for tests.
-libalt_a = static_library(
+# We use different constants for some tests.
+libalt_so = shared_library(
     proj_name+'alt', libmain_sources,
     c_args : lib_cargs,
     include_directories : alt_inc,
