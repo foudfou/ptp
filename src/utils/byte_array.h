@@ -7,6 +7,7 @@
  */
 #include <stdbool.h>
 #include <string.h>
+#include "utils/bits.h"
 
 /**
  * Fetching the size of a struct's field.
@@ -21,7 +22,9 @@
         bool          is_set;                    \
     } name;                                      \
     BYTE_ARRAY_GENERATE_SET(name, len)           \
-    BYTE_ARRAY_GENERATE_EQ(name, len)
+    BYTE_ARRAY_GENERATE_EQ(name, len)            \
+    BYTE_ARRAY_GENERATE_RESET(name, len)         \
+    BYTE_ARRAY_GENERATE_SETBIT(name, len)
 
 #define BYTE_ARRAY_INIT(typ, ary) ary = (typ){.bytes = {0}, .is_set = false}
 #define BYTE_ARRAY_COPY(dst, src) dst = src
@@ -44,6 +47,32 @@ static inline bool type##_eq(const type *ary1, const type *ary2)        \
 {                                                                       \
     return (ary1->is_set == ary2->is_set)                               \
         && (memcmp(&ary1->bytes, &ary2->bytes, len) == 0);              \
+}
+
+#define BYTE_ARRAY_GENERATE_RESET(type, len)   \
+/**
+ * Resets byte array.
+ */                                                                     \
+static inline void type##_reset(type *ary)                              \
+{                                                                       \
+    for (size_t i = 0; i < len; ++i) {                                  \
+        ary->bytes[i] = 0;                                              \
+    }                                                                   \
+    ary->is_set = false;                                                \
+}
+
+#define BYTE_ARRAY_GENERATE_SETBIT(type, len)   \
+/**
+ * Sets bit `nth` of byte array.
+ */                                                                     \
+static inline bool type##_setbit(type *ary, const size_t nth)           \
+{                                                                       \
+    if (nth > len * 8 - 1)                                              \
+        return false;                                                   \
+    size_t n = len - nth / 8 - 1;                                       \
+    size_t k = nth % 8;                                                 \
+    BITS_SET(ary->bytes[n], 1 << k);                                    \
+    return true;                                                        \
 }
 
 #endif /* BYTE_ARRAY_H */
