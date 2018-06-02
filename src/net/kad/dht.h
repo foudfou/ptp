@@ -65,8 +65,8 @@ struct kad_dht {
     struct list_item replacement; // kad_node list
 };
 
-static inline void kad_node_info_cpy(struct kad_node_info *dst,
-                                     const struct kad_node_info *src)
+static inline void kad_node_info_copy(struct kad_node_info *dst,
+                                      const struct kad_node_info *src)
 {
     dst->id = src->id;
     strcpy(dst->host, src->host);

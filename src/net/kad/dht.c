@@ -229,7 +229,7 @@ static struct kad_node *dht_node_new(const struct kad_node_info *info)
         return NULL;
     }
 
-    kad_node_info_cpy(&node->info, info);
+    kad_node_info_copy(&node->info, info);
     node->last_seen = time.tv_sec;
     node->stale = 0;
     list_init(&(node->item));
