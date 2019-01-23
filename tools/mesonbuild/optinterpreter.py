@@ -12,24 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os, re
+import functools
+
 from . import mparser
 from . import coredata
 from . import mesonlib
-import os, re
+from . import compilers
 
 forbidden_option_names = coredata.get_builtin_options()
-forbidden_prefixes = {'c_': True,
-                      'cpp_': True,
-                      'd_': True,
-                      'rust_': True,
-                      'fortran_': True,
-                      'objc_': True,
-                      'objcpp_': True,
-                      'vala_': True,
-                      'csharp_': True,
-                      'swift_': True,
-                      'b_': True,
-                      }
+forbidden_prefixes = [lang + '_' for lang in compilers.all_languages] + ['b_', 'backend_']
 
 def is_invalid_name(name):
     if name in forbidden_option_names:
@@ -42,15 +34,38 @@ def is_invalid_name(name):
 class OptionException(mesonlib.MesonException):
     pass
 
+
+def permitted_kwargs(permitted):
+    """Function that validates kwargs for options."""
+    def _wraps(func):
+        @functools.wraps(func)
+        def _inner(name, description, kwargs):
+            bad = [a for a in kwargs.keys() if a not in permitted]
+            if bad:
+                raise OptionException('Invalid kwargs for option "{}": "{}"'.format(
+                    name, ' '.join(bad)))
+            return func(name, description, kwargs)
+        return _inner
+    return _wraps
+
+
 optname_regex = re.compile('[^a-zA-Z0-9_-]')
 
+@permitted_kwargs({'value', 'yield'})
 def StringParser(name, description, kwargs):
-    return coredata.UserStringOption(name, description,
-                                     kwargs.get('value', ''), kwargs.get('choices', []))
+    return coredata.UserStringOption(name,
+                                     description,
+                                     kwargs.get('value', ''),
+                                     kwargs.get('choices', []),
+                                     kwargs.get('yield', coredata.default_yielding))
 
+@permitted_kwargs({'value', 'yield'})
 def BooleanParser(name, description, kwargs):
-    return coredata.UserBooleanOption(name, description, kwargs.get('value', True))
+    return coredata.UserBooleanOption(name, description,
+                                      kwargs.get('value', True),
+                                      kwargs.get('yield', coredata.default_yielding))
 
+@permitted_kwargs({'value', 'yield', 'choices'})
 def ComboParser(name, description, kwargs):
     if 'choices' not in kwargs:
         raise OptionException('Combo option missing "choices" keyword.')
@@ -60,32 +75,67 @@ def ComboParser(name, description, kwargs):
     for i in choices:
         if not isinstance(i, str):
             raise OptionException('Combo choice elements must be strings.')
-    return coredata.UserComboOption(name, description, choices, kwargs.get('value', choices[0]))
+    return coredata.UserComboOption(name,
+                                    description,
+                                    choices,
+                                    kwargs.get('value', choices[0]),
+                                    kwargs.get('yield', coredata.default_yielding),)
+
+
+@permitted_kwargs({'value', 'min', 'max', 'yield'})
+def IntegerParser(name, description, kwargs):
+    if 'value' not in kwargs:
+        raise OptionException('Integer option must contain value argument.')
+    return coredata.UserIntegerOption(name,
+                                      description,
+                                      kwargs.get('min', None),
+                                      kwargs.get('max', None),
+                                      kwargs['value'],
+                                      kwargs.get('yield', coredata.default_yielding))
+
+# FIXME: Cannot use FeatureNew while parsing options because we parse it before
+# reading options in project(). See func_project() in interpreter.py
+#@FeatureNew('array type option()', '0.44.0')
+@permitted_kwargs({'value', 'yield', 'choices'})
+def string_array_parser(name, description, kwargs):
+    if 'choices' in kwargs:
+        choices = kwargs['choices']
+        if not isinstance(choices, list):
+            raise OptionException('Array choices must be an array.')
+        for i in choices:
+            if not isinstance(i, str):
+                raise OptionException('Array choice elements must be strings.')
+            value = kwargs.get('value', choices)
+    else:
+        choices = None
+        value = kwargs.get('value', [])
+    if not isinstance(value, list):
+        raise OptionException('Array choices must be passed as an array.')
+    return coredata.UserArrayOption(name,
+                                    description,
+                                    value,
+                                    choices=choices,
+                                    yielding=kwargs.get('yield', coredata.default_yielding))
+
+@permitted_kwargs({'value', 'yield'})
+def FeatureParser(name, description, kwargs):
+    return coredata.UserFeatureOption(name,
+                                      description,
+                                      kwargs.get('value', 'auto'),
+                                      yielding=kwargs.get('yield', coredata.default_yielding))
 
 option_types = {'string': StringParser,
                 'boolean': BooleanParser,
                 'combo': ComboParser,
+                'integer': IntegerParser,
+                'array': string_array_parser,
+                'feature': FeatureParser,
                 }
 
 class OptionInterpreter:
-    def __init__(self, subproject, command_line_options):
+    def __init__(self, subproject):
         self.options = {}
         self.subproject = subproject
-        self.sbprefix = subproject + ':'
-        self.cmd_line_options = {}
-        for o in command_line_options:
-            if self.subproject != '': # Strip the beginning.
-                # Ignore options that aren't for this subproject
-                if not o.startswith(self.sbprefix):
-                    continue
-            try:
-                (key, value) = o.split('=', 1)
-            except ValueError:
-                raise OptionException('Option {!r} must have a value separated by equals sign.'.format(o))
-            # Ignore subproject options if not fetching subproject options
-            if self.subproject == '' and ':' in key:
-                continue
-            self.cmd_line_options[key] = value
 
     def process(self, option_file):
         try:
@@ -138,9 +188,16 @@ class OptionInterpreter:
         if func_name != 'option':
             raise OptionException('Only calls to option() are allowed in option files.')
         (posargs, kwargs) = self.reduce_arguments(node.args)
+
+        # FIXME: Cannot use FeatureNew while parsing options because we parse
+        # it before reading options in project(). See func_project() in
+        # interpreter.py
+        #if 'yield' in kwargs:
+        #    FeatureNew('option yield', '0.45.0').use(self.subproject)
+
         if 'type' not in kwargs:
             raise OptionException('Option call missing mandatory "type" keyword argument')
-        opt_type = kwargs['type']
+        opt_type = kwargs.pop('type')
         if opt_type not in option_types:
             raise OptionException('Unknown type %s.' % opt_type)
         if len(posargs) != 1:
@@ -154,9 +211,7 @@ class OptionInterpreter:
             raise OptionException('Option name %s is reserved.' % opt_name)
         if self.subproject != '':
             opt_name = self.subproject + ':' + opt_name
-        opt = option_types[opt_type](opt_name, kwargs.get('description', ''), kwargs)
+        opt = option_types[opt_type](opt_name, kwargs.pop('description', ''), kwargs)
         if opt.description == '':
             opt.description = opt_name
-        if opt_name in self.cmd_line_options:
-            opt.set_value(opt.parse_string(self.cmd_line_options[opt_name]))
         self.options[opt_name] = opt

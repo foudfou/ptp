@@ -1,43 +1,15 @@
 import os
 
 from .. import build
-from .. import dependencies
-from .. import mlog
-from ..mesonlib import MesonException
-from ..interpreterbase import permittedKwargs, noKwargs
-
-class permittedSnippetKwargs:
-
-    def __init__(self, permitted):
-        self.permitted = permitted
-
-    def __call__(self, f):
-        def wrapped(s, interpreter, state, args, kwargs):
-            for k in kwargs:
-                if k not in self.permitted:
-                    mlog.warning('Passed invalid keyword argument "%s". This will become a hard error in the future.' % k)
-            return f(s, interpreter, state, args, kwargs)
-        return wrapped
-
-_found_programs = {}
 
 
 class ExtensionModule:
-    def __init__(self):
+    def __init__(self, interpreter):
+        self.interpreter = interpreter
         self.snippets = set() # List of methods that operate only on the interpreter.
 
     def is_snippet(self, funcname):
         return funcname in self.snippets
-
-def find_program(program_name, target_name):
-    if program_name in _found_programs:
-        return _found_programs[program_name]
-    program = dependencies.ExternalProgram(program_name)
-    if not program.found():
-        m = "Target {!r} can't be generated as {!r} could not be found"
-        raise MesonException(m.format(target_name, program_name))
-    _found_programs[program_name] = program
-    return program
 
 
 def get_include_args(include_dirs, prefix='-I'):
@@ -79,21 +51,21 @@ class ModuleReturnValue:
         self.new_objects = new_objects
 
 class GResourceTarget(build.CustomTarget):
-    def __init__(self, name, subdir, kwargs):
-        super().__init__(name, subdir, kwargs)
+    def __init__(self, name, subdir, subproject, kwargs):
+        super().__init__(name, subdir, subproject, kwargs)
 
 class GResourceHeaderTarget(build.CustomTarget):
-    def __init__(self, name, subdir, kwargs):
-        super().__init__(name, subdir, kwargs)
+    def __init__(self, name, subdir, subproject, kwargs):
+        super().__init__(name, subdir, subproject, kwargs)
 
 class GirTarget(build.CustomTarget):
-    def __init__(self, name, subdir, kwargs):
-        super().__init__(name, subdir, kwargs)
+    def __init__(self, name, subdir, subproject, kwargs):
+        super().__init__(name, subdir, subproject, kwargs)
 
 class TypelibTarget(build.CustomTarget):
-    def __init__(self, name, subdir, kwargs):
-        super().__init__(name, subdir, kwargs)
+    def __init__(self, name, subdir, subproject, kwargs):
+        super().__init__(name, subdir, subproject, kwargs)
 
 class VapiTarget(build.CustomTarget):
-    def __init__(self, name, subdir, kwargs):
-        super().__init__(name, subdir, kwargs)
+    def __init__(self, name, subdir, subproject, kwargs):
+        super().__init__(name, subdir, subproject, kwargs)

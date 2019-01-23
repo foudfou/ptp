@@ -17,7 +17,9 @@ import subprocess
 import shutil
 import argparse
 from .. import mlog
+from ..mesonlib import has_path_sep
 from . import destdir_join
+from .gettext import read_linguas
 
 parser = argparse.ArgumentParser()
 parser.add_argument('command')
@@ -78,7 +80,7 @@ def install_help(srcdir, blddir, sources, media, langs, install_dir, destdir, pr
                 elif symlinks:
                     srcfile = os.path.join(c_install_dir, m)
                     mlog.log('Symlinking %s to %s.' % (outfile, srcfile))
-                    if '/' in m or '\\' in m:
+                    if has_path_sep(m):
                         os.makedirs(os.path.dirname(outfile), exist_ok=True)
                     try:
                         try:
@@ -93,7 +95,7 @@ def install_help(srcdir, blddir, sources, media, langs, install_dir, destdir, pr
                     # Lang doesn't have media file so copy it over 'C' one
                     infile = os.path.join(srcdir, 'C', m)
             mlog.log('Installing %s to %s' % (infile, outfile))
-            if '/' in m or '\\' in m:
+            if has_path_sep(m):
                 os.makedirs(os.path.dirname(outfile), exist_ok=True)
             shutil.copyfile(infile, outfile)
             shutil.copystat(infile, outfile)
@@ -107,6 +109,9 @@ def run(args):
     src_subdir = os.path.join(os.environ['MESON_SOURCE_ROOT'], options.subdir)
     build_subdir = os.path.join(os.environ['MESON_BUILD_ROOT'], options.subdir)
     abs_sources = [os.path.join(src_subdir, 'C', source) for source in sources]
+
+    if not langs:
+        langs = read_linguas(src_subdir)
 
     if options.command == 'pot':
         build_pot(src_subdir, options.project_id, sources)

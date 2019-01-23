@@ -12,258 +12,149 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys, os
-import pickle
-import argparse
-from . import coredata, mesonlib
+import os
+from . import (coredata, mesonlib, build)
+from . import mintro
 
-parser = argparse.ArgumentParser()
+def add_arguments(parser):
+    coredata.register_builtin_arguments(parser)
+    parser.add_argument('builddir', nargs='?', default='.')
+    parser.add_argument('--clearcache', action='store_true', default=False,
+                        help='Clear cached state (e.g. found dependencies)')
 
-parser.add_argument('-D', action='append', default=[], dest='sets',
-                    help='Set an option to the given value.')
-parser.add_argument('directory', nargs='*')
-parser.add_argument('--clearcache', action='store_true', default=False,
-                    help='Clear cached state (e.g. found dependencies)')
+
+def make_lower_case(val):
+    if isinstance(val, bool):
+        return str(val).lower()
+    elif isinstance(val, list):
+        return [make_lower_case(i) for i in val]
+    else:
+        return str(val)
+
 
 class ConfException(mesonlib.MesonException):
     pass
 
+
 class Conf:
     def __init__(self, build_dir):
         self.build_dir = build_dir
-        self.coredata_file = os.path.join(build_dir, 'meson-private/coredata.dat')
-        self.build_file = os.path.join(build_dir, 'meson-private/build.dat')
-        if not os.path.isfile(self.coredata_file) or not os.path.isfile(self.build_file):
+        if not os.path.isdir(os.path.join(build_dir, 'meson-private')):
             raise ConfException('Directory %s does not seem to be a Meson build directory.' % build_dir)
-        with open(self.coredata_file, 'rb') as f:
-            self.coredata = pickle.load(f)
-        with open(self.build_file, 'rb') as f:
-            self.build = pickle.load(f)
-        if self.coredata.version != coredata.version:
-            raise ConfException('Version mismatch (%s vs %s)' %
-                                (coredata.version, self.coredata.version))
+        self.build = build.load(self.build_dir)
+        self.coredata = coredata.load(self.build_dir)
 
     def clear_cache(self):
         self.coredata.deps = {}
 
+    def set_options(self, options):
+        self.coredata.set_options(options)
+
     def save(self):
         # Only called if something has changed so overwrite unconditionally.
-        with open(self.coredata_file, 'wb') as f:
-            pickle.dump(self.coredata, f)
+        coredata.save(self.coredata, self.build_dir)
         # We don't write the build file because any changes to it
-        # are erased when Meson is executed the next time, i.e. whne
+        # are erased when Meson is executed the next time, i.e. when
         # Ninja is run.
 
-    def print_aligned(self, arr):
+    @staticmethod
+    def print_aligned(arr):
         if not arr:
             return
+
         titles = {'name': 'Option', 'descr': 'Description', 'value': 'Current Value', 'choices': 'Possible Values'}
-        len_name = longest_name = len(titles['name'])
-        len_descr = longest_descr = len(titles['descr'])
-        len_value = longest_value = len(titles['value'])
-        longest_choices = 0 # not printed if we don't get any optional values
 
-        # calculate the max length of each
-        for x in arr:
-            name = x['name']
-            descr = x['descr']
-            value = x['value'] if isinstance(x['value'], str) else str(x['value']).lower()
-            choices = ''
-            if isinstance(x['choices'], list):
-                if x['choices']:
-                    x['choices'] = [s if isinstance(s, str) else str(s).lower() for s in x['choices']]
-                    choices = '[%s]' % ', '.join(map(str, x['choices']))
-            elif x['choices']:
-                choices = x['choices'] if isinstance(x['choices'], str) else str(x['choices']).lower()
+        name_col = [titles['name'], '-' * len(titles['name'])]
+        value_col = [titles['value'], '-' * len(titles['value'])]
+        choices_col = [titles['choices'], '-' * len(titles['choices'])]
+        descr_col = [titles['descr'], '-' * len(titles['descr'])]
 
-            longest_name = max(longest_name, len(name))
-            longest_descr = max(longest_descr, len(descr))
-            longest_value = max(longest_value, len(value))
-            longest_choices = max(longest_choices, len(choices))
-
-            # update possible non strings
-            x['value'] = value
-            x['choices'] = choices
-
-        # prints header
-        namepad = ' ' * (longest_name - len_name)
-        valuepad = ' ' * (longest_value - len_value)
-        if longest_choices:
-            len_choices = len(titles['choices'])
-            longest_choices = max(longest_choices, len_choices)
-            choicepad = ' ' * (longest_choices - len_choices)
-            print('  %s%s %s%s %s%s %s' % (titles['name'], namepad, titles['value'], valuepad, titles['choices'], choicepad, titles['descr']))
-            print('  %s%s %s%s %s%s %s' % ('-' * len_name, namepad, '-' * len_value, valuepad, '-' * len_choices, choicepad, '-' * len_descr))
-        else:
-            print('  %s%s %s%s %s' % (titles['name'], namepad, titles['value'], valuepad, titles['descr']))
-            print('  %s%s %s%s %s' % ('-' * len_name, namepad, '-' * len_value, valuepad, '-' * len_descr))
-
-        # print values
-        for i in arr:
-            name = i['name']
-            descr = i['descr']
-            value = i['value']
-            choices = i['choices']
-
-            namepad = ' ' * (longest_name - len(name))
-            valuepad = ' ' * (longest_value - len(value))
-            if longest_choices:
-                choicespad = ' ' * (longest_choices - len(choices))
-                f = '  %s%s %s%s %s%s %s' % (name, namepad, value, valuepad, choices, choicespad, descr)
+        choices_found = False
+        for opt in arr:
+            name_col.append(opt['name'])
+            descr_col.append(opt['descr'])
+            if isinstance(opt['value'], list):
+                value_col.append('[{0}]'.format(', '.join(make_lower_case(opt['value']))))
             else:
-                f = '  %s%s %s%s %s' % (name, namepad, value, valuepad, descr)
-
-            print(f)
-
-    def set_options(self, options):
-        for o in options:
-            if '=' not in o:
-                raise ConfException('Value "%s" not of type "a=b".' % o)
-            (k, v) = o.split('=', 1)
-            if coredata.is_builtin_option(k):
-                self.coredata.set_builtin_option(k, v)
-            elif k in self.coredata.user_options:
-                tgt = self.coredata.user_options[k]
-                tgt.set_value(v)
-            elif k in self.coredata.compiler_options:
-                tgt = self.coredata.compiler_options[k]
-                tgt.set_value(v)
-            elif k in self.coredata.base_options:
-                tgt = self.coredata.base_options[k]
-                tgt.set_value(v)
-            elif k.endswith('_link_args'):
-                lang = k[:-10]
-                if lang not in self.coredata.external_link_args:
-                    raise ConfException('Unknown language %s in linkargs.' % lang)
-                # TODO, currently split on spaces, make it so that user
-                # can pass in an array string.
-                newvalue = v.split()
-                self.coredata.external_link_args[lang] = newvalue
-            elif k.endswith('_args'):
-                lang = k[:-5]
-                if lang not in self.coredata.external_args:
-                    raise ConfException('Unknown language %s in compile args' % lang)
-                # TODO same fix as above
-                newvalue = v.split()
-                self.coredata.external_args[lang] = newvalue
+                value_col.append(make_lower_case(opt['value']))
+            if opt['choices']:
+                choices_found = True
+                if isinstance(opt['choices'], list):
+                    choices_col.append('[{0}]'.format(', '.join(make_lower_case(opt['choices']))))
+                else:
+                    choices_col.append(make_lower_case(opt['choices']))
             else:
-                raise ConfException('Unknown option %s.' % k)
+                choices_col.append('')
+
+        col_widths = (max([len(i) for i in name_col], default=0),
+                      max([len(i) for i in value_col], default=0),
+                      max([len(i) for i in choices_col], default=0),
+                      max([len(i) for i in descr_col], default=0))
+
+        for line in zip(name_col, value_col, choices_col, descr_col):
+            if choices_found:
+                print('  {0:{width[0]}} {1:{width[1]}} {2:{width[2]}} {3:{width[3]}}'.format(*line, width=col_widths))
+            else:
+                print('  {0:{width[0]}} {1:{width[1]}} {3:{width[3]}}'.format(*line, width=col_widths))
+
+    def print_options(self, title, options):
+        print('\n{}:'.format(title))
+        if not options:
+            print('  No {}\n'.format(title.lower()))
+        arr = []
+        for k in sorted(options):
+            o = options[k]
+            d = o.description
+            v = o.printable_value()
+            c = o.choices
+            arr.append({'name': k, 'descr': d, 'value': v, 'choices': c})
+        self.print_aligned(arr)
 
     def print_conf(self):
         print('Core properties:')
         print('  Source dir', self.build.environment.source_dir)
         print('  Build dir ', self.build.environment.build_dir)
-        print('')
-        print('Core options:')
-        carr = []
-        for key in ['buildtype', 'warning_level', 'werror', 'strip', 'unity', 'default_library']:
-            carr.append({'name': key,
-                         'descr': coredata.get_builtin_option_description(key),
-                         'value': self.coredata.get_builtin_option(key),
-                         'choices': coredata.get_builtin_option_choices(key)})
-        self.print_aligned(carr)
-        print('')
-        print('Base options:')
-        okeys = sorted(self.coredata.base_options.keys())
-        if not okeys:
-            print('  No base options\n')
-        else:
-            coarr = []
-            for k in okeys:
-                o = self.coredata.base_options[k]
-                coarr.append({'name': k, 'descr': o.description, 'value': o.value, 'choices': ''})
-            self.print_aligned(coarr)
-        print('')
-        print('Compiler arguments:')
-        for (lang, args) in self.coredata.external_args.items():
-            print('  ' + lang + '_args', str(args))
-        print('')
-        print('Linker args:')
-        for (lang, args) in self.coredata.external_link_args.items():
-            print('  ' + lang + '_link_args', str(args))
-        print('')
-        print('Compiler options:')
-        okeys = sorted(self.coredata.compiler_options.keys())
-        if not okeys:
-            print('  No compiler options\n')
-        else:
-            coarr = []
-            for k in okeys:
-                o = self.coredata.compiler_options[k]
-                coarr.append({'name': k, 'descr': o.description, 'value': o.value, 'choices': ''})
-            self.print_aligned(coarr)
-        print('')
-        print('Directories:')
-        parr = []
-        for key in ['prefix',
-                    'libdir',
-                    'libexecdir',
-                    'bindir',
-                    'sbindir',
-                    'includedir',
-                    'datadir',
-                    'mandir',
-                    'infodir',
-                    'localedir',
-                    'sysconfdir',
-                    'localstatedir',
-                    'sharedstatedir',
-                    ]:
-            parr.append({'name': key,
-                         'descr': coredata.get_builtin_option_description(key),
-                         'value': self.coredata.get_builtin_option(key),
-                         'choices': coredata.get_builtin_option_choices(key)})
-        self.print_aligned(parr)
-        print('')
-        print('Project options:')
-        if not self.coredata.user_options:
-            print('  This project does not have any options')
-        else:
-            options = self.coredata.user_options
-            keys = list(options.keys())
-            keys.sort()
-            optarr = []
-            for key in keys:
-                opt = options[key]
-                if (opt.choices is None) or (not opt.choices):
-                    # Zero length list or string
-                    choices = ''
-                else:
-                    # A non zero length list or string, convert to string
-                    choices = str(opt.choices)
-                optarr.append({'name': key,
-                               'descr': opt.description,
-                               'value': opt.value,
-                               'choices': choices})
-            self.print_aligned(optarr)
-        print('')
-        print('Testing options:')
-        tarr = []
-        for key in ['stdsplit', 'errorlogs']:
-            tarr.append({'name': key,
-                         'descr': coredata.get_builtin_option_description(key),
-                         'value': self.coredata.get_builtin_option(key),
-                         'choices': coredata.get_builtin_option_choices(key)})
-        self.print_aligned(tarr)
 
-def run(args):
-    args = mesonlib.expand_arguments(args)
-    if not args:
-        args = [os.getcwd()]
-    options = parser.parse_args(args)
-    if len(options.directory) > 1:
-        print('%s <build directory>' % args[0])
-        print('If you omit the build directory, the current directory is substituted.')
-        return 1
-    if not options.directory:
-        builddir = os.getcwd()
-    else:
-        builddir = options.directory[0]
+        dir_option_names = ['bindir',
+                            'datadir',
+                            'includedir',
+                            'infodir',
+                            'libdir',
+                            'libexecdir',
+                            'localedir',
+                            'localstatedir',
+                            'mandir',
+                            'prefix',
+                            'sbindir',
+                            'sharedstatedir',
+                            'sysconfdir']
+        test_option_names = ['errorlogs',
+                             'stdsplit']
+        core_option_names = [k for k in self.coredata.builtins if k not in dir_option_names + test_option_names]
+
+        dir_options = {k: o for k, o in self.coredata.builtins.items() if k in dir_option_names}
+        test_options = {k: o for k, o in self.coredata.builtins.items() if k in test_option_names}
+        core_options = {k: o for k, o in self.coredata.builtins.items() if k in core_option_names}
+
+        self.print_options('Core options', core_options)
+        self.print_options('Backend options', self.coredata.backend_options)
+        self.print_options('Base options', self.coredata.base_options)
+        self.print_options('Compiler options', self.coredata.compiler_options)
+        self.print_options('Directories', dir_options)
+        self.print_options('Project options', self.coredata.user_options)
+        self.print_options('Testing options', test_options)
+
+
+def run(options):
+    coredata.parse_cmd_line_options(options)
+    builddir = os.path.abspath(os.path.realpath(options.builddir))
+    c = None
     try:
         c = Conf(builddir)
         save = False
-        if len(options.sets) > 0:
-            c.set_options(options.sets)
+        if len(options.cmd_line_options) > 0:
+            c.set_options(options.cmd_line_options)
+            coredata.update_cmd_line_file(builddir, options)
             save = True
         elif options.clearcache:
             c.clear_cache()
@@ -272,11 +163,11 @@ def run(args):
             c.print_conf()
         if save:
             c.save()
+            mintro.update_build_options(c.coredata, c.build.environment.info_dir)
+            mintro.write_meson_info_file(c.build, [])
     except ConfException as e:
-        print('Meson configurator encountered an error:\n')
-        print(e)
-        return 1
+        print('Meson configurator encountered an error:')
+        if c is not None and c.build is not None:
+            mintro.write_meson_info_file(c.build, [e])
+        raise e
     return 0
-
-if __name__ == '__main__':
-    sys.exit(run(sys.argv[1:]))

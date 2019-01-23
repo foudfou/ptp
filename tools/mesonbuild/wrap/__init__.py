@@ -25,7 +25,33 @@ from enum import Enum
 # to use 'nofallback' so that any 'copylib' wraps will be
 # download as subprojects.
 #
+# --wrap-mode=forcefallback will ignore external dependencies,
+# even if they match the version requirements, and automatically
+# use the fallback if one was provided. This is useful for example
+# to make sure a project builds when using the fallbacks.
+#
 # Note that these options do not affect subprojects that
 # are git submodules since those are only usable in git
 # repositories, and you almost always want to download them.
-WrapMode = Enum('WrapMode', 'default nofallback nodownload')
+
+# This did _not_ work when inside the WrapMode class.
+# I don't know why. If you can fix this, patches welcome.
+string_to_value = {'default': 1,
+                   'nofallback': 2,
+                   'nodownload': 3,
+                   'forcefallback': 4,
+                   }
+
+class WrapMode(Enum):
+    default = 1
+    nofallback = 2
+    nodownload = 3
+    forcefallback = 4
+
+    def __str__(self):
+        return self.name
+
+    @staticmethod
+    def from_string(mode_name):
+        g = string_to_value[mode_name]
+        return WrapMode(g)

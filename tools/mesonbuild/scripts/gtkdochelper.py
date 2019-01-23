@@ -14,9 +14,10 @@
 
 import sys, os
 import subprocess
+import shlex
 import shutil
 import argparse
-from ..mesonlib import MesonException, Popen_safe
+from ..mesonlib import MesonException, Popen_safe, is_windows
 from . import destdir_join
 
 parser = argparse.ArgumentParser()
@@ -27,6 +28,7 @@ parser.add_argument('--subdir', dest='subdir')
 parser.add_argument('--headerdirs', dest='headerdirs')
 parser.add_argument('--mainfile', dest='mainfile')
 parser.add_argument('--modulename', dest='modulename')
+parser.add_argument('--moduleversion', dest='moduleversion')
 parser.add_argument('--htmlargs', dest='htmlargs', default='')
 parser.add_argument('--scanargs', dest='scanargs', default='')
 parser.add_argument('--scanobjsargs', dest='scanobjsargs', default='')
@@ -44,21 +46,37 @@ parser.add_argument('--ignore-headers', dest='ignore_headers', default='')
 parser.add_argument('--namespace', dest='namespace', default='')
 parser.add_argument('--mode', dest='mode', default='')
 parser.add_argument('--installdir', dest='install_dir')
+parser.add_argument('--run', dest='run', default='')
 
-def gtkdoc_run_check(cmd, cwd):
+def gtkdoc_run_check(cmd, cwd, library_paths=None):
+    if library_paths is None:
+        library_paths = []
+
+    env = dict(os.environ)
+    if is_windows():
+        if 'PATH' in env:
+            library_paths.extend(env['PATH'].split(os.pathsep))
+        env['PATH'] = os.pathsep.join(library_paths)
+    else:
+        if 'LD_LIBRARY_PATH' in env:
+            library_paths.extend(env['LD_LIBRARY_PATH'].split(os.pathsep))
+        env['LD_LIBRARY_PATH'] = os.pathsep.join(library_paths)
+
     # Put stderr into stdout since we want to print it out anyway.
     # This preserves the order of messages.
-    p, out = Popen_safe(cmd, cwd=cwd, stderr=subprocess.STDOUT)[0:2]
+    p, out = Popen_safe(cmd, cwd=cwd, env=env, stderr=subprocess.STDOUT)[0:2]
     if p.returncode != 0:
-        err_msg = ["{!r} failed with status {:d}".format(cmd[0], p.returncode)]
+        err_msg = ["{!r} failed with status {:d}".format(cmd, p.returncode)]
         if out:
             err_msg.append(out)
         raise MesonException('\n'.join(err_msg))
+    elif out:
+        print(out)
 
 def build_gtkdoc(source_root, build_root, doc_subdir, src_subdirs,
-                 main_file, module,
+                 main_file, module, module_version,
                  html_args, scan_args, fixxref_args, mkdb_args,
-                 gobject_typesfile, scanobjs_args, ld, cc, ldflags, cflags,
+                 gobject_typesfile, scanobjs_args, run, ld, cc, ldflags, cflags,
                  html_assets, content_files, ignore_headers, namespace,
                  expand_content_files, mode):
     print("Building documentation for %s" % module)
@@ -87,9 +105,12 @@ def build_gtkdoc(source_root, build_root, doc_subdir, src_subdirs,
 
     # Copy files to build directory
     for f in content_files:
-        f_abs = os.path.join(doc_src, f)
-        shutil.copyfile(f_abs, os.path.join(
-            abs_out, os.path.basename(f_abs)))
+        # FIXME: Use mesonlib.File objects so we don't need to do this
+        if not os.path.isabs(f):
+            f = os.path.join(doc_src, f)
+        elif os.path.commonpath([f, build_root]) == build_root:
+            continue
+        shutil.copyfile(f, os.path.join(abs_out, os.path.basename(f)))
 
     shutil.rmtree(htmldir, ignore_errors=True)
     try:
@@ -108,13 +129,27 @@ def build_gtkdoc(source_root, build_root, doc_subdir, src_subdirs,
     scan_cmd += scan_args
     gtkdoc_run_check(scan_cmd, abs_out)
 
+    # Use the generated types file when available, otherwise gobject_typesfile
+    # would often be a path to source dir instead of build dir.
+    if '--rebuild-types' in scan_args:
+        gobject_typesfile = os.path.join(abs_out, module + '.types')
+
     if gobject_typesfile:
         scanobjs_cmd = ['gtkdoc-scangobj'] + scanobjs_args + ['--types=' + gobject_typesfile,
                                                               '--module=' + module,
+                                                              '--run=' + run,
                                                               '--cflags=' + cflags,
-                                                              '--ldflags=' + ldflags]
+                                                              '--ldflags=' + ldflags,
+                                                              '--cc=' + cc,
+                                                              '--ld=' + ld,
+                                                              '--output-dir=' + abs_out]
 
-        gtkdoc_run_check(scanobjs_cmd, abs_out)
+        library_paths = []
+        for ldflag in shlex.split(ldflags):
+            if ldflag.startswith('-Wl,-rpath,'):
+                library_paths.append(ldflag[11:])
+
+        gtkdoc_run_check(scanobjs_cmd, build_root, library_paths)
 
     # Make docbook files
     if mode == 'auto':
@@ -157,13 +192,17 @@ def build_gtkdoc(source_root, build_root, doc_subdir, src_subdirs,
     else:
         mkhtml_cmd.append('%s-docs.xml' % module)
     # html gen must be run in the HTML dir
-    gtkdoc_run_check(mkhtml_cmd, os.path.join(abs_out, 'html'))
+    gtkdoc_run_check(mkhtml_cmd, htmldir)
 
     # Fix cross-references in HTML files
     fixref_cmd = ['gtkdoc-fixxref',
                   '--module=' + module,
                   '--module-dir=html'] + fixxref_args
     gtkdoc_run_check(fixref_cmd, abs_out)
+
+    if module_version:
+        shutil.move(os.path.join(htmldir, '{}.devhelp2'.format(module)),
+                    os.path.join(htmldir, '{}-{}.devhelp2'.format(module, module_version)))
 
 def install_gtkdoc(build_root, doc_subdir, install_prefix, datadir, module):
     source = os.path.join(build_root, doc_subdir, 'html')
@@ -200,12 +239,14 @@ def run(args):
         options.headerdirs.split('@@'),
         options.mainfile,
         options.modulename,
+        options.moduleversion,
         htmlargs,
         scanargs,
         fixxrefargs,
         mkdbargs,
         options.gobject_typesfile,
         scanobjsargs,
+        options.run,
         options.ld,
         options.cc,
         options.ldflags,
@@ -220,7 +261,12 @@ def run(args):
     if 'MESON_INSTALL_PREFIX' in os.environ:
         destdir = os.environ.get('DESTDIR', '')
         install_prefix = destdir_join(destdir, os.environ['MESON_INSTALL_PREFIX'])
-        install_dir = options.install_dir if options.install_dir else options.modulename
+        if options.install_dir:
+            install_dir = options.install_dir
+        else:
+            install_dir = options.modulename
+            if options.moduleversion:
+                install_dir += '-' + options.moduleversion
         if os.path.isabs(install_dir):
             install_dir = destdir_join(destdir, install_dir)
         install_gtkdoc(options.builddir,

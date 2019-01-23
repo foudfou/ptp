@@ -16,7 +16,15 @@ import subprocess, os.path
 
 from ..mesonlib import EnvironmentException
 
-from .compilers import Compiler, swift_buildtype_args
+from .compilers import Compiler, swift_buildtype_args, clike_debug_args
+
+swift_optimization_args = {'0': [],
+                           'g': [],
+                           '1': ['-O'],
+                           '2': ['-O'],
+                           '3': ['-O'],
+                           's': ['-O'],
+                           }
 
 class SwiftCompiler(Compiler):
     def __init__(self, exelist, version):
@@ -83,6 +91,13 @@ class SwiftCompiler(Compiler):
     def get_compile_only_args(self):
         return ['-c']
 
+    def compute_parameters_with_absolute_paths(self, parameter_list, build_dir):
+        for idx, i in enumerate(parameter_list):
+            if i[:2] == '-I' or i[:2] == '-L':
+                parameter_list[idx] = i[:2] + os.path.normpath(os.path.join(build_dir, i[2:]))
+
+        return parameter_list
+
     def sanity_check(self, work_dir, environment):
         src = 'swifttest.swift'
         source_name = os.path.join(work_dir, src)
@@ -97,3 +112,9 @@ class SwiftCompiler(Compiler):
             raise EnvironmentException('Swift compiler %s can not compile programs.' % self.name_string())
         if subprocess.call(output_name) != 0:
             raise EnvironmentException('Executables created by Swift compiler %s are not runnable.' % self.name_string())
+
+    def get_debug_args(self, is_debug):
+        return clike_debug_args[is_debug]
+
+    def get_optimization_args(self, optimization_level):
+        return swift_optimization_args[optimization_level]

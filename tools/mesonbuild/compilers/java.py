@@ -25,7 +25,7 @@ class JavaCompiler(Compiler):
         self.id = 'unknown'
         self.javarunner = 'java'
 
-    def get_soname_args(self, prefix, shlib_name, suffix, path, soversion, is_shared_module):
+    def get_soname_args(self, *args):
         return []
 
     def get_werror_args(self):
@@ -80,6 +80,15 @@ class JavaCompiler(Compiler):
 
     def get_buildtype_args(self, buildtype):
         return java_buildtype_args[buildtype]
+
+    def compute_parameters_with_absolute_paths(self, parameter_list, build_dir):
+        for idx, i in enumerate(parameter_list):
+            if i in ['-cp', '-classpath', '-sourcepath'] and idx + 1 < len(parameter_list):
+                path_list = parameter_list[idx + 1].split(os.pathsep)
+                path_list = [os.path.normpath(os.path.join(build_dir, x)) for x in path_list]
+                parameter_list[idx + 1] = os.pathsep.join(path_list)
+
+        return parameter_list
 
     def sanity_check(self, work_dir, environment):
         src = 'SanityCheck.java'

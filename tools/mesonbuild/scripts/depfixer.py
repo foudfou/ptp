@@ -14,6 +14,9 @@
 
 
 import sys, struct
+import shutil, subprocess
+
+from ..mesonlib import OrderedSet
 
 SHT_STRTAB = 3
 DT_NEEDED = 1
@@ -337,20 +340,111 @@ class Elf(DataSizes):
             entry.write(self.bf)
         return None
 
-def run(args):
-    if len(args) < 1 or len(args) > 2:
-        print('This application resets target rpath.')
-        print('Don\'t run this unless you know what you are doing.')
-        print('%s: <binary file> <prefix>' % sys.argv[0])
-        sys.exit(1)
-    with Elf(args[0]) as e:
-        if len(args) == 1:
+def fix_elf(fname, new_rpath, verbose=True):
+    with Elf(fname, verbose) as e:
+        if new_rpath is None:
             e.print_rpath()
             e.print_runpath()
         else:
-            new_rpath = args[1]
             e.fix_rpath(new_rpath)
-    return 0
 
-if __name__ == '__main__':
-    run(sys.argv[1:])
+def get_darwin_rpaths_to_remove(fname):
+    out = subprocess.check_output(['otool', '-l', fname],
+                                  universal_newlines=True,
+                                  stderr=subprocess.DEVNULL)
+    result = []
+    current_cmd = 'FOOBAR'
+    for line in out.split('\n'):
+        line = line.strip()
+        if ' ' not in line:
+            continue
+        key, value = line.strip().split(' ', 1)
+        if key == 'cmd':
+            current_cmd = value
+        if key == 'path' and current_cmd == 'LC_RPATH':
+            rp = value.split('(', 1)[0].strip()
+            result.append(rp)
+    return result
+
+def fix_darwin(fname, new_rpath, final_path, install_name_mappings):
+    try:
+        rpaths = get_darwin_rpaths_to_remove(fname)
+    except subprocess.CalledProcessError:
+        # Otool failed, which happens when invoked on a
+        # non-executable target. Just return.
+        return
+    try:
+        args = []
+        if rpaths:
+            # TODO: fix this properly, not totally clear how
+            #
+            # removing rpaths from binaries on macOS has tons of
+            # weird edge cases. For instance, if the user provided
+            # a '-Wl,-rpath' argument in LDFLAGS that happens to
+            # coincide with an rpath generated from a dependency,
+            # this would cause installation failures, as meson would
+            # generate install_name_tool calls with two identical
+            # '-delete_rpath' arguments, which install_name_tool
+            # fails on. Because meson itself ensures that it never
+            # adds duplicate rpaths, duplicate rpaths necessarily
+            # come from user variables. The idea of using OrderedSet
+            # is to remove *at most one* duplicate RPATH entry. This
+            # is not optimal, as it only respects the user's choice
+            # partially: if they provided a non-duplicate '-Wl,-rpath'
+            # argument, it gets removed, if they provided a duplicate
+            # one, it remains in the final binary. A potentially optimal
+            # solution would split all user '-Wl,-rpath' arguments from
+            # LDFLAGS, and later add them back with '-add_rpath'.
+            for rp in OrderedSet(rpaths):
+                args += ['-delete_rpath', rp]
+            subprocess.check_call(['install_name_tool', fname] + args,
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+        args = []
+        if new_rpath:
+            args += ['-add_rpath', new_rpath]
+        # Rewrite -install_name @rpath/libfoo.dylib to /path/to/libfoo.dylib
+        if fname.endswith('dylib'):
+            args += ['-id', final_path]
+        if install_name_mappings:
+            for old, new in install_name_mappings.items():
+                args += ['-change', old, new]
+        if args:
+            subprocess.check_call(['install_name_tool', fname] + args,
+                                  stdout=subprocess.DEVNULL,
+                                  stderr=subprocess.DEVNULL)
+    except Exception:
+        raise
+        sys.exit(0)
+
+def fix_jar(fname):
+    subprocess.check_call(['jar', 'xfv', fname, 'META-INF/MANIFEST.MF'])
+    with open('META-INF/MANIFEST.MF', 'r+') as f:
+        lines = f.readlines()
+        f.seek(0)
+        for line in lines:
+            if not line.startswith('Class-Path:'):
+                f.write(line)
+        f.truncate()
+    subprocess.check_call(['jar', 'ufm', fname, 'META-INF/MANIFEST.MF'])
+
+def fix_rpath(fname, new_rpath, final_path, install_name_mappings, verbose=True):
+    # Static libraries never have rpaths
+    if fname.endswith('.a'):
+        return
+    # DLLs never have rpaths
+    if fname.endswith('.dll'):
+        return
+    try:
+        if fname.endswith('.jar'):
+            fix_jar(fname)
+            return
+        fix_elf(fname, new_rpath, verbose)
+        return
+    except SystemExit as e:
+        if isinstance(e.code, int) and e.code == 0:
+            pass
+        else:
+            raise
+    if shutil.which('install_name_tool'):
+        fix_darwin(fname, new_rpath, final_path, install_name_mappings)

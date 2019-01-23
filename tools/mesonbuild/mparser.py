@@ -13,8 +13,32 @@
 # limitations under the License.
 
 import re
+import codecs
+import types
 from .mesonlib import MesonException
 from . import mlog
+
+# This is the regex for the supported escape sequences of a regular string
+# literal, like 'abc\x00'
+ESCAPE_SEQUENCE_SINGLE_RE = re.compile(r'''
+    ( \\U........      # 8-digit hex escapes
+    | \\u....          # 4-digit hex escapes
+    | \\x..            # 2-digit hex escapes
+    | \\[0-7]{1,3}     # Octal escapes
+    | \\N\{[^}]+\}     # Unicode characters by name
+    | \\[\\'abfnrtv]   # Single-character escapes
+    )''', re.UNICODE | re.VERBOSE)
+
+class MesonUnicodeDecodeError(MesonException):
+    def __init__(self, match):
+        super().__init__("%s" % match)
+        self.match = match
+
+def decode_match(match):
+    try:
+        return codecs.decode(match.group(0), 'unicode_escape')
+    except UnicodeDecodeError as err:
+        raise MesonUnicodeDecodeError(match.group(0))
 
 class ParseException(MesonException):
     def __init__(self, text, line, lineno, colno):
@@ -66,12 +90,14 @@ class Lexer:
     def __init__(self, code):
         self.code = code
         self.keywords = {'true', 'false', 'if', 'else', 'elif',
-                         'endif', 'and', 'or', 'not', 'foreach', 'endforeach'}
+                         'endif', 'and', 'or', 'not', 'foreach', 'endforeach',
+                         'in', 'continue', 'break'}
+        self.future_keywords = {'return'}
         self.token_specification = [
             # Need to be sorted longest to shortest.
             ('ignore', re.compile(r'[ \t]')),
             ('id', re.compile('[_a-zA-Z][_0-9a-zA-Z]*')),
-            ('number', re.compile(r'\d+')),
+            ('number', re.compile(r'0[bB][01]+|0[oO][0-7]+|0[xX][0-9a-fA-F]+|0|[1-9]\d*')),
             ('eol_cont', re.compile(r'\\\n')),
             ('eol', re.compile(r'\n')),
             ('multiline_string', re.compile(r"'''(.|\n)*?'''", re.M)),
@@ -80,6 +106,8 @@ class Lexer:
             ('rparen', re.compile(r'\)')),
             ('lbracket', re.compile(r'\[')),
             ('rbracket', re.compile(r'\]')),
+            ('lcurl', re.compile(r'\{')),
+            ('rcurl', re.compile(r'\}')),
             ('dblquote', re.compile(r'"')),
             ('string', re.compile(r"'([^'\\]|(\\.))*'")),
             ('comma', re.compile(r',')),
@@ -110,6 +138,7 @@ class Lexer:
         loc = 0
         par_count = 0
         bracket_count = 0
+        curl_count = 0
         col = 0
         while loc < len(self.code):
             matched = False
@@ -136,13 +165,22 @@ class Lexer:
                         bracket_count += 1
                     elif tid == 'rbracket':
                         bracket_count -= 1
+                    elif tid == 'lcurl':
+                        curl_count += 1
+                    elif tid == 'rcurl':
+                        curl_count -= 1
                     elif tid == 'dblquote':
                         raise ParseException('Double quotes are not supported. Use single quotes.', self.getline(line_start), lineno, col)
                     elif tid == 'string':
-                        value = match_text[1:-1]\
-                            .replace(r"\'", "'")\
-                            .replace(r" \\ ".strip(), r" \ ".strip())\
-                            .replace("\\n", "\n")
+                        # Handle here and not on the regexp to give a better error message.
+                        if match_text.find("\n") != -1:
+                            mlog.warning("""Newline character in a string detected, use ''' (three single quotes) for multiline strings instead.
+This will become a hard error in a future Meson release.""", self.getline(line_start), lineno, col)
+                        value = match_text[1:-1]
+                        try:
+                            value = ESCAPE_SEQUENCE_SINGLE_RE.sub(decode_match, value)
+                        except MesonUnicodeDecodeError as err:
+                            raise MesonException("Failed to parse escape sequence: '{}' in string:\n  {}".format(err.match, match_text))
                     elif tid == 'multiline_string':
                         tid = 'string'
                         value = match_text[3:-3]
@@ -151,16 +189,23 @@ class Lexer:
                             lineno += len(lines) - 1
                             line_start = mo.end() - len(lines[-1])
                     elif tid == 'number':
-                        value = int(match_text)
-                    elif tid == 'eol' or tid == 'eol_cont':
+                        value = int(match_text, base=0)
+                    elif tid == 'eol_cont':
                         lineno += 1
                         line_start = loc
-                        if par_count > 0 or bracket_count > 0:
+                        break
+                    elif tid == 'eol':
+                        lineno += 1
+                        line_start = loc
+                        if par_count > 0 or bracket_count > 0 or curl_count > 0:
                             break
                     elif tid == 'id':
                         if match_text in self.keywords:
                             tid = match_text
                         else:
+                            if match_text in self.future_keywords:
+                                mlog.warning("Identifier '{}' will become a reserved keyword in a future release. Please rename it.".format(match_text),
+                                             location=types.SimpleNamespace(subdir=subdir, lineno=lineno))
                             value = match_text
                     yield Token(tid, subdir, curline_start, curline, col, bytespan, value)
                     break
@@ -202,7 +247,20 @@ class StringNode(ElementaryNode):
     def __str__(self):
         return "String node: '%s' (%d, %d)." % (self.value, self.lineno, self.colno)
 
+class ContinueNode(ElementaryNode):
+    pass
+
+class BreakNode(ElementaryNode):
+    pass
+
 class ArrayNode:
+    def __init__(self, args):
+        self.subdir = args.subdir
+        self.lineno = args.lineno
+        self.colno = args.colno
+        self.args = args
+
+class DictNode:
     def __init__(self, args):
         self.subdir = args.subdir
         self.lineno = args.lineno
@@ -308,10 +366,10 @@ class PlusAssignmentNode:
         self.value = value
 
 class ForeachClauseNode:
-    def __init__(self, lineno, colno, varname, items, block):
+    def __init__(self, lineno, colno, varnames, items, block):
         self.lineno = lineno
         self.colno = colno
-        self.varname = varname
+        self.varnames = varnames
         self.items = items
         self.block = block
 
@@ -368,7 +426,8 @@ class ArgumentNode:
 
     def set_kwarg(self, name, value):
         if name in self.kwargs:
-            mlog.warning('Keyword argument "%s" defined multiple times. This will be a an error in future Meson releases.' % name)
+            mlog.warning('Keyword argument "{}" defined multiple times.'.format(name), location=self)
+            mlog.warning('This will be an error in future Meson releases.')
         self.kwargs[name] = value
 
     def num_args(self):
@@ -388,7 +447,9 @@ comparison_map = {'equal': '==',
                   'lt': '<',
                   'le': '<=',
                   'gt': '>',
-                  'ge': '>='
+                  'ge': '>=',
+                  'in': 'in',
+                  'notin': 'not in',
                   }
 
 # Recursive descent parser for Meson's definition language.
@@ -495,6 +556,8 @@ class Parser:
         for nodename, operator_type in comparison_map.items():
             if self.accept(nodename):
                 return ComparisonNode(operator_type, left, self.e5())
+        if self.accept('not') and self.accept('in'):
+            return ComparisonNode('notin', left, self.e5())
         return left
 
     def e5(self):
@@ -568,6 +631,10 @@ class Parser:
             args = self.args()
             self.block_expect('rbracket', block_start)
             return ArrayNode(args)
+        elif self.accept('lcurl'):
+            key_values = self.key_values()
+            self.block_expect('rcurl', block_start)
+            return DictNode(key_values)
         else:
             return self.e9()
 
@@ -585,6 +652,31 @@ class Parser:
             return StringNode(t)
         return EmptyNode(self.current.lineno, self.current.colno)
 
+    def key_values(self):
+        s = self.statement()
+        a = ArgumentNode(s)
+
+        while not isinstance(s, EmptyNode):
+            potential = self.current
+            if self.accept('colon'):
+                if not isinstance(s, StringNode):
+                    raise ParseException('Key must be a string.',
+                                         self.getline(), s.lineno, s.colno)
+                if s.value in a.kwargs:
+                    # + 1 to colno to point to the actual string, not the opening quote
+                    raise ParseException('Duplicate dictionary key: {}'.format(s.value),
+                                         self.getline(), s.lineno, s.colno + 1)
+                a.set_kwarg(s.value, self.statement())
+                potential = self.current
+                if not self.accept('comma'):
+                    return a
+                a.commas.append(potential)
+            else:
+                raise ParseException('Only key:value pairs are valid in dict construction.',
+                                     self.getline(), s.lineno, s.colno)
+            s = self.statement()
+        return a
+
     def args(self):
         s = self.statement()
         a = ArgumentNode(s)
@@ -596,7 +688,7 @@ class Parser:
                 a.append(s)
             elif self.accept('colon'):
                 if not isinstance(s, IdNode):
-                    raise ParseException('Keyword argument must be a plain identifier.',
+                    raise ParseException('Dictionary key must be a plain identifier.',
                                          self.getline(), s.lineno, s.colno)
                 a.set_kwarg(s.value, self.statement())
                 potential = self.current
@@ -631,10 +723,17 @@ class Parser:
         t = self.current
         self.expect('id')
         varname = t
+        varnames = [t]
+
+        if self.accept('comma'):
+            t = self.current
+            self.expect('id')
+            varnames.append(t)
+
         self.expect('colon')
         items = self.statement()
         block = self.codeblock()
-        return ForeachClauseNode(varname.lineno, varname.colno, varname, items, block)
+        return ForeachClauseNode(varname.lineno, varname.colno, varnames, items, block)
 
     def ifblock(self):
         condition = self.statement()
@@ -670,6 +769,10 @@ class Parser:
             block = self.foreachblock()
             self.block_expect('endforeach', block_start)
             return block
+        if self.accept('continue'):
+            return ContinueNode(self.current)
+        if self.accept('break'):
+            return BreakNode(self.current)
         return self.statement()
 
     def codeblock(self):

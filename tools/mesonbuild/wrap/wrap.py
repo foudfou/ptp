@@ -14,11 +14,12 @@
 
 from .. import mlog
 import contextlib
-import urllib.request, os, hashlib, shutil
+import urllib.request, os, hashlib, shutil, tempfile, stat
 import subprocess
 import sys
-from pathlib import Path
+import configparser
 from . import WrapMode
+from ..mesonlib import MesonException
 
 try:
     import ssl
@@ -28,6 +29,7 @@ except ImportError:
     has_ssl = False
     API_ROOT = 'http://wrapdb.mesonbuild.com/v1/'
 
+req_timeout = 600.0
 ssl_warning_printed = False
 
 def build_ssl_context():
@@ -39,8 +41,11 @@ def build_ssl_context():
     return ctx
 
 def quiet_git(cmd, workingdir):
-    pc = subprocess.Popen(['git', '-C', workingdir] + cmd,
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    try:
+        pc = subprocess.Popen(['git', '-C', workingdir] + cmd, stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except FileNotFoundError as e:
+        return False, str(e)
     out, err = pc.communicate()
     if pc.returncode != 0:
         return False, err
@@ -50,7 +55,7 @@ def open_wrapdburl(urlstring):
     global ssl_warning_printed
     if has_ssl:
         try:
-            return urllib.request.urlopen(urlstring)# , context=build_ssl_context())
+            return urllib.request.urlopen(urlstring, timeout=req_timeout)# , context=build_ssl_context())
         except urllib.error.URLError:
             if not ssl_warning_printed:
                 print('SSL connection failed. Falling back to unencrypted connections.')
@@ -63,177 +68,194 @@ def open_wrapdburl(urlstring):
     # certificate is not known.
     if urlstring.startswith('https'):
         urlstring = 'http' + urlstring[5:]
-    return urllib.request.urlopen(urlstring)
+    return urllib.request.urlopen(urlstring, timeout=req_timeout)
 
+class WrapException(MesonException):
+    pass
+
+class WrapNotFoundException(WrapException):
+    pass
 
 class PackageDefinition:
     def __init__(self, fname):
-        self.values = {}
-        with open(fname) as ifile:
-            first = ifile.readline().strip()
-
-            if first == '[wrap-file]':
-                self.type = 'file'
-            elif first == '[wrap-git]':
-                self.type = 'git'
-            elif first == '[wrap-hg]':
-                self.type = 'hg'
-            else:
-                raise RuntimeError('Invalid format of package file')
-            for line in ifile:
-                line = line.strip()
-                if line == '':
-                    continue
-                (k, v) = line.split('=', 1)
-                k = k.strip()
-                v = v.strip()
-                self.values[k] = v
+        self.filename = fname
+        self.basename = os.path.basename(fname)
+        self.name = self.basename[:-5]
+        try:
+            self.config = configparser.ConfigParser(interpolation=None)
+            self.config.read(fname)
+        except:
+            raise WrapException('Failed to parse {}'.format(self.basename))
+        if len(self.config.sections()) < 1:
+            raise WrapException('Missing sections in {}'.format(self.basename))
+        self.wrap_section = self.config.sections()[0]
+        if not self.wrap_section.startswith('wrap-'):
+            m = '{!r} is not a valid first section in {}'
+            raise WrapException(m.format(self.wrap_section, self.basename))
+        self.type = self.wrap_section[5:]
+        self.values = dict(self.config[self.wrap_section])
 
     def get(self, key):
-        return self.values[key]
+        try:
+            return self.values[key]
+        except KeyError:
+            m = 'Missing key {!r} in {}'
+            raise WrapException(m.format(key, self.basename))
 
     def has_patch(self):
         return 'patch_url' in self.values
 
 class Resolver:
-    def __init__(self, subdir_root, wrap_mode=WrapMode(1)):
+    def __init__(self, subdir_root, wrap_mode=WrapMode.default):
         self.wrap_mode = wrap_mode
         self.subdir_root = subdir_root
         self.cachedir = os.path.join(self.subdir_root, 'packagecache')
 
     def resolve(self, packagename):
-        # Check if the directory is already resolved
-        dirname = Path(os.path.join(self.subdir_root, packagename))
-        subprojdir = os.path.join(*dirname.parts[-2:])
-        if dirname.is_dir():
-            if (dirname / 'meson.build').is_file():
-                # The directory is there and has meson.build? Great, use it.
-                return packagename
-            # Is the dir not empty and also not a git submodule dir that is
-            # not checkout properly? Can't do anything, exception!
-            elif next(dirname.iterdir(), None) and not (dirname / '.git').is_file():
-                m = '{!r} is not empty and has no meson.build files'
-                raise RuntimeError(m.format(subprojdir))
-        elif dirname.exists():
-            m = '{!r} already exists and is not a dir; cannot use as subproject'
-            raise RuntimeError(m.format(subprojdir))
+        self.packagename = packagename
+        self.directory = packagename
+        # We always have to load the wrap file, if it exists, because it could
+        # override the default directory name.
+        self.wrap = self.load_wrap()
+        if self.wrap and 'directory' in self.wrap.values:
+            self.directory = self.wrap.get('directory')
+            if os.path.dirname(self.directory):
+                raise WrapException('Directory key must be a name and not a path')
+        self.dirname = os.path.join(self.subdir_root, self.directory)
+        meson_file = os.path.join(self.dirname, 'meson.build')
 
-        dirname = str(dirname)
+        # The directory is there and has meson.build? Great, use it.
+        if os.path.exists(meson_file):
+            return self.directory
+
         # Check if the subproject is a git submodule
-        if self.resolve_git_submodule(dirname):
-            return packagename
+        self.resolve_git_submodule()
 
+        if os.path.exists(self.dirname):
+            if not os.path.isdir(self.dirname):
+                raise WrapException('Path already exists but is not a directory')
+        else:
+            # A wrap file is required to download
+            if not self.wrap:
+                m = 'Subproject directory not found and {}.wrap file not found'
+                raise WrapNotFoundException(m.format(self.packagename))
+
+            if self.wrap.type == 'file':
+                self.get_file()
+            else:
+                self.check_can_download()
+                if self.wrap.type == 'git':
+                    self.get_git()
+                elif self.wrap.type == "hg":
+                    self.get_hg()
+                elif self.wrap.type == "svn":
+                    self.get_svn()
+                else:
+                    raise WrapException('Unknown wrap type {!r}'.format(self.wrap.type))
+
+        # A meson.build file is required in the directory
+        if not os.path.exists(meson_file):
+            raise WrapException('Subproject exists but has no meson.build file')
+
+        return self.directory
+
+    def load_wrap(self):
+        fname = os.path.join(self.subdir_root, self.packagename + '.wrap')
+        if os.path.isfile(fname):
+            return PackageDefinition(fname)
+        return None
+
+    def check_can_download(self):
         # Don't download subproject data based on wrap file if requested.
         # Git submodules are ok (see above)!
         if self.wrap_mode is WrapMode.nodownload:
             m = 'Automatic wrap-based subproject downloading is disabled'
-            raise RuntimeError(m)
+            raise WrapException(m)
 
-        # Check if there's a .wrap file for this subproject
-        fname = os.path.join(self.subdir_root, packagename + '.wrap')
-        if not os.path.isfile(fname):
-            # No wrap file with this name? Give up.
-            m = 'No {}.wrap found for {!r}'
-            raise RuntimeError(m.format(packagename, subprojdir))
-        p = PackageDefinition(fname)
-        if p.type == 'file':
-            if not os.path.isdir(self.cachedir):
-                os.mkdir(self.cachedir)
-            self.download(p, packagename)
-            self.extract_package(p)
-        elif p.type == 'git':
-            self.get_git(p)
-        elif p.type == "hg":
-            self.get_hg(p)
-        else:
-            raise AssertionError('Unreachable code.')
-        return p.get('directory')
-
-    def resolve_git_submodule(self, dirname):
+    def resolve_git_submodule(self):
         # Are we in a git repository?
         ret, out = quiet_git(['rev-parse'], self.subdir_root)
         if not ret:
             return False
         # Is `dirname` a submodule?
-        ret, out = quiet_git(['submodule', 'status', dirname], self.subdir_root)
+        ret, out = quiet_git(['submodule', 'status', self.dirname], self.subdir_root)
         if not ret:
             return False
         # Submodule has not been added, add it
-        if out.startswith(b'-'):
-            if subprocess.call(['git', '-C', self.subdir_root, 'submodule', 'update', '--init', dirname]) != 0:
-                return False
-        # Submodule was added already, but it wasn't populated. Do a checkout.
-        elif out.startswith(b' '):
-            if subprocess.call(['git', 'checkout', '.'], cwd=dirname):
+        if out.startswith(b'+'):
+            mlog.warning('git submodule might be out of date')
+            return True
+        elif out.startswith(b'U'):
+            raise WrapException('git submodule has merge conflicts')
+        # Submodule exists, but is deinitialized or wasn't initialized
+        elif out.startswith(b'-'):
+            if subprocess.call(['git', '-C', self.subdir_root, 'submodule', 'update', '--init', self.dirname]) == 0:
                 return True
-        else:
-            m = 'Unknown git submodule output: {!r}'
-            raise AssertionError(m.format(out))
-        return True
+            raise WrapException('git submodule failed to init')
+        # Submodule looks fine, but maybe it wasn't populated properly. Do a checkout.
+        elif out.startswith(b' '):
+            subprocess.call(['git', 'checkout', '.'], cwd=self.dirname)
+            # Even if checkout failed, try building it anyway and let the user
+            # handle any problems manually.
+            return True
+        elif out == b'':
+            # It is not a submodule, just a folder that exists in the main repository.
+            return False
+        m = 'Unknown git submodule output: {!r}'
+        raise WrapException(m.format(out))
 
-    def get_git(self, p):
-        checkoutdir = os.path.join(self.subdir_root, p.get('directory'))
-        revno = p.get('revision')
-        is_there = os.path.isdir(checkoutdir)
-        if is_there:
-            try:
-                subprocess.check_call(['git', 'rev-parse'], cwd=checkoutdir)
-            except subprocess.CalledProcessError:
-                raise RuntimeError('%s is not empty but is not a valid '
-                                   'git repository, we can not work with it'
-                                   ' as a subproject directory.' % (
-                                       checkoutdir))
+    def get_file(self):
+        path = self.get_file_internal('source')
+        extract_dir = self.subdir_root
+        # Some upstreams ship packages that do not have a leading directory.
+        # Create one for them.
+        if 'lead_directory_missing' in self.wrap.values:
+            os.mkdir(self.dirname)
+            extract_dir = self.dirname
+        shutil.unpack_archive(path, extract_dir)
+        if self.wrap.has_patch():
+            self.apply_patch()
 
-            if revno.lower() == 'head':
-                # Failure to do pull is not a fatal error,
-                # because otherwise you can't develop without
-                # a working net connection.
-                subprocess.call(['git', 'pull'], cwd=checkoutdir)
-            else:
-                if subprocess.call(['git', 'checkout', revno], cwd=checkoutdir) != 0:
-                    subprocess.check_call(['git', 'fetch'], cwd=checkoutdir)
-                    subprocess.check_call(['git', 'checkout', revno],
-                                          cwd=checkoutdir)
+    def get_git(self):
+        revno = self.wrap.get('revision')
+        if self.wrap.values.get('clone-recursive', '').lower() == 'true':
+            subprocess.check_call(['git', 'clone', '--recursive', self.wrap.get('url'),
+                                   self.directory], cwd=self.subdir_root)
         else:
-            subprocess.check_call(['git', 'clone', p.get('url'),
-                                   p.get('directory')], cwd=self.subdir_root)
-            if revno.lower() != 'head':
+            subprocess.check_call(['git', 'clone', self.wrap.get('url'),
+                                   self.directory], cwd=self.subdir_root)
+        if revno.lower() != 'head':
+            if subprocess.call(['git', 'checkout', revno], cwd=self.dirname) != 0:
+                subprocess.check_call(['git', 'fetch', self.wrap.get('url'), revno], cwd=self.dirname)
                 subprocess.check_call(['git', 'checkout', revno],
-                                      cwd=checkoutdir)
-            push_url = p.values.get('push-url')
-            if push_url:
-                subprocess.check_call(['git', 'remote', 'set-url',
-                                       '--push', 'origin', push_url],
-                                      cwd=checkoutdir)
+                                      cwd=self.dirname)
+        push_url = self.wrap.values.get('push-url')
+        if push_url:
+            subprocess.check_call(['git', 'remote', 'set-url',
+                                   '--push', 'origin', push_url],
+                                  cwd=self.dirname)
 
-    def get_hg(self, p):
-        checkoutdir = os.path.join(self.subdir_root, p.get('directory'))
-        revno = p.get('revision')
-        is_there = os.path.isdir(checkoutdir)
-        if is_there:
-            if revno.lower() == 'tip':
-                # Failure to do pull is not a fatal error,
-                # because otherwise you can't develop without
-                # a working net connection.
-                subprocess.call(['hg', 'pull'], cwd=checkoutdir)
-            else:
-                if subprocess.call(['hg', 'checkout', revno], cwd=checkoutdir) != 0:
-                    subprocess.check_call(['hg', 'pull'], cwd=checkoutdir)
-                    subprocess.check_call(['hg', 'checkout', revno],
-                                          cwd=checkoutdir)
-        else:
-            subprocess.check_call(['hg', 'clone', p.get('url'),
-                                   p.get('directory')], cwd=self.subdir_root)
-            if revno.lower() != 'tip':
-                subprocess.check_call(['hg', 'checkout', revno],
-                                      cwd=checkoutdir)
+    def get_hg(self):
+        revno = self.wrap.get('revision')
+        subprocess.check_call(['hg', 'clone', self.wrap.get('url'),
+                               self.directory], cwd=self.subdir_root)
+        if revno.lower() != 'tip':
+            subprocess.check_call(['hg', 'checkout', revno],
+                                  cwd=self.dirname)
+
+    def get_svn(self):
+        revno = self.wrap.get('revision')
+        subprocess.check_call(['svn', 'checkout', '-r', revno, self.wrap.get('url'),
+                               self.directory], cwd=self.subdir_root)
 
     def get_data(self, url):
         blocksize = 10 * 1024
+        h = hashlib.sha256()
+        tmpfile = tempfile.NamedTemporaryFile(mode='wb', dir=self.cachedir, delete=False)
         if url.startswith('https://wrapdb.mesonbuild.com'):
             resp = open_wrapdburl(url)
         else:
-            resp = urllib.request.urlopen(url)
+            resp = urllib.request.urlopen(url, timeout=req_timeout)
         with contextlib.closing(resp) as resp:
             try:
                 dlsize = int(resp.info()['Content-Length'])
@@ -241,85 +263,93 @@ class Resolver:
                 dlsize = None
             if dlsize is None:
                 print('Downloading file of unknown size.')
-                return resp.read()
+                while True:
+                    block = resp.read(blocksize)
+                    if block == b'':
+                        break
+                    h.update(block)
+                    tmpfile.write(block)
+                hashvalue = h.hexdigest()
+                return hashvalue, tmpfile.name
             print('Download size:', dlsize)
             print('Downloading: ', end='')
             sys.stdout.flush()
             printed_dots = 0
-            blocks = []
             downloaded = 0
             while True:
                 block = resp.read(blocksize)
                 if block == b'':
                     break
                 downloaded += len(block)
-                blocks.append(block)
+                h.update(block)
+                tmpfile.write(block)
                 ratio = int(downloaded / dlsize * 10)
                 while printed_dots < ratio:
                     print('.', end='')
                     sys.stdout.flush()
                     printed_dots += 1
             print('')
-        return b''.join(blocks)
+            hashvalue = h.hexdigest()
+        return hashvalue, tmpfile.name
 
-    def get_hash(self, data):
+    def check_hash(self, what, path):
+        expected = self.wrap.get(what + '_hash')
         h = hashlib.sha256()
-        h.update(data)
-        hashvalue = h.hexdigest()
-        return hashvalue
-
-    def download(self, p, packagename):
-        ofname = os.path.join(self.cachedir, p.get('source_filename'))
-        if os.path.exists(ofname):
-            mlog.log('Using', mlog.bold(packagename), 'from cache.')
-            return
-        srcurl = p.get('source_url')
-        mlog.log('Downloading', mlog.bold(packagename), 'from', mlog.bold(srcurl))
-        srcdata = self.get_data(srcurl)
-        dhash = self.get_hash(srcdata)
-        expected = p.get('source_hash')
+        with open(path, 'rb') as f:
+            h.update(f.read())
+        dhash = h.hexdigest()
         if dhash != expected:
-            raise RuntimeError('Incorrect hash for source %s:\n %s expected\n %s actual.' % (packagename, expected, dhash))
-        with open(ofname, 'wb') as f:
-            f.write(srcdata)
-        if p.has_patch():
-            purl = p.get('patch_url')
-            mlog.log('Downloading patch from', mlog.bold(purl))
-            pdata = self.get_data(purl)
-            phash = self.get_hash(pdata)
-            expected = p.get('patch_hash')
-            if phash != expected:
-                raise RuntimeError('Incorrect hash for patch %s:\n %s expected\n %s actual' % (packagename, expected, phash))
-            filename = os.path.join(self.cachedir, p.get('patch_filename'))
-            with open(filename, 'wb') as f:
-                f.write(pdata)
-        else:
-            mlog.log('Package does not require patch.')
+            raise WrapException('Incorrect hash for %s:\n %s expected\n %s actual.' % (what, expected, dhash))
 
-    def extract_package(self, package):
-        if sys.version_info < (3, 5):
-            try:
-                import lzma
-                del lzma
-            except ImportError:
-                pass
-            else:
-                try:
-                    shutil.register_unpack_format('xztar', ['.tar.xz', '.txz'], shutil._unpack_tarfile, [], "xz'ed tar-file")
-                except shutil.RegistryError:
-                    pass
-        target_dir = os.path.join(self.subdir_root, package.get('directory'))
-        if os.path.isdir(target_dir):
-            return
-        extract_dir = self.subdir_root
-        # Some upstreams ship packages that do not have a leading directory.
-        # Create one for them.
+    def download(self, what, ofname):
+        self.check_can_download()
+        srcurl = self.wrap.get(what + '_url')
+        mlog.log('Downloading', mlog.bold(self.packagename), what, 'from', mlog.bold(srcurl))
+        dhash, tmpfile = self.get_data(srcurl)
+        expected = self.wrap.get(what + '_hash')
+        if dhash != expected:
+            os.remove(tmpfile)
+            raise WrapException('Incorrect hash for %s:\n %s expected\n %s actual.' % (what, expected, dhash))
+        os.rename(tmpfile, ofname)
+
+    def get_file_internal(self, what):
+        filename = self.wrap.get(what + '_filename')
+        cache_path = os.path.join(self.cachedir, filename)
+
+        if os.path.exists(cache_path):
+            self.check_hash(what, cache_path)
+            mlog.log('Using', mlog.bold(self.packagename), what, 'from cache.')
+            return cache_path
+
+        if not os.path.isdir(self.cachedir):
+            os.mkdir(self.cachedir)
+        self.download(what, cache_path)
+        return cache_path
+
+    def apply_patch(self):
+        path = self.get_file_internal('patch')
         try:
-            package.get('lead_directory_missing')
-            os.mkdir(target_dir)
-            extract_dir = target_dir
-        except KeyError:
-            pass
-        shutil.unpack_archive(os.path.join(self.cachedir, package.get('source_filename')), extract_dir)
-        if package.has_patch():
-            shutil.unpack_archive(os.path.join(self.cachedir, package.get('patch_filename')), self.subdir_root)
+            shutil.unpack_archive(path, self.subdir_root)
+        except Exception:
+            with tempfile.TemporaryDirectory() as workdir:
+                shutil.unpack_archive(path, workdir)
+                self.copy_tree(workdir, self.subdir_root)
+
+    def copy_tree(self, root_src_dir, root_dst_dir):
+        """
+        Copy directory tree. Overwrites also read only files.
+        """
+        for src_dir, dirs, files in os.walk(root_src_dir):
+            dst_dir = src_dir.replace(root_src_dir, root_dst_dir, 1)
+            if not os.path.exists(dst_dir):
+                os.makedirs(dst_dir)
+            for file_ in files:
+                src_file = os.path.join(src_dir, file_)
+                dst_file = os.path.join(dst_dir, file_)
+                if os.path.exists(dst_file):
+                    try:
+                        os.remove(dst_file)
+                    except PermissionError as exc:
+                        os.chmod(dst_file, stat.S_IWUSR)
+                        os.remove(dst_file)
+                shutil.copy2(src_file, dst_dir)

@@ -15,18 +15,33 @@
 import os.path, subprocess
 
 from ..mesonlib import EnvironmentException
+from ..mesonlib import is_windows
 
 from .compilers import Compiler, mono_buildtype_args
 
-class MonoCompiler(Compiler):
-    def __init__(self, exelist, version):
+cs_optimization_args = {'0': [],
+                        'g': [],
+                        '1': ['-optimize+'],
+                        '2': ['-optimize+'],
+                        '3': ['-optimize+'],
+                        's': ['-optimize+'],
+                        }
+
+class CsCompiler(Compiler):
+    def __init__(self, exelist, version, id, runner=None):
         self.language = 'cs'
         super().__init__(exelist, version)
-        self.id = 'mono'
-        self.monorunner = 'mono'
+        self.id = id
+        self.runner = runner
 
     def get_display_language(self):
         return 'C sharp'
+
+    def get_always_args(self):
+        return ['/nologo']
+
+    def get_linker_always_args(self):
+        return ['/nologo']
 
     def get_output_args(self, fname):
         return ['-out:' + fname]
@@ -34,7 +49,7 @@ class MonoCompiler(Compiler):
     def get_link_args(self, fname):
         return ['-r:' + fname]
 
-    def get_soname_args(self, prefix, shlib_name, suffix, path, soversion, is_shared_module):
+    def get_soname_args(self, *args):
         return []
 
     def get_werror_args(self):
@@ -73,6 +88,15 @@ class MonoCompiler(Compiler):
     def get_pic_args(self):
         return []
 
+    def compute_parameters_with_absolute_paths(self, parameter_list, build_dir):
+        for idx, i in enumerate(parameter_list):
+            if i[:2] == '-L':
+                parameter_list[idx] = i[:2] + os.path.normpath(os.path.join(build_dir, i[2:]))
+            if i[:5] == '-lib:':
+                parameter_list[idx] = i[:5] + os.path.normpath(os.path.join(build_dir, i[5:]))
+
+        return parameter_list
+
     def name_string(self):
         return ' '.join(self.exelist)
 
@@ -92,11 +116,14 @@ class MonoCompiler(Compiler):
     }
 }
 ''')
-        pc = subprocess.Popen(self.exelist + [src], cwd=work_dir)
+        pc = subprocess.Popen(self.exelist + self.get_always_args() + [src], cwd=work_dir)
         pc.wait()
         if pc.returncode != 0:
             raise EnvironmentException('Mono compiler %s can not compile programs.' % self.name_string())
-        cmdlist = [self.monorunner, obj]
+        if self.runner:
+            cmdlist = [self.runner, obj]
+        else:
+            cmdlist = [os.path.join(work_dir, obj)]
         pe = subprocess.Popen(cmdlist, cwd=work_dir)
         pe.wait()
         if pe.returncode != 0:
@@ -107,3 +134,30 @@ class MonoCompiler(Compiler):
 
     def get_buildtype_args(self, buildtype):
         return mono_buildtype_args[buildtype]
+
+    def get_debug_args(self, is_debug):
+        return ['-debug'] if is_debug else []
+
+    def get_optimization_args(self, optimization_level):
+        return cs_optimization_args[optimization_level]
+
+class MonoCompiler(CsCompiler):
+    def __init__(self, exelist, version):
+        super().__init__(exelist, version, 'mono',
+                         'mono')
+
+
+class VisualStudioCsCompiler(CsCompiler):
+    def __init__(self, exelist, version):
+        super().__init__(exelist, version, 'csc')
+
+    def get_buildtype_args(self, buildtype):
+        res = mono_buildtype_args[buildtype]
+        if not is_windows():
+            tmp = []
+            for flag in res:
+                if flag == '-debug':
+                    flag = '-debug:portable'
+                tmp.append(flag)
+            res = tmp
+        return res

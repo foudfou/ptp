@@ -31,14 +31,12 @@ def need_regen(regeninfo, regen_timestamp):
     Vs2010Backend.touch_regen_timestamp(regeninfo.build_dir)
     return False
 
-def regen(regeninfo, mesonscript, backend):
-    cmd = [sys.executable,
-           mesonscript,
-           '--internal',
-           'regenerate',
-           regeninfo.build_dir,
-           regeninfo.source_dir,
-           '--backend=' + backend]
+def regen(regeninfo, meson_command, backend):
+    cmd = meson_command + ['--internal',
+                           'regenerate',
+                           regeninfo.build_dir,
+                           regeninfo.source_dir,
+                           '--backend=' + backend]
     subprocess.check_call(cmd)
 
 def run(args):
@@ -49,11 +47,10 @@ def run(args):
         regeninfo = pickle.load(f)
     with open(coredata, 'rb') as f:
         coredata = pickle.load(f)
-    mesonscript = coredata.meson_script_launcher
     backend = coredata.get_builtin_option('backend')
     regen_timestamp = os.stat(dumpfile).st_mtime
     if need_regen(regeninfo, regen_timestamp):
-        regen(regeninfo, mesonscript, backend)
+        regen(regeninfo, coredata.meson_command, backend)
     sys.exit(0)
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@
 
 from . import ModuleReturnValue
 from . import ExtensionModule
-from . import noKwargs
+from ..interpreterbase import noKwargs
 
 class TestModule(ExtensionModule):
 
@@ -24,5 +24,5 @@ class TestModule(ExtensionModule):
         rv = ModuleReturnValue(None, [])
         return rv
 
-def initialize():
-    return TestModule()
+def initialize(*args, **kwargs):
+    return TestModule(*args, **kwargs)

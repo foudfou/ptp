@@ -15,6 +15,7 @@
 
 import lzma
 import os
+import sys
 import shutil
 import subprocess
 import pickle
@@ -24,6 +25,7 @@ import tempfile
 from glob import glob
 from mesonbuild.environment import detect_ninja
 from mesonbuild.mesonlib import windows_proof_rmtree
+from mesonbuild import mlog
 
 def create_hash(fname):
     hashname = fname + '.sha256sum'
@@ -73,7 +75,32 @@ def process_submodules(dirname):
         del_gitfiles(os.path.join(dirname, v))
 
 
-def create_dist_git(dist_name, src_root, bld_root, dist_sub):
+def run_dist_scripts(dist_root, dist_scripts):
+    assert(os.path.isabs(dist_root))
+    env = os.environ.copy()
+    env['MESON_DIST_ROOT'] = dist_root
+    for d in dist_scripts:
+        script = d['exe']
+        args = d['args']
+        name = ' '.join(script + args)
+        print('Running custom dist script {!r}'.format(name))
+        try:
+            rc = subprocess.call(script + args, env=env)
+            if rc != 0:
+                sys.exit('Dist script errored out')
+        except OSError:
+            print('Failed to run dist script {!r}'.format(name))
+            sys.exit(1)
+
+
+def git_have_dirty_index(src_root):
+    '''Check whether there are uncommitted changes in git'''
+    ret = subprocess.call(['git', '-C', src_root, 'diff-index', '--quiet', 'HEAD'])
+    return ret == 1
+
+def create_dist_git(dist_name, src_root, bld_root, dist_sub, dist_scripts):
+    if git_have_dirty_index(src_root):
+        mlog.warning('Repository has uncommitted changes that will not be included in the dist tarball')
     distdir = os.path.join(dist_sub, dist_name)
     if os.path.exists(distdir):
         shutil.rmtree(distdir)
@@ -81,6 +108,7 @@ def create_dist_git(dist_name, src_root, bld_root, dist_sub):
     subprocess.check_call(['git', 'clone', '--shared', src_root, distdir])
     process_submodules(distdir)
     del_gitfiles(distdir)
+    run_dist_scripts(distdir, dist_scripts)
     xzname = distdir + '.tar.xz'
     # Should use shutil but it got xz support only in 3.5.
     with tarfile.open(xzname, 'w:xz') as tf:
@@ -92,12 +120,21 @@ def create_dist_git(dist_name, src_root, bld_root, dist_sub):
     return (xzname, )
 
 
-def create_dist_hg(dist_name, src_root, bld_root, dist_sub):
-    os.makedirs(dist_sub, exist_ok=True)
+def hg_have_dirty_index(src_root):
+    '''Check whether there are uncommitted changes in hg'''
+    out = subprocess.check_output(['hg', '-R', src_root, 'summary'])
+    return b'commit: (clean)' not in out
 
+def create_dist_hg(dist_name, src_root, bld_root, dist_sub, dist_scripts):
+    if hg_have_dirty_index(src_root):
+        mlog.warning('Repository has uncommitted changes that will not be included in the dist tarball')
+
+    os.makedirs(dist_sub, exist_ok=True)
     tarname = os.path.join(dist_sub, dist_name + '.tar')
     xzname = tarname + '.xz'
     subprocess.check_call(['hg', 'archive', '-R', src_root, '-S', '-t', 'tar', tarname])
+    if len(dist_scripts) > 0:
+        mlog.warning('dist scripts are not supported in Mercurial projects')
     with lzma.open(xzname, 'wb') as xf, open(tarname, 'rb') as tf:
         shutil.copyfileobj(tf, xf)
     os.unlink(tarname)
@@ -108,7 +145,7 @@ def create_dist_hg(dist_name, src_root, bld_root, dist_sub):
 
 
 def check_dist(packagename, meson_command):
-    print('Testing distribution package %s.' % packagename)
+    print('Testing distribution package %s' % packagename)
     unpackdir = tempfile.mkdtemp()
     builddir = tempfile.mkdtemp()
     installdir = tempfile.mkdtemp()
@@ -121,21 +158,21 @@ def check_dist(packagename, meson_command):
             print('Running Meson on distribution package failed')
             return 1
         if subprocess.call([ninja_bin], cwd=builddir) != 0:
-            print('Compiling the distribution package failed.')
+            print('Compiling the distribution package failed')
             return 1
         if subprocess.call([ninja_bin, 'test'], cwd=builddir) != 0:
-            print('Running unit tests on the distribution package failed.')
+            print('Running unit tests on the distribution package failed')
             return 1
         myenv = os.environ.copy()
         myenv['DESTDIR'] = installdir
         if subprocess.call([ninja_bin, 'install'], cwd=builddir, env=myenv) != 0:
-            print('Installing the distribution package failed.')
+            print('Installing the distribution package failed')
             return 1
     finally:
         shutil.rmtree(unpackdir)
         shutil.rmtree(builddir)
         shutil.rmtree(installdir)
-    print('Distribution package %s tested.' % packagename)
+    print('Distribution package %s tested' % packagename)
     return 0
 
 def run(args):
@@ -152,11 +189,11 @@ def run(args):
     dist_name = build.project_name + '-' + build.project_version
 
     if os.path.isdir(os.path.join(src_root, '.git')):
-        names = create_dist_git(dist_name, src_root, bld_root, dist_sub)
+        names = create_dist_git(dist_name, src_root, bld_root, dist_sub, build.dist_scripts)
     elif os.path.isdir(os.path.join(src_root, '.hg')):
-        names = create_dist_hg(dist_name, src_root, bld_root, dist_sub)
+        names = create_dist_hg(dist_name, src_root, bld_root, dist_sub, build.dist_scripts)
     else:
-        print('Dist currently only works with Git or Mercurial repos.')
+        print('Dist currently only works with Git or Mercurial repos')
         return 1
     if names is None:
         return 1

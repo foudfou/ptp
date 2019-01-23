@@ -15,7 +15,7 @@
 import os.path
 
 from .. import mlog
-from ..mesonlib import EnvironmentException
+from ..mesonlib import EnvironmentException, version_compare
 
 from .compilers import Compiler
 
@@ -26,6 +26,7 @@ class ValaCompiler(Compiler):
         self.version = version
         self.id = 'valac'
         self.is_cross = False
+        self.base_options = ['b_colorout']
 
     def name_string(self):
         return ' '.join(self.exelist)
@@ -33,11 +34,17 @@ class ValaCompiler(Compiler):
     def needs_static_linker(self):
         return False # Because compiles into C.
 
+    def get_optimization_args(self, optimization_level):
+        return []
+
+    def get_debug_args(self, is_debug):
+        return ['--debug']
+
     def get_output_args(self, target):
-        return ['-o', target]
+        return [] # Because compiles into C.
 
     def get_compile_only_args(self):
-        return ['-C']
+        return [] # Because compiles into C.
 
     def get_pic_args(self):
         return []
@@ -53,6 +60,24 @@ class ValaCompiler(Compiler):
 
     def get_werror_args(self):
         return ['--fatal-warnings']
+
+    def get_colorout_args(self, colortype):
+        if version_compare(self.version, '>=0.37.1'):
+            return ['--color=' + colortype]
+        return []
+
+    def compute_parameters_with_absolute_paths(self, parameter_list, build_dir):
+        for idx, i in enumerate(parameter_list):
+            if i[:9] == '--girdir=':
+                parameter_list[idx] = i[:9] + os.path.normpath(os.path.join(build_dir, i[9:]))
+            if i[:10] == '--vapidir=':
+                parameter_list[idx] = i[:10] + os.path.normpath(os.path.join(build_dir, i[10:]))
+            if i[:13] == '--includedir=':
+                parameter_list[idx] = i[:13] + os.path.normpath(os.path.join(build_dir, i[13:]))
+            if i[:14] == '--metadatadir=':
+                parameter_list[idx] = i[:14] + os.path.normpath(os.path.join(build_dir, i[14:]))
+
+        return parameter_list
 
     def sanity_check(self, work_dir, environment):
         code = 'class MesonSanityCheck : Object { }'
@@ -88,3 +113,9 @@ class ValaCompiler(Compiler):
                 return [vapi]
         mlog.debug('Searched {!r} and {!r} wasn\'t found'.format(extra_dirs, libname))
         return None
+
+    def thread_flags(self, env):
+        return []
+
+    def thread_link_flags(self, env):
+        return []

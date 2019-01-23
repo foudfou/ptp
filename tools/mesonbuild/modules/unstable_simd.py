@@ -16,10 +16,13 @@ from .. import mesonlib, compilers, mlog
 
 from . import ExtensionModule
 
+from ..interpreterbase import FeatureNew
+
 class SimdModule(ExtensionModule):
 
-    def __init__(self):
-        super().__init__()
+    @FeatureNew('SIMD module', '0.42.0')
+    def __init__(self, interpreter):
+        super().__init__(interpreter)
         self.snippets.add('check')
         # FIXME add Altivec and AVX512.
         self.isets = ('mmx',
@@ -43,6 +46,12 @@ class SimdModule(ExtensionModule):
             raise mesonlib.MesonException('Argument must be a string.')
         if 'compiler' not in kwargs:
             raise mesonlib.MesonException('Must specify compiler keyword')
+        if 'sources' in kwargs:
+            raise mesonlib.MesonException('SIMD module does not support the "sources" keyword')
+        basic_kwargs = {}
+        for key, value in kwargs.items():
+            if key not in self.isets and key != 'compiler':
+                basic_kwargs[key] = value
         compiler = kwargs['compiler'].compiler
         if not isinstance(compiler, compilers.compilers.Compiler):
             raise mesonlib.MesonException('Compiler argument must be a compiler object.')
@@ -64,9 +73,14 @@ class SimdModule(ExtensionModule):
             conf.values['HAVE_' + iset.upper()] = ('1', 'Compiler supports %s.' % iset)
             libname = prefix + '_' + iset
             lib_kwargs = {'sources': iset_fname,
-                          compiler.get_language() + '_args': args}
+                          }
+            lib_kwargs.update(basic_kwargs)
+            langarg_key = compiler.get_language() + '_args'
+            old_lang_args = mesonlib.extract_as_list(lib_kwargs, langarg_key)
+            all_lang_args = old_lang_args + args
+            lib_kwargs[langarg_key] = all_lang_args
             result.append(interpreter.func_static_lib(None, [libname], lib_kwargs))
         return [result, cdata]
 
-def initialize():
-    return SimdModule()
+def initialize(*args, **kwargs):
+    return SimdModule(*args, **kwargs)

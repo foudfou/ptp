@@ -14,12 +14,87 @@
 
 """A library of random helper functionality."""
 
+import functools
+import sys
 import stat
 import time
 import platform, subprocess, operator, os, shutil, re
 import collections
+from enum import Enum
+from functools import lru_cache
+
+from mesonbuild import mlog
+
+have_fcntl = False
+have_msvcrt = False
+# {subproject: project_meson_version}
+project_meson_versions = {}
+
+try:
+    import fcntl
+    have_fcntl = True
+except Exception:
+    pass
+
+try:
+    import msvcrt
+    have_msvcrt = True
+except Exception:
+    pass
 
 from glob import glob
+
+if os.path.basename(sys.executable) == 'meson.exe':
+    # In Windows and using the MSI installed executable.
+    python_command = [sys.executable, 'runpython']
+else:
+    python_command = [sys.executable]
+meson_command = None
+
+def set_meson_command(mainfile):
+    global python_command
+    global meson_command
+    # On UNIX-like systems `meson` is a Python script
+    # On Windows `meson` and `meson.exe` are wrapper exes
+    if not mainfile.endswith('.py'):
+        meson_command = [mainfile]
+    elif os.path.isabs(mainfile) and mainfile.endswith('mesonmain.py'):
+        # Can't actually run meson with an absolute path to mesonmain.py, it must be run as -m mesonbuild.mesonmain
+        meson_command = python_command + ['-m', 'mesonbuild.mesonmain']
+    else:
+        # Either run uninstalled, or full path to meson-script.py
+        meson_command = python_command + [mainfile]
+    # We print this value for unit tests.
+    if 'MESON_COMMAND_TESTS' in os.environ:
+        mlog.log('meson_command is {!r}'.format(meson_command))
+
+def is_ascii_string(astring):
+    try:
+        if isinstance(astring, str):
+            astring.encode('ascii')
+        if isinstance(astring, bytes):
+            astring.decode('ascii')
+    except UnicodeDecodeError:
+        return False
+    return True
+
+def check_direntry_issues(direntry_array):
+    import locale
+    # Warn if the locale is not UTF-8. This can cause various unfixable issues
+    # such as os.stat not being able to decode filenames with unicode in them.
+    # There is no way to reset both the preferred encoding and the filesystem
+    # encoding, so we can just warn about it.
+    e = locale.getpreferredencoding()
+    if e.upper() != 'UTF-8' and not is_windows():
+        if not isinstance(direntry_array, list):
+            direntry_array = [direntry_array]
+        for de in direntry_array:
+            if is_ascii_string(de):
+                continue
+            mlog.warning('''You are using {!r} which is not a Unicode-compatible '
+locale but you are trying to access a file system entry called {!r} which is
+not pure ASCII. This may cause problems.
+'''.format(e, de), file=sys.stderr)
 
 # Put this in objects that should not get dumped to pickle files
 # by accident.
@@ -28,6 +103,13 @@ an_unpicklable_object = threading.Lock()
 
 class MesonException(Exception):
     '''Exceptions thrown by Meson'''
+
+    def get_msg_with_context(self):
+        s = ''
+        if hasattr(self, 'lineno') and hasattr(self, 'file'):
+            s = get_error_location_string(self.file, self.lineno) + ' '
+        s += str(self)
+        return s
 
 class EnvironmentException(MesonException):
     '''Exceptions thrown while processing and creating the build environment'''
@@ -142,6 +224,7 @@ class File:
         return ret.format(self.relative_name())
 
     @staticmethod
+    @lru_cache(maxsize=None)
     def from_source_file(source_root, subdir, fname):
         if not os.path.isfile(os.path.join(source_root, subdir, fname)):
             raise MesonException('File %s does not exist.' % fname)
@@ -155,12 +238,14 @@ class File:
     def from_absolute_file(fname):
         return File(False, '', fname)
 
+    @lru_cache(maxsize=None)
     def rel_to_builddir(self, build_to_src):
         if self.is_built:
             return self.relative_name()
         else:
             return os.path.join(build_to_src, self.subdir, self.fname)
 
+    @lru_cache(maxsize=None)
     def absolute_path(self, srcdir, builddir):
         absdir = srcdir
         if self.is_built:
@@ -179,23 +264,15 @@ class File:
     def __hash__(self):
         return hash((self.fname, self.subdir, self.is_built))
 
+    @lru_cache(maxsize=None)
     def relative_name(self):
         return os.path.join(self.subdir, self.fname)
-
-def get_meson_script(env, script):
-    '''
-    Given the path of `meson.py`/`meson`, get the path of a meson script such
-    as `mesonintrospect` or `mesontest`.
-    '''
-    meson_py = env.get_build_command()
-    (base, ext) = os.path.splitext(meson_py)
-    return os.path.join(os.path.dirname(base), script + ext)
 
 def get_compiler_for_source(compilers, src):
     for comp in compilers:
         if comp.can_compile(src):
             return comp
-    raise RuntimeError('No specified compiler can handle file {!s}'.format(src))
+    raise MesonException('No specified compiler can handle file {!s}'.format(src))
 
 def classify_unity_sources(compilers, sources):
     compsrclist = {}
@@ -207,22 +284,67 @@ def classify_unity_sources(compilers, sources):
             compsrclist[comp].append(src)
     return compsrclist
 
-def flatten(item):
-    if not isinstance(item, list):
-        return [item]
-    result = []
-    for i in item:
-        if isinstance(i, list):
-            result += flatten(i)
-        else:
-            result.append(i)
-    return result
+class OrderedEnum(Enum):
+    """
+    An Enum which additionally offers homogeneous ordered comparison.
+    """
+    def __ge__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value >= other.value
+        return NotImplemented
+
+    def __gt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value > other.value
+        return NotImplemented
+
+    def __le__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value <= other.value
+        return NotImplemented
+
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value < other.value
+        return NotImplemented
+
+MachineChoice = OrderedEnum('MachineChoice', ['BUILD', 'HOST', 'TARGET'])
+
+class PerMachine:
+    def __init__(self, build, host, target):
+        self.build = build
+        self.host = host
+        self.target = target
+
+    def __getitem__(self, machine: MachineChoice):
+        return {
+            MachineChoice.BUILD:  self.build,
+            MachineChoice.HOST:   self.host,
+            MachineChoice.TARGET: self.target
+        }[machine]
+
+    def __setitem__(self, machine: MachineChoice, val):
+        key = {
+            MachineChoice.BUILD:  'build',
+            MachineChoice.HOST:   'host',
+            MachineChoice.TARGET: 'target'
+        }[machine]
+        setattr(self, key, val)
 
 def is_osx():
     return platform.system().lower() == 'darwin'
 
 def is_linux():
     return platform.system().lower() == 'linux'
+
+def is_android():
+    return platform.system().lower() == 'android'
+
+def is_haiku():
+    return platform.system().lower() == 'haiku'
+
+def is_openbsd():
+    return platform.system().lower() == 'openbsd'
 
 def is_windows():
     platname = platform.system().lower()
@@ -234,6 +356,100 @@ def is_cygwin():
 
 def is_debianlike():
     return os.path.isfile('/etc/debian_version')
+
+def is_dragonflybsd():
+    return platform.system().lower() == 'dragonfly'
+
+def is_freebsd():
+    return platform.system().lower() == 'freebsd'
+
+def _get_machine_is_cross(env, is_cross):
+    """
+    This is not morally correct, but works for now. For cross builds the build
+    and host machines differ. `is_cross == true` means the host machine, while
+    `is_cross == false` means the build machine. Both are used in practice,
+    even though the documentation refers to the host machine implying we should
+    hard-code it. For non-cross builds `is_cross == false` is passed but the
+    host and build machines are identical so it doesn't matter.
+
+    Users for `for_*` should instead specify up front which machine they want
+    and query that like:
+
+        env.machines[MachineChoice.HOST].is_haiku()
+
+    """
+    for_machine = MachineChoice.HOST if is_cross else MachineChoice.BUILD
+    return env.machines[for_machine]
+
+def for_windows(is_cross, env):
+    """
+    Host machine is windows?
+
+    Deprecated: Please use `env.machines[for_machine].is_windows()`.
+
+    Note: 'host' is the machine on which compiled binaries will run
+    """
+    return _get_machine_is_cross(env, is_cross).is_windows()
+
+def for_cygwin(is_cross, env):
+    """
+    Host machine is cygwin?
+
+    Deprecated: Please use `env.machines[for_machine].is_cygwin()`.
+
+    Note: 'host' is the machine on which compiled binaries will run
+    """
+    return _get_machine_is_cross(env, is_cross).is_cygwin()
+
+def for_linux(is_cross, env):
+    """
+    Host machine is linux?
+
+    Deprecated: Please use `env.machines[for_machine].is_linux()`.
+
+    Note: 'host' is the machine on which compiled binaries will run
+    """
+    return _get_machine_is_cross(env, is_cross).is_linux()
+
+def for_darwin(is_cross, env):
+    """
+    Host machine is Darwin (iOS/OS X)?
+
+    Deprecated: Please use `env.machines[for_machine].is_darwin()`.
+
+    Note: 'host' is the machine on which compiled binaries will run
+    """
+    return _get_machine_is_cross(env, is_cross).is_darwin()
+
+def for_android(is_cross, env):
+    """
+    Host machine is Android?
+
+    Deprecated: Please use `env.machines[for_machine].is_android()`.
+
+    Note: 'host' is the machine on which compiled binaries will run
+    """
+    return _get_machine_is_cross(env, is_cross).is_android()
+
+def for_haiku(is_cross, env):
+    """
+    Host machine is Haiku?
+
+    Deprecated: Please use `env.machines[for_machine].is_haiku()`.
+
+    Note: 'host' is the machine on which compiled binaries will run
+    """
+    return _get_machine_is_cross(env, is_cross).is_haiku()
+
+def for_openbsd(is_cross, env):
+    """
+    Host machine is OpenBSD?
+
+    Deprecated: Please use `env.machines[for_machine].is_openbsd()`.
+
+    Note: 'host' is the machine on which compiled binaries will run
+    """
+    return _get_machine_is_cross(env, is_cross).is_openbsd()
 
 def exe_exists(arglist):
     try:
@@ -262,27 +478,59 @@ def detect_vcs(source_dir):
                 return vcs
     return None
 
-def grab_leading_numbers(vstr, strict=False):
-    result = []
-    for x in vstr.split('.'):
-        try:
-            result.append(int(x))
-        except ValueError as e:
-            if strict:
-                msg = 'Invalid version to compare against: {!r}; only ' \
-                      'numeric digits separated by "." are allowed: ' + str(e)
-                raise MesonException(msg.format(vstr))
-            break
-    return result
+# a helper class which implements the same version ordering as RPM
+@functools.total_ordering
+class Version:
+    def __init__(self, s):
+        self._s = s
 
-numpart = re.compile('[0-9.]+')
+        # split into numeric, alphabetic and non-alphanumeric sequences
+        sequences = re.finditer(r'(\d+|[a-zA-Z]+|[^a-zA-Z\d]+)', s)
+        # non-alphanumeric separators are discarded
+        sequences = [m for m in sequences if not re.match(r'[^a-zA-Z\d]+', m.group(1))]
+        # numeric sequences have leading zeroes discarded
+        sequences = [re.sub(r'^0+(\d)', r'\1', m.group(1), 1) for m in sequences]
 
-def version_compare(vstr1, vstr2, strict=False):
-    match = numpart.match(vstr1.strip())
-    if match is None:
-        msg = 'Uncomparable version string {!r}.'
-        raise MesonException(msg.format(vstr1))
-    vstr1 = match.group(0)
+        self._v = sequences
+
+    def __str__(self):
+        return '%s (V=%s)' % (self._s, str(self._v))
+
+    def __lt__(self, other):
+        return self.__cmp__(other) == -1
+
+    def __eq__(self, other):
+        return self.__cmp__(other) == 0
+
+    def __cmp__(self, other):
+        def cmp(a, b):
+            return (a > b) - (a < b)
+
+        # compare each sequence in order
+        for i in range(0, min(len(self._v), len(other._v))):
+            # sort a non-digit sequence before a digit sequence
+            if self._v[i].isdigit() != other._v[i].isdigit():
+                return 1 if self._v[i].isdigit() else -1
+
+            # compare as numbers
+            if self._v[i].isdigit():
+                # because leading zeros have already been removed, if one number
+                # has more digits, it is greater
+                c = cmp(len(self._v[i]), len(other._v[i]))
+                if c != 0:
+                    return c
+                # fallthrough
+
+            # compare lexicographically
+            c = cmp(self._v[i], other._v[i])
+            if c != 0:
+                return c
+
+        # if equal length, all components have matched, so equal
+        # otherwise, the version with a suffix remaining is greater
+        return cmp(len(self._v), len(other._v))
+
+def _version_extract_cmpop(vstr2):
     if vstr2.startswith('>='):
         cmpop = operator.ge
         vstr2 = vstr2[2:]
@@ -306,9 +554,12 @@ def version_compare(vstr1, vstr2, strict=False):
         vstr2 = vstr2[1:]
     else:
         cmpop = operator.eq
-    varr1 = grab_leading_numbers(vstr1, strict)
-    varr2 = grab_leading_numbers(vstr2, strict)
-    return cmpop(varr1, varr2)
+
+    return (cmpop, vstr2)
+
+def version_compare(vstr1, vstr2):
+    (cmpop, vstr2) = _version_extract_cmpop(vstr2)
+    return cmpop(Version(vstr1), Version(vstr2))
 
 def version_compare_many(vstr1, conditions):
     if not isinstance(conditions, (list, tuple, frozenset)):
@@ -316,11 +567,51 @@ def version_compare_many(vstr1, conditions):
     found = []
     not_found = []
     for req in conditions:
-        if not version_compare(vstr1, req, strict=True):
+        if not version_compare(vstr1, req):
             not_found.append(req)
         else:
             found.append(req)
     return not_found == [], not_found, found
+
+# determine if the minimum version satisfying the condition |condition| exceeds
+# the minimum version for a feature |minimum|
+def version_compare_condition_with_min(condition, minimum):
+    if condition.startswith('>='):
+        cmpop = operator.le
+        condition = condition[2:]
+    elif condition.startswith('<='):
+        return False
+    elif condition.startswith('!='):
+        return False
+    elif condition.startswith('=='):
+        cmpop = operator.le
+        condition = condition[2:]
+    elif condition.startswith('='):
+        cmpop = operator.le
+        condition = condition[1:]
+    elif condition.startswith('>'):
+        cmpop = operator.lt
+        condition = condition[1:]
+    elif condition.startswith('<'):
+        return False
+    else:
+        cmpop = operator.le
+
+    # Declaring a project(meson_version: '>=0.46') and then using features in
+    # 0.46.0 is valid, because (knowing the meson versioning scheme) '0.46.0' is
+    # the lowest version which satisfies the constraint '>=0.46'.
+    #
+    # But this will fail here, because the minimum version required by the
+    # version constraint ('0.46') is strictly less (in our version comparison)
+    # than the minimum version needed for the feature ('0.46.0').
+    #
+    # Map versions in the constraint of the form '0.46' to '0.46.0', to embed
+    # this knowledge of the meson versioning scheme.
+    condition = condition.strip()
+    if re.match('^\d+.\d+$', condition):
+        condition += '.0'
+
+    return cmpop(Version(minimum), Version(condition))
 
 def default_libdir():
     if is_debianlike():
@@ -372,31 +663,52 @@ def get_library_dirs():
     unixdirs += glob('/lib/' + plat + '*')
     return unixdirs
 
+def has_path_sep(name, sep='/\\'):
+    'Checks if any of the specified @sep path separators are in @name'
+    for each in sep:
+        if each in name:
+            return True
+    return False
 
-def do_replacement(regex, line, confdata):
-    match = re.search(regex, line)
+def do_replacement(regex, line, format, confdata):
     missing_variables = set()
-    while match:
-        varname = match.group(1)
-        if varname in confdata:
-            (var, desc) = confdata.get(varname)
-            if isinstance(var, str):
-                pass
-            elif isinstance(var, int):
-                var = str(var)
-            else:
-                raise RuntimeError('Tried to replace a variable with something other than a string or int.')
+    start_tag = '@'
+    backslash_tag = '\\@'
+    if format == 'cmake':
+        start_tag = '${'
+        backslash_tag = '\\${'
+
+    def variable_replace(match):
+        # Pairs of escape characters before '@' or '\@'
+        if match.group(0).endswith('\\'):
+            num_escapes = match.end(0) - match.start(0)
+            return '\\' * (num_escapes // 2)
+        # Single escape character and '@'
+        elif match.group(0) == backslash_tag:
+            return start_tag
+        # Template variable to be replaced
         else:
-            missing_variables.add(varname)
-            var = ''
-        line = line.replace('@' + varname + '@', var)
-        match = re.search(regex, line)
-    return line, missing_variables
+            varname = match.group(1)
+            if varname in confdata:
+                (var, desc) = confdata.get(varname)
+                if isinstance(var, str):
+                    pass
+                elif isinstance(var, int):
+                    var = str(var)
+                else:
+                    msg = 'Tried to replace variable {!r} value with ' \
+                          'something other than a string or int: {!r}'
+                    raise MesonException(msg.format(varname, var))
+            else:
+                missing_variables.add(varname)
+                var = ''
+            return var
+    return re.sub(regex, variable_replace, line), missing_variables
 
 def do_mesondefine(line, confdata):
     arr = line.split()
     if len(arr) != 2:
-        raise MesonException('#mesondefine does not contain exactly two tokens: %s', line.strip())
+        raise MesonException('#mesondefine does not contain exactly two tokens: %s' % line.strip())
     varname = arr[1]
     try:
         (v, desc) = confdata.get(varname)
@@ -415,61 +727,100 @@ def do_mesondefine(line, confdata):
         raise MesonException('#mesondefine argument "%s" is of unknown type.' % varname)
 
 
-def do_conf_file(src, dst, confdata):
+def do_conf_file(src, dst, confdata, format, encoding='utf-8'):
     try:
-        with open(src, encoding='utf-8') as f:
+        with open(src, encoding=encoding) as f:
             data = f.readlines()
     except Exception as e:
         raise MesonException('Could not read input file %s: %s' % (src, str(e)))
     # Only allow (a-z, A-Z, 0-9, _, -) as valid characters for a define
     # Also allow escaping '@' with '\@'
-    regex = re.compile(r'[^\\]?@([-a-zA-Z0-9_]+)@')
+    if format in ['meson', 'cmake@']:
+        regex = re.compile(r'(?:\\\\)+(?=\\?@)|\\@|@([-a-zA-Z0-9_]+)@')
+    elif format == 'cmake':
+        regex = re.compile(r'(?:\\\\)+(?=\\?\$)|\\\${|\${([-a-zA-Z0-9_]+)}')
+    else:
+        raise MesonException('Format "{}" not handled'.format(format))
+
+    search_token = '#mesondefine'
+    if format != 'meson':
+        search_token = '#cmakedefine'
+
     result = []
     missing_variables = set()
+    # Detect when the configuration data is empty and no tokens were found
+    # during substitution so we can warn the user to use the `copy:` kwarg.
+    confdata_useless = not confdata.keys()
     for line in data:
-        if line.startswith('#mesondefine'):
+        if line.startswith(search_token):
+            confdata_useless = False
             line = do_mesondefine(line, confdata)
         else:
-            line, missing = do_replacement(regex, line, confdata)
+            line, missing = do_replacement(regex, line, format, confdata)
             missing_variables.update(missing)
+            if missing:
+                confdata_useless = False
         result.append(line)
     dst_tmp = dst + '~'
-    with open(dst_tmp, 'w', encoding='utf-8') as f:
-        f.writelines(result)
+    try:
+        with open(dst_tmp, 'w', encoding=encoding) as f:
+            f.writelines(result)
+    except Exception as e:
+        raise MesonException('Could not write output file %s: %s' % (dst, str(e)))
     shutil.copymode(src, dst_tmp)
     replace_if_different(dst, dst_tmp)
-    return missing_variables
+    return missing_variables, confdata_useless
 
-def dump_conf_header(ofilename, cdata):
-    with open(ofilename, 'w', encoding='utf-8') as ofile:
-        ofile.write('''/*
+CONF_C_PRELUDE = '''/*
  * Autogenerated by the Meson build system.
  * Do not edit, your changes will be lost.
  */
 
 #pragma once
 
-''')
+'''
+
+CONF_NASM_PRELUDE = '''; Autogenerated by the Meson build system.
+; Do not edit, your changes will be lost.
+
+'''
+
+def dump_conf_header(ofilename, cdata, output_format):
+    if output_format == 'c':
+        prelude = CONF_C_PRELUDE
+        prefix = '#'
+    elif output_format == 'nasm':
+        prelude = CONF_NASM_PRELUDE
+        prefix = '%'
+
+    ofilename_tmp = ofilename + '~'
+    with open(ofilename_tmp, 'w', encoding='utf-8') as ofile:
+        ofile.write(prelude)
         for k in sorted(cdata.keys()):
             (v, desc) = cdata.get(k)
             if desc:
-                ofile.write('/* %s */\n' % desc)
+                if output_format == 'c':
+                    ofile.write('/* %s */\n' % desc)
+                elif output_format == 'nasm':
+                    for line in desc.split('\n'):
+                        ofile.write('; %s\n' % line)
             if isinstance(v, bool):
                 if v:
-                    ofile.write('#define %s\n\n' % k)
+                    ofile.write('%sdefine %s\n\n' % (prefix, k))
                 else:
-                    ofile.write('#undef %s\n\n' % k)
+                    ofile.write('%sundef %s\n\n' % (prefix, k))
             elif isinstance(v, (int, str)):
-                ofile.write('#define %s %s\n\n' % (k, v))
+                ofile.write('%sdefine %s %s\n\n' % (prefix, k, v))
             else:
                 raise MesonException('Unknown data type in configuration file entry: ' + k)
+    replace_if_different(ofilename, ofilename_tmp)
 
 def replace_if_different(dst, dst_tmp):
     # If contents are identical, don't touch the file to prevent
     # unnecessary rebuilds.
     different = True
     try:
-        with open(dst, 'r') as f1, open(dst_tmp, 'r') as f2:
+        with open(dst, 'rb') as f1, open(dst_tmp, 'rb') as f2:
             if f1.read() == f2.read():
                 different = False
     except FileNotFoundError:
@@ -478,6 +829,47 @@ def replace_if_different(dst, dst_tmp):
         os.replace(dst_tmp, dst)
     else:
         os.unlink(dst_tmp)
+
+def listify(item, flatten=True, unholder=False):
+    '''
+    Returns a list with all args embedded in a list if they are not a list.
+    This function preserves order.
+    @flatten: Convert lists of lists to a flat list
+    @unholder: Replace each item with the object it holds, if required
+
+    Note: unholding only works recursively when flattening
+    '''
+    if not isinstance(item, list):
+        if unholder and hasattr(item, 'held_object'):
+            item = item.held_object
+        return [item]
+    result = []
+    for i in item:
+        if unholder and hasattr(i, 'held_object'):
+            i = i.held_object
+        if flatten and isinstance(i, list):
+            result += listify(i, flatten=True, unholder=unholder)
+        else:
+            result.append(i)
+    return result
+
+
+def extract_as_list(dict_object, *keys, pop=False, **kwargs):
+    '''
+    Extracts all values from given dict_object and listifies them.
+    '''
+    result = []
+    fetch = dict_object.get
+    if pop:
+        fetch = dict_object.pop
+    # If there's only one key, we don't return a list with one element
+    if len(keys) == 1:
+        return listify(fetch(keys[0], []), **kwargs)
+    # Return a list of values corresponding to *keys
+    for key in keys:
+        result.append(listify(fetch(key, []), **kwargs))
+    return result
+
 
 def typeslistify(item, types):
     '''
@@ -514,38 +906,33 @@ def expand_arguments(args):
             return None
     return expended_args
 
-def Popen_safe(args, write=None, stderr=subprocess.PIPE, **kwargs):
-    p = subprocess.Popen(args, universal_newlines=True,
-                         close_fds=False,
-                         stdout=subprocess.PIPE,
-                         stderr=stderr, **kwargs)
+def Popen_safe(args, write=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs):
+    import locale
+    encoding = locale.getpreferredencoding()
+    if sys.version_info < (3, 6) or not sys.stdout.encoding or encoding.upper() != 'UTF-8':
+        return Popen_safe_legacy(args, write=write, stdout=stdout, stderr=stderr, **kwargs)
+    p = subprocess.Popen(args, universal_newlines=True, close_fds=False,
+                         stdout=stdout, stderr=stderr, **kwargs)
     o, e = p.communicate(write)
     return p, o, e
 
-def commonpath(paths):
-    '''
-    For use on Python 3.4 where os.path.commonpath is not available.
-    We currently use it everywhere so this receives enough testing.
-    '''
-    # XXX: Replace me with os.path.commonpath when we start requiring Python 3.5
-    import pathlib
-    if not paths:
-        raise ValueError('arg is an empty sequence')
-    common = pathlib.PurePath(paths[0])
-    for path in paths[1:]:
-        new = []
-        path = pathlib.PurePath(path)
-        for c, p in zip(common.parts, path.parts):
-            if c != p:
-                break
-            new.append(c)
-        # Don't convert '' into '.'
-        if not new:
-            common = ''
-            break
-        new = os.path.join(*new)
-        common = pathlib.PurePath(new)
-    return str(common)
+def Popen_safe_legacy(args, write=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs):
+    p = subprocess.Popen(args, universal_newlines=False,
+                         stdout=stdout, stderr=stderr, **kwargs)
+    if write is not None:
+        write = write.encode('utf-8')
+    o, e = p.communicate(write)
+    if o is not None:
+        if sys.stdout.encoding:
+            o = o.decode(encoding=sys.stdout.encoding, errors='replace').replace('\r\n', '\n')
+        else:
+            o = o.decode(errors='replace').replace('\r\n', '\n')
+    if e is not None:
+        if sys.stderr.encoding:
+            e = e.decode(encoding=sys.stderr.encoding, errors='replace').replace('\r\n', '\n')
+        else:
+            e = e.decode(errors='replace').replace('\r\n', '\n')
+    return p, o, e
 
 def iter_regexin_iter(regexiter, initer):
     '''
@@ -617,6 +1004,8 @@ def substitute_values(command, values):
     _substitute_values_check_errors(command, values)
     # Substitution
     outcmd = []
+    rx_keys = [re.escape(key) for key in values if key not in ('@INPUT@', '@OUTPUT@')]
+    value_rx = re.compile('|'.join(rx_keys)) if rx_keys else None
     for vv in command:
         if not isinstance(vv, str):
             outcmd.append(vv)
@@ -643,12 +1032,9 @@ def substitute_values(command, values):
         elif vv in values:
             outcmd.append(values[vv])
         # Substitute everything else with replacement
+        elif value_rx:
+            outcmd.append(value_rx.sub(lambda m: values[m.group(0)], vv))
         else:
-            for key, value in values.items():
-                if key in ('@INPUT@', '@OUTPUT@'):
-                    # Already done above
-                    continue
-                vv = vv.replace(key, value)
             outcmd.append(vv)
     return outcmd
 
@@ -684,7 +1070,7 @@ def get_filenames_templates_dict(inputs, outputs):
             values['@INPUT{}@'.format(ii)] = vv
         if len(inputs) == 1:
             # Just one value, substitute @PLAINNAME@ and @BASENAME@
-            values['@PLAINNAME@'] = plain = os.path.split(inputs[0])[1]
+            values['@PLAINNAME@'] = plain = os.path.basename(inputs[0])
             values['@BASENAME@'] = os.path.splitext(plain)[0]
     if outputs:
         # Gather values derived from the outputs, similar to above.
@@ -692,11 +1078,22 @@ def get_filenames_templates_dict(inputs, outputs):
         for (ii, vv) in enumerate(outputs):
             values['@OUTPUT{}@'.format(ii)] = vv
         # Outdir should be the same for all outputs
-        values['@OUTDIR@'] = os.path.split(outputs[0])[0]
+        values['@OUTDIR@'] = os.path.dirname(outputs[0])
         # Many external programs fail on empty arguments.
         if values['@OUTDIR@'] == '':
             values['@OUTDIR@'] = '.'
     return values
+
+
+def _make_tree_writable(topdir):
+    # Ensure all files and directories under topdir are writable
+    # (and readable) by owner.
+    for d, _, files in os.walk(topdir):
+        os.chmod(d, os.stat(d).st_mode | stat.S_IWRITE | stat.S_IREAD)
+        for fname in files:
+            fpath = os.path.join(d, fname)
+            if os.path.isfile(fpath):
+                os.chmod(fpath, os.stat(fpath).st_mode | stat.S_IWRITE | stat.S_IREAD)
 
 
 def windows_proof_rmtree(f):
@@ -705,24 +1102,70 @@ def windows_proof_rmtree(f):
     # be scanning files you are trying to delete. The only
     # way to fix this is to try again and again.
     delays = [0.1, 0.1, 0.2, 0.2, 0.2, 0.5, 0.5, 1, 1, 1, 1, 2]
+    # Start by making the tree wriable.
+    _make_tree_writable(f)
     for d in delays:
         try:
             shutil.rmtree(f)
+            return
+        except FileNotFoundError:
             return
         except (OSError, PermissionError):
             time.sleep(d)
     # Try one last time and throw if it fails.
     shutil.rmtree(f)
 
-def unholder_array(entries):
-    result = []
-    for e in entries:
-        if hasattr(e, 'held_object'):
-            e = e.held_object
-        result.append(e)
+
+def windows_proof_rm(fpath):
+    """Like windows_proof_rmtree, but for a single file."""
+    if os.path.isfile(fpath):
+        os.chmod(fpath, os.stat(fpath).st_mode | stat.S_IWRITE | stat.S_IREAD)
+    delays = [0.1, 0.1, 0.2, 0.2, 0.2, 0.5, 0.5, 1, 1, 1, 1, 2]
+    for d in delays:
+        try:
+            os.unlink(fpath)
+            return
+        except FileNotFoundError:
+            return
+        except (OSError, PermissionError):
+            time.sleep(d)
+    os.unlink(fpath)
+
+
+def detect_subprojects(spdir_name, current_dir='', result=None):
+    if result is None:
+        result = {}
+    spdir = os.path.join(current_dir, spdir_name)
+    if not os.path.exists(spdir):
+        return result
+    for trial in glob(os.path.join(spdir, '*')):
+        basename = os.path.basename(trial)
+        if trial == 'packagecache':
+            continue
+        append_this = True
+        if os.path.isdir(trial):
+            detect_subprojects(spdir_name, trial, result)
+        elif trial.endswith('.wrap') and os.path.isfile(trial):
+            basename = os.path.splitext(basename)[0]
+        else:
+            append_this = False
+        if append_this:
+            if basename in result:
+                result[basename].append(trial)
+            else:
+                result[basename] = [trial]
     return result
 
-class OrderedSet(collections.MutableSet):
+def get_error_location_string(fname, lineno):
+    return '{}:{}:'.format(fname, lineno)
+
+def substring_is_in_list(substr, strlist):
+    for s in strlist:
+        if substr in s:
+            return True
+    return False
+
+class OrderedSet(collections.abc.MutableSet):
     """A set that preserves the order in which items are added, by first
     insertion.
     """
@@ -747,6 +1190,9 @@ class OrderedSet(collections.MutableSet):
                 '", "'.join(repr(e) for e in self.__container.keys()))
         return 'OrderedSet()'
 
+    def __reversed__(self):
+        return reversed(self.__container)
+
     def add(self, value):
         self.__container[value] = None
 
@@ -760,3 +1206,35 @@ class OrderedSet(collections.MutableSet):
 
     def difference(self, set_):
         return type(self)(e for e in self if e not in set_)
+
+class BuildDirLock:
+
+    def __init__(self, builddir):
+        self.lockfilename = os.path.join(builddir, 'meson-private/meson.lock')
+
+    def __enter__(self):
+        self.lockfile = open(self.lockfilename, 'w')
+        try:
+            if have_fcntl:
+                fcntl.flock(self.lockfile, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            elif have_msvcrt:
+                msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_NBLCK, 1)
+        except (BlockingIOError, PermissionError):
+            self.lockfile.close()
+            raise MesonException('Some other Meson process is already using this build directory. Exiting.')
+
+    def __exit__(self, *args):
+        if have_fcntl:
+            fcntl.flock(self.lockfile, fcntl.LOCK_UN)
+        elif have_msvcrt:
+            msvcrt.locking(self.lockfile.fileno(), msvcrt.LK_UNLCK, 1)
+        self.lockfile.close()
+
+def relpath(path, start):
+    # On Windows a relative path can't be evaluated for paths on two different
+    # drives (i.e. c:\foo and f:\bar).  The only thing left to do is to use the
+    # original absolute path.
+    try:
+        return os.path.relpath(path, start)
+    except ValueError:
+        return path

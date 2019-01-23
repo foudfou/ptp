@@ -16,12 +16,22 @@ import subprocess, os.path
 
 from ..mesonlib import EnvironmentException, Popen_safe
 
-from .compilers import Compiler, rust_buildtype_args
+from .compilers import Compiler, rust_buildtype_args, clike_debug_args
+
+rust_optimization_args = {'0': [],
+                          'g': ['-C', '--opt-level=0'],
+                          '1': ['-C', '--opt-level=1'],
+                          '2': ['-C', '--opt-level=2'],
+                          '3': ['-C', '--opt-level=3'],
+                          's': ['-C', '--opt-level=s'],
+                          }
 
 class RustCompiler(Compiler):
-    def __init__(self, exelist, version):
+    def __init__(self, exelist, version, is_cross, exe_wrapper=None):
         self.language = 'rust'
         super().__init__(exelist, version)
+        self.is_cross = is_cross
+        self.exe_wrapper = exe_wrapper
         self.id = 'rustc'
 
     def needs_static_linker(self):
@@ -41,7 +51,16 @@ class RustCompiler(Compiler):
         pc.wait()
         if pc.returncode != 0:
             raise EnvironmentException('Rust compiler %s can not compile programs.' % self.name_string())
-        if subprocess.call(output_name) != 0:
+        if self.is_cross:
+            if self.exe_wrapper is None:
+                # Can't check if the binaries run so we have to assume they do
+                return
+            cmdlist = self.exe_wrapper + [output_name]
+        else:
+            cmdlist = [output_name]
+        pe = subprocess.Popen(cmdlist, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pe.wait()
+        if pe.returncode != 0:
             raise EnvironmentException('Executables created by Rust compiler %s are not runnable.' % self.name_string())
 
     def get_dependency_gen_args(self, outfile):
@@ -57,3 +76,20 @@ class RustCompiler(Compiler):
         cmd = self.exelist + ['--print', 'sysroot']
         p, stdo, stde = Popen_safe(cmd)
         return stdo.split('\n')[0]
+
+    def get_debug_args(self, is_debug):
+        return clike_debug_args[is_debug]
+
+    def get_optimization_args(self, optimization_level):
+        return rust_optimization_args[optimization_level]
+
+    def compute_parameters_with_absolute_paths(self, parameter_list, build_dir):
+        for idx, i in enumerate(parameter_list):
+            if i[:2] == '-L':
+                for j in ['dependency', 'crate', 'native', 'framework', 'all']:
+                    combined_len = len(j) + 3
+                    if i[:combined_len] == '-L{}='.format(j):
+                        parameter_list[idx] = i[:combined_len] + os.path.normpath(os.path.join(build_dir, i[combined_len:]))
+                        break
+
+        return parameter_list

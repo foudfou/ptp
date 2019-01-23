@@ -12,25 +12,22 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import sys
 import sysconfig
 from .. import mesonlib, dependencies
 
 from . import ExtensionModule
 from mesonbuild.modules import ModuleReturnValue
-from . import noKwargs, permittedSnippetKwargs
-from ..interpreter import shlib_kwargs
-
-mod_kwargs = set()
-mod_kwargs.update(shlib_kwargs)
+from ..interpreterbase import noKwargs, permittedKwargs, FeatureDeprecated
+from ..build import known_shmod_kwargs
 
 
 class Python3Module(ExtensionModule):
-    def __init__(self):
-        super().__init__()
+    @FeatureDeprecated('python3 module', '0.48.0')
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.snippets.add('extension_module')
 
-    @permittedSnippetKwargs(mod_kwargs)
+    @permittedKwargs(known_shmod_kwargs)
     def extension_module(self, interpreter, state, args, kwargs):
         if 'name_prefix' in kwargs:
             raise mesonlib.MesonException('Name_prefix is set automatically, specifying it is forbidden.')
@@ -51,7 +48,11 @@ class Python3Module(ExtensionModule):
 
     @noKwargs
     def find_python(self, state, args, kwargs):
-        py3 = dependencies.ExternalProgram('python3', sys.executable, silent=True)
+        command = state.environment.binaries.host.lookup_entry('python3')
+        if command is not None:
+            py3 = dependencies.ExternalProgram.from_entry('python3', command)
+        else:
+            py3 = dependencies.ExternalProgram('python3', mesonlib.python_command, silent=True)
         return ModuleReturnValue(py3, [py3])
 
     @noKwargs
@@ -68,9 +69,9 @@ class Python3Module(ExtensionModule):
             raise mesonlib.MesonException('{} is not a valid path name {}.'.format(path_name, valid_names))
 
         # Get a relative path without a prefix, e.g. lib/python3.6/site-packages
-        path = sysconfig.get_path(path_name, vars={'base': ''})[1:]
+        path = sysconfig.get_path(path_name, vars={'base': '', 'platbase': '', 'installed_base': ''})[1:]
         return ModuleReturnValue(path, [])
 
 
-def initialize():
-    return Python3Module()
+def initialize(*args, **kwargs):
+    return Python3Module(*args, **kwargs)

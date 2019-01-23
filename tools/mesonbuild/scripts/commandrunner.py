@@ -15,13 +15,15 @@
 """This program is a wrapper to run external commands. It determines
 what to run, sets up the environment and executes the command."""
 
-import sys, os, subprocess, shutil
+import sys, os, subprocess, shutil, shlex
+import re
 
-def run_command(source_dir, build_dir, subdir, mesonintrospect, command, arguments):
+def run_command(source_dir, build_dir, subdir, meson_command, command, arguments):
     env = {'MESON_SOURCE_ROOT': source_dir,
            'MESON_BUILD_ROOT': build_dir,
            'MESON_SUBDIR': subdir,
-           'MESONINTROSPECT': mesonintrospect}
+           'MESONINTROSPECT': ' '.join([shlex.quote(x) for x in meson_command + ['introspect']]),
+           }
     cwd = os.path.join(source_dir, subdir)
     child_env = os.environ.copy()
     child_env.update(env)
@@ -30,15 +32,27 @@ def run_command(source_dir, build_dir, subdir, mesonintrospect, command, argumen
     exe = shutil.which(command)
     if exe is not None:
         command_array = [exe] + arguments
-        return subprocess.Popen(command_array, env=child_env, cwd=cwd)
-    # No? Maybe it is a script in the source tree.
-    fullpath = os.path.join(source_dir, subdir, command)
-    command_array = [fullpath] + arguments
+    else:# No? Maybe it is a script in the source tree.
+        fullpath = os.path.join(source_dir, subdir, command)
+        command_array = [fullpath] + arguments
     try:
         return subprocess.Popen(command_array, env=child_env, cwd=cwd)
     except FileNotFoundError:
-        print('Could not execute command "%s".' % command)
+        print('Could not execute command "%s". File not found.' % command)
         sys.exit(1)
+    except PermissionError:
+        print('Could not execute command "%s". File not executable.' % command)
+        sys.exit(1)
+    except OSError as err:
+        print('Could not execute command "{}": {}'.format(command, err))
+        sys.exit(1)
+    except subprocess.SubprocessError as err:
+        print('Could not execute command "{}": {}'.format(command, err))
+        sys.exit(1)
+
+def is_python_command(cmdname):
+    end_py_regex = r'python(3|3\.\d+)?(\.exe)?$'
+    return re.search(end_py_regex, cmdname) is not None
 
 def run(args):
     if len(args) < 4:
@@ -47,10 +61,16 @@ def run(args):
     src_dir = args[0]
     build_dir = args[1]
     subdir = args[2]
-    mesonintrospect = args[3]
-    command = args[4]
-    arguments = args[5:]
-    pc = run_command(src_dir, build_dir, subdir, mesonintrospect, command, arguments)
+    meson_command = args[3]
+    if is_python_command(meson_command):
+        meson_command = [meson_command, args[4]]
+        command = args[5]
+        arguments = args[6:]
+    else:
+        meson_command = [meson_command]
+        command = args[4]
+        arguments = args[5:]
+    pc = run_command(src_dir, build_dir, subdir, meson_command, command, arguments)
     pc.wait()
     return pc.returncode
 
