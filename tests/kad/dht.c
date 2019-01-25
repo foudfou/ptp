@@ -50,6 +50,10 @@ int main ()
     n1 = dht_get_from_list(&dht->buckets[bkt_idx], &info.id);
     assert(!n1);
 
+    // insert duplicate
+    info.id = dht->self_id;
+    assert(!dht_insert(dht, &info));
+
     // bucket full
     struct kad_node_info opp;
     opp.id = dht->self_id;

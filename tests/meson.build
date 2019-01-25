@@ -29,7 +29,7 @@ foreach fname : tests_sources
 endforeach
 
 tests_alt_sources = [
-    # TODO: 'kad/dht_ops.c',
+    'kad/dht_alt.c',
 ]
 
 foreach fname : tests_alt_sources

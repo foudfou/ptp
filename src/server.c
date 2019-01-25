@@ -488,7 +488,7 @@ void server_run(const struct config *conf)
     }
     int sock_udp = socket_init(SOCK_DGRAM, conf->bind_addr, conf->bind_port);
     if (sock_udp < 0) {
-        log_fatal("Could to start udp socket. Aborting.");
+        log_fatal("Failed to start udp socket. Aborting.");
         return;
     }
     log_info("Server started. Listening on [%s]:%s tcp and udp.",

@@ -80,7 +80,9 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
 
         for (int j = 0; j < 8; ++j) {
             bucket_idx--;
-            if (BITS_CHK(dist.bytes[i], (1U << (7 - j))))
+            if (BITS_CHK(dist.bytes[i], (1U << (7 - j))) ||
+                bucket_idx == 0) // in case guid space in bytes and in bits are
+                                 // not consistent, like when testing
                 goto guid_end;
         }
     }
@@ -248,12 +250,18 @@ bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info)
     if (!node)
         return false;
 
+    if (kad_guid_eq(&dht->self_id, &node->info.id)) {
+        log_error("Ignoring DHT insert of node with same id as me.");
+        return false;
+    }
+
+
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->info.id);
     struct list_item *bucket = &dht->buckets[bkt_idx];
     size_t count = kad_bucket_count(bucket);
     if (count < KAD_K_CONST) {
         list_append(&dht->buckets[bkt_idx], &node->item);
-        log_debug("DHT insert into bucket %zu.",bkt_idx);
+        log_debug("DHT insert into bucket %zu.", bkt_idx);
     }
     else {
         list_prepend(&dht->replacement, &node->item);
