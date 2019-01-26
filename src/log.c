@@ -1,17 +1,20 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <errno.h>
-#include <pthread.h>
-#include <string.h>
-#include <time.h>
+#include <limits.h>
 #include <fcntl.h>           /* For O_* constants */
 #include <sys/stat.h>        /* For mode constants */
 #include <mqueue.h>
+#include <pthread.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
 #include "config.h"
 #include "log.h"
 
-#define LOG_QUEUE_NAME     "/" PACKAGE_NAME "_log"
 #define LOG_MSG_STOP       "##exit"
 #define LOG_MSG_PREFIX_LEN 56
+
+static char log_queue_name[NAME_MAX];
 
 static struct log_ctx_t {
     int       fmask;
@@ -132,7 +135,7 @@ void *log_queue_consumer(void *data)
     // TODO: void pthread_cleanup_push(void (*routine)(void *), void *arg);
     if (log_ctx.mqr != (mqd_t)-1 && mq_close(log_ctx.mqr) == -1)
         perror("mq_close RO");
-    if (mq_unlink(LOG_QUEUE_NAME) == -1)
+    if (mq_unlink(log_queue_name) == -1)
         perror("mq_unlink");
 
     pthread_exit(NULL);
@@ -158,6 +161,8 @@ bool log_queue_shutdown()
 
 bool log_queue_init(void)
 {
+    snprintf(log_queue_name, NAME_MAX, "/%s_log-%d", PACKAGE_NAME, getpid());
+
     // FIXME:
     struct mq_attr attr;
     attr.mq_flags = 0;
@@ -167,12 +172,12 @@ bool log_queue_init(void)
 
     int attempts = 0;
     while (log_ctx.mqw == (mqd_t)-1 && attempts++ < 3) {
-        log_ctx.mqw = mq_open(LOG_QUEUE_NAME, O_CREAT | O_EXCL | O_WRONLY,
+        log_ctx.mqw = mq_open(log_queue_name, O_CREAT | O_EXCL | O_WRONLY,
                          0644, &attr);
         if (log_ctx.mqw == (mqd_t)-1) {
             if (errno == EEXIST) {
                 fprintf(stderr, "Removing stale message queue.\n");
-                mq_unlink(LOG_QUEUE_NAME);
+                mq_unlink(log_queue_name);
                 continue;
             }
             else {
@@ -182,7 +187,7 @@ bool log_queue_init(void)
         }
     }
 
-    log_ctx.mqr = mq_open(LOG_QUEUE_NAME, O_RDONLY, 0644, &attr);
+    log_ctx.mqr = mq_open(log_queue_name, O_RDONLY, 0644, &attr);
     if (log_ctx.mqr == (mqd_t)-1) {
         perror("mq_open RO");
         return false;
