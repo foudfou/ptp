@@ -13,8 +13,8 @@ int main ()
     log_debug("self_id reset (id=%s)", id);
     free_safer(id);
 
-    struct kad_node_info info = {.id = {.bytes = {0x01}, .is_set = true},
-        .host = "1.1.1.1", .service = "22" };
+    struct kad_node_info info = {.host = "1.1.1.1", .service = "22"};
+    kad_guid_set(&info.id, (unsigned char []){0x01}); // don't initialize id literaly
 
     id = log_fmt_hex(LOG_DEBUG, info.id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_debug("info (id=%s)", id);

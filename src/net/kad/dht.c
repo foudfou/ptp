@@ -246,15 +246,14 @@ static struct kad_node *dht_node_new(const struct kad_node_info *info)
  */
 bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info)
 {
-    struct kad_node *node = dht_node_new(info);
-    if (!node)
-        return false;
-
-    if (kad_guid_eq(&dht->self_id, &node->info.id)) {
+    if (kad_guid_eq(&dht->self_id, &info->id)) {
         log_error("Ignoring DHT insert of node with same id as me.");
         return false;
     }
 
+    struct kad_node *node = dht_node_new(info);
+    if (!node)
+        return false;
 
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->info.id);
     struct list_item *bucket = &dht->buckets[bkt_idx];
