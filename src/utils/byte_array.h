@@ -63,15 +63,17 @@ static inline void type##_reset(type *ary)                              \
 
 #define BYTE_ARRAY_GENERATE_SETBIT(type, len)   \
 /**
- * Sets bit `nth` of byte array.
+ * Sets the `nth` bit of byte array. That's counting bits in same order as
+ * bytes, "from left to right", _not_ from less to most significant bits. The
+ * first bit is nth=0.
  */                                                                     \
 static inline bool type##_setbit(type *ary, const size_t nth)           \
 {                                                                       \
-    if (nth > len * 8 - 1)                                              \
+    if (nth >= len * 8)                                                 \
         return false;                                                   \
-    size_t n = len - nth / 8 - 1;                                       \
+    size_t n = nth / 8;                                                 \
     size_t k = nth % 8;                                                 \
-    BITS_SET(ary->bytes[n], 1 << k);                                    \
+    BITS_SET(ary->bytes[n], 0x80 >> k);                                 \
     return true;                                                        \
 }
 
