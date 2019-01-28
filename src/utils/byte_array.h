@@ -4,6 +4,10 @@
 
 /**
  * A byte array which accepts 0x0 as a valid value.
+ *
+ * Note the order of bits inside bytes is considered the same as for bytes
+ * themselves, ascending. For ex. changing bit 8 (starting from 0) actually
+ * changes the MSB of byte 1.
  */
 #include <stdbool.h>
 #include <string.h>
@@ -24,7 +28,8 @@
     BYTE_ARRAY_GENERATE_SET(name, len)           \
     BYTE_ARRAY_GENERATE_EQ(name, len)            \
     BYTE_ARRAY_GENERATE_RESET(name, len)         \
-    BYTE_ARRAY_GENERATE_SETBIT(name, len)
+    BYTE_ARRAY_GENERATE_SETBIT(name, len)        \
+    BYTE_ARRAY_GENERATE_XOR(name, len)
 
 #define BYTE_ARRAY_INIT(typ, ary) ary = (typ){.bytes = {0}, .is_set = false}
 #define BYTE_ARRAY_COPY(dst, src) dst = src
@@ -75,6 +80,17 @@ static inline bool type##_setbit(type *ary, const size_t nth)           \
     size_t k = nth % 8;                                                 \
     BITS_SET(ary->bytes[n], 0x80 >> k);                                 \
     return true;                                                        \
+}
+
+#define BYTE_ARRAY_GENERATE_XOR(type, len)      \
+/**
+ * Xor two byte arrays and put the result into `out`.
+ */                                                                     \
+static inline void type##_xor(type *out, const type *id1, const type *id2) \
+{                                                                       \
+    for (int i = 0; i < len; ++i) {                                     \
+        out->bytes[i] = id1->bytes[i] ^ id2->bytes[i];                  \
+    }                                                                   \
 }
 
 #endif /* BYTE_ARRAY_H */

@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "log.h"
+#include "utils/bitfield.h"
 #include "utils/bits.h"
 #include "net/kad/dht.h"
 
@@ -90,8 +91,25 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
     return bucket_idx;
 }
 
+static inline size_t
+kad_bucket_get_nodes(const struct list_item *bucket,
+                     struct kad_node_info nodes[], size_t start) {
+    size_t nodes_pos = start;
+    const struct list_item *it = bucket;
+    struct kad_node *node;
+    list_for(it, bucket) {
+        if (nodes_pos >= KAD_K_CONST)
+            break;
+        node = cont(it, struct kad_node, item);
+        kad_node_info_copy(&nodes[nodes_pos], &node->info);
+        nodes_pos += 1;
+    }
+    return nodes_pos;
+}
+
 /**
- * Returns k nodes closest to the target node. Aka lookup.
+ * Fills the given `nodes` array with k nodes closest to the target node. Aka
+ * node lookup.
  *
  * Traverse the routing table in ascending xor distance order relative to the
  * target key. http://stackoverflow.com/a/30655403/421846
@@ -100,6 +118,12 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
    Ex: 4 bits space, for node 1010,
    bucket 0, node  1011
    bucket 1  nodes 100x (ex: 1001)
+   bucket 2  nodes 11xx
+   bucket 3  nodes 0xxx
+
+   Ex: 4 bits space, for node 1001,
+   bucket 0, node  1000
+   bucket 1  nodes 101x
    bucket 2  nodes 11xx
    bucket 3  nodes 0xxx
 
@@ -144,21 +168,59 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
 
    0. suppose node 1010, find_closest for 0011
    while not (k nodes added, or all buckets visited):
-   1. find the bucket for target (0011 -> 3), this will be the initial prefix_len (3)
+   1. find the bucket for target (0011 -> 3), this will be the initial prefix_len (1)
    while prefix_len > 0:
+     next bucket is: target XOR shifted prefix:
+     (0011 XOR 1000 => 1000 => bucket 1)
      (prefix_len/bucket_max_reached)
    continue with unvisited => initial prefix downwards,
    while prefix_len < space_len, just traverse sequentially:
      (bucket 2)
-     (bucket 1)
      (bucket 0)
 */
-bool dht_find_closest(struct kad_dht *dht, const kad_guid *target)
+size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
+                        struct kad_node_info nodes[])
 {
-    // TODO:
-    (void)dht;
-    (void)target;
-    return true;
+    size_t nodes_pos = 0;
+    bitfield visited[BITFIELD_RESERVE_BITS(KAD_GUID_SPACE_IN_BITS)] = {0};
+
+    size_t bucket_idx = kad_bucket_hash(&dht->self_id, target);
+    const struct list_item *bucket = &dht->buckets[bucket_idx];
+
+    int prefix_idx = KAD_GUID_SPACE_IN_BITS - bucket_idx;
+    kad_guid prefix_mask, target_next;
+    while (prefix_idx >= 0) {
+        nodes_pos = kad_bucket_get_nodes(bucket, nodes, nodes_pos);
+        BITFIELD_SET(visited, bucket_idx, 1);
+        // FIXME: generalize inclusion of __func__
+        log_debug("%s: nodes added from bucket %d, total=%zu", __func__, bucket_idx, nodes_pos);
+        // log_debug("__bucket_idx=%zu, prefix=%zu, added=%zu", bucket_idx, prefix_idx, nodes_pos);
+        if (nodes_pos >= KAD_K_CONST)
+            goto filled;
+
+        prefix_idx -= 1;
+        kad_guid_reset(&prefix_mask);
+        kad_guid_setbit(&prefix_mask, prefix_idx);
+
+        kad_guid_xor(&target_next, target, &prefix_mask);
+        bucket_idx = kad_bucket_hash(&dht->self_id, &target_next);
+        bucket = &dht->buckets[bucket_idx];
+    }
+
+    for (int i = KAD_GUID_SPACE_IN_BITS - 1; i >= 0; i--) {
+        if (!BITFIELD_GET(visited, i)) {
+            bucket = &dht->buckets[i];
+            nodes_pos = kad_bucket_get_nodes(bucket, nodes, nodes_pos);
+            BITFIELD_SET(visited, i, 1);
+            log_debug("%s: other nodes added from bucket %d, total=%zu", __func__, i, nodes_pos);
+        }
+
+        if (nodes_pos >= KAD_K_CONST)
+            goto filled;
+    }
+
+  filled:
+    return nodes_pos;
 }
 
 static inline size_t kad_bucket_count(const struct list_item *bucket)

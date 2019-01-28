@@ -3,6 +3,7 @@
 
 tests_sources = [
     'utils/aatree.c',
+    'utils/bitfield.c',
     'utils/bits.c',
     'utils/bstree.c',
     'utils/byte_array.c',
