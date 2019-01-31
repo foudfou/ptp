@@ -92,5 +92,7 @@ void dht_terminate(struct kad_dht * dht);
 int dht_update(struct kad_dht *dht, const struct kad_node_info *info);
 bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info);
 bool dht_delete(struct kad_dht *dht, const kad_guid *node_id);
+size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
+                        struct kad_node_info nodes[], const kad_guid *caller);
 
 #endif /* DHT_H */

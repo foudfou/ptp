@@ -93,7 +93,8 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
 
 static inline size_t
 kad_bucket_get_nodes(const struct list_item *bucket,
-                     struct kad_node_info nodes[], size_t start) {
+                     struct kad_node_info nodes[], size_t start,
+                     const kad_guid *caller) {
     size_t nodes_pos = start;
     const struct list_item *it = bucket;
     struct kad_node *node;
@@ -101,6 +102,10 @@ kad_bucket_get_nodes(const struct list_item *bucket,
         if (nodes_pos >= KAD_K_CONST)
             break;
         node = cont(it, struct kad_node, item);
+        if (caller && kad_guid_eq(&node->info.id, caller)) {
+            log_debug("%s: ignoring known caller", __func__);
+            continue;
+        }
         kad_node_info_copy(&nodes[nodes_pos], &node->info);
         nodes_pos += 1;
     }
@@ -108,14 +113,14 @@ kad_bucket_get_nodes(const struct list_item *bucket,
 }
 
 /**
- * Fills the given `nodes` array with k nodes closest to the target node. Aka
- * node lookup.
+ * Fills the given `nodes` array with k nodes closest to the `target` node,
+ * ignoring the `caller` node if known.
  *
  * Traverse the routing table in ascending xor distance order relative to the
  * target key. http://stackoverflow.com/a/30655403/421846
  */
 size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
-                        struct kad_node_info nodes[])
+                        struct kad_node_info nodes[], const kad_guid *caller)
 {
     size_t nodes_pos = 0;
     bitfield visited[BITFIELD_RESERVE_BITS(KAD_GUID_SPACE_IN_BITS)] = {0};
@@ -126,7 +131,7 @@ size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
     int prefix_idx = KAD_GUID_SPACE_IN_BITS - bucket_idx;
     kad_guid prefix_mask, target_next;
     while (prefix_idx >= 0) {
-        nodes_pos = kad_bucket_get_nodes(bucket, nodes, nodes_pos);
+        nodes_pos = kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
         BITFIELD_SET(visited, bucket_idx, 1);
         // FIXME: generalize inclusion of __func__
         log_debug("%s: nodes added from bucket %d, total=%zu", __func__, bucket_idx, nodes_pos);
@@ -146,7 +151,7 @@ size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
     for (int i = KAD_GUID_SPACE_IN_BITS - 1; i >= 0; i--) {
         if (!BITFIELD_GET(visited, i)) {
             bucket = &dht->buckets[i];
-            nodes_pos = kad_bucket_get_nodes(bucket, nodes, nodes_pos);
+            nodes_pos = kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
             BITFIELD_SET(visited, i, 1);
             log_debug("%s: other nodes added from bucket %d, total=%zu", __func__, i, nodes_pos);
         }

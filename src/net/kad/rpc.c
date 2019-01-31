@@ -105,6 +105,23 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
             log_error("Error while encoding ping response.");
             return false;
         }
+        break;
+    }
+
+    case KAD_RPC_METH_FIND_NODE: {
+        struct kad_rpc_msg resp;
+        KAD_RPC_MSG_INIT(resp);
+        resp.tx_id = msg->tx_id;
+        resp.node_id = ctx->dht->self_id;
+        resp.type = KAD_RPC_TYPE_RESPONSE;
+        resp.meth = KAD_RPC_METH_FIND_NODE;
+        resp.nodes_len = dht_find_closest(ctx->dht, &msg->target, resp.nodes,
+                                          &msg->node_id);
+        if (!benc_encode(&resp, rsp)) {
+            log_error("Error while encoding find node response.");
+            return false;
+        }
+        break;
     }
 
     default:

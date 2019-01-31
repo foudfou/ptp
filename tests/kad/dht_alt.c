@@ -98,7 +98,7 @@ int main ()
         assert(dht_insert(dht, &peer->info));
 
         struct kad_node_info bucket[KAD_K_CONST];
-        int bucket_len = kad_bucket_get_nodes(&dht->buckets[peer->bucket], bucket, 0);
+        int bucket_len = kad_bucket_get_nodes(&dht->buckets[peer->bucket], bucket, 0, NULL);
         assert(strcmp(peer->info.host, bucket[bucket_len-1].host) == 0);
 
         peer++;
@@ -107,7 +107,7 @@ int main ()
     kad_guid target;
     kad_guid_set(&target, (unsigned char[]){0x90}); // 0b1001
     struct kad_node_info nodes[KAD_K_CONST];
-    size_t added = dht_find_closest(dht, &target, nodes);
+    size_t added = dht_find_closest(dht, &target, nodes, NULL);
     assert(added == 5);
 
     int peer_order[] = {2, 1, 3, 0, 4};
@@ -116,7 +116,7 @@ int main ()
     }
 
     kad_guid_set(&target, (unsigned char[]){0xc0}); // 0b1100
-    added = dht_find_closest(dht, &target, nodes);
+    added = dht_find_closest(dht, &target, nodes, NULL);
     assert(added == 5);
     memcpy(peer_order, (int[]){3, 2, 0, 4, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
@@ -124,7 +124,7 @@ int main ()
     }
 
     kad_guid_set(&target, (unsigned char[]){0x03}); // 0b0011
-    added = dht_find_closest(dht, &target, nodes);
+    added = dht_find_closest(dht, &target, nodes, NULL);
     assert(added == 5);
     memcpy(peer_order, (int[]){0, 4, 2, 3, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
