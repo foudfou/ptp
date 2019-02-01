@@ -10,12 +10,12 @@ Pet project to study P2P concepts.
 
 ## Build
 
-You need [ninja](https://ninja-build.org/) installed first.
+Install [meson](https://mesonbuild.com/) and [ninja](https://ninja-build.org/).
+Then
 
-    mkdir build
-    cd build
-    ../tools/meson.py
-    #../tools/meson.py configure -Db_coverage=true -Db_sanitize=address
+    mkdir build && cd build
+    meson
+    # meson configure -Db_coverage=true -Db_sanitize=address
     ninja
 
 Clang may wrongly [complain for missing field initializers](https://llvm.org/bugs/show_bug.cgi?id=21689).
