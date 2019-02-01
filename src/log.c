@@ -71,10 +71,10 @@ void log_stream_msg(int prio, const char *fmt, ...)
   if (!(LOG_MASK(prio) & log_ctx.fmask))
     return;
 
-  char time[LOG_MSG_PREFIX_LEN] = {0};
+  char time[LOG_MSG_PREFIX_LEN];
   log_time(time);
 
-  char buf[LOG_MSG_LEN] = {0};
+  char buf[LOG_MSG_LEN];
   va_list arglist;
   va_start(arglist, fmt);
   int written = snprintf(buf, LOG_MSG_LEN, "%s [%s] ", time,

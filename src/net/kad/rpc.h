@@ -16,7 +16,7 @@
 #define KAD_RPC_STR_MAX       256
 #define KAD_RPC_MSG_TX_ID_LEN 2
 
-#define KAD_RPC_MSG_INIT(msg) msg = (struct kad_rpc_msg){0};    \
+#define KAD_RPC_MSG_INIT(msg) memset(&msg,0,sizeof(struct kad_rpc_msg)); \
     list_init(&(msg.item))
 
 enum kad_rpc_type {

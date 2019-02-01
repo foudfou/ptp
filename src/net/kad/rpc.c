@@ -57,7 +57,7 @@ kad_rpc_update_dht(struct kad_ctx *ctx, const char host[], const char service[],
                    const struct kad_rpc_msg *msg)
 {
     char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes, KAD_GUID_SPACE_IN_BYTES);
-    struct kad_node_info info = {0};
+    struct kad_node_info info;
     info.id = msg->node_id;
     strcpy(info.host, host);
     strcpy(info.service, service);
