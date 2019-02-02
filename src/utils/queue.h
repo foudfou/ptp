@@ -6,9 +6,10 @@
  * A ring buffer FIFO queue.
  *
  * Inspired from https://stackoverflow.com/a/13888143/421846. Another cool
- * implementation http://www.martinbroadhurst.com/cirque-in-c.html.
+ * implementation: http://www.martinbroadhurst.com/cirque-in-c.html.
  */
 #include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 
 enum queue_state {
@@ -17,31 +18,28 @@ enum queue_state {
     QUEUE_STATE_FULL,
 };
 
-#define QUEUE_BIT_LEN(len) 1<<(len)
+#define QUEUE_BIT_LEN(len) (size_t)1<<(len)
 
-/**
- * Keep len < sizeof(unsigned long).
- */
 #define QUEUE_GENERATE(name, type, len)                   \
     typedef struct {                                      \
-        type          *entries[QUEUE_BIT_LEN(len)];       \
-        unsigned long  head    : len;                     \
-        unsigned long  tail    : len;                     \
-        unsigned long  is_full : 1;                       \
+        type      *entries[QUEUE_BIT_LEN(len)];           \
+        uint32_t  head    : len;                          \
+        uint32_t  tail    : len;                          \
+        uint32_t  is_full : 1;                            \
     } name;                                               \
-    QUEUE_GENERATE_INIT(name, type, len)                  \
-        QUEUE_GENERATE_PUT(name)                          \
-        QUEUE_GENERATE_GET(name, type)                    \
-        QUEUE_GENERATE_STATUS(name)
+    QUEUE_GENERATE_INIT(name)                             \
+    QUEUE_GENERATE_PUT(name)                              \
+    QUEUE_GENERATE_GET(name, type)                        \
+    QUEUE_GENERATE_STATUS(name)
 
-#define QUEUE_GENERATE_INIT(name, type, len)     \
+#define QUEUE_GENERATE_INIT(name)                                   \
 static inline void name##_init(name *q)                             \
 {                                                                   \
-    memset(q, 0, sizeof(name));                                     \
+    memset(q, 0, sizeof(*q));                                       \
 }
 
-#define QUEUE_GENERATE_PUT(name)          \
-static inline bool name##_put(name *q, void *elt)       \
+#define QUEUE_GENERATE_PUT(name)                        \
+static inline bool name##_put(name *q, void *elt)                   \
 {                                                                   \
     if (q->is_full)                                                 \
         return false;                                               \

@@ -4,7 +4,7 @@ Pet project to study P2P concepts.
 
 ## Features
 
-* Some data structures (list, hash, trees).
+* Some data structures (list, hash, trees), non-thread-safe.
 * Non-blocking IO event loop.
 * Kademlia DHT.
 
