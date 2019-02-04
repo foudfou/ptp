@@ -6,7 +6,6 @@
  * 0x0100 ^ 0x0110 = 0x0010, common prefix "00". It thus really represents a
  * distance in the tree.
  */
-#include <errno.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>

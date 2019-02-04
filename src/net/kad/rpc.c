@@ -1,5 +1,4 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#include <errno.h>
 #include "log.h"
 #include "net/kad/bencode.h"
 #include "utils/safer.h"

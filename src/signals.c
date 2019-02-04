@@ -1,5 +1,4 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#include <errno.h>
 #include <stdbool.h>
 #include "utils/bits.h"
 #include "log.h"

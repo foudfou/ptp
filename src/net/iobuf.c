@@ -1,5 +1,4 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#include <errno.h>
 #include <string.h>
 #include "log.h"
 #include "net/iobuf.h"
