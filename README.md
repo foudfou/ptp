@@ -18,6 +18,9 @@ Then
     # meson configure -Db_coverage=true -Db_sanitize=address
     ninja
 
+Clang may wrongly [complain for missing field initializers](https://llvm.org/bugs/show_bug.cgi?id=21689).
+Don't bother.
+
 ## Usage
 
 `kldload mqueuefs` on FreeBSD.
