@@ -10,7 +10,15 @@ conf.set_quoted('packagevers', meson.project_version())
 conf.set_quoted('packagecopy',
                 'Copyright (c) 2017 Foudil Brétel. All rights reserved.')
 
-add_global_arguments('-Wfatal-errors', '-pedantic', '-Wextra', language : 'c')
+add_project_arguments('-Wfatal-errors', '-pedantic', '-Wextra', language : 'c')
+compiler_id = meson.get_compiler('c').get_id()
+if compiler_id == 'clang'
+  # Silence clang wrongly complaining about missing braces around
+  # initialization of subobject (`struc aggr some = {0}`)
+  # Related: https://bugs.llvm.org/show_bug.cgi?id=21689
+  # In gcc: https://gcc.gnu.org/bugzilla/show_bug.cgi?id=53119
+  add_project_arguments('-Wno-missing-braces', language : 'c')
+endif
 
 base_inc = include_directories(['src'])
 
