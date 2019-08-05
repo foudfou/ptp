@@ -36,7 +36,7 @@ typedef enum {
     LOG_TYPE_STDOUT = 1, /*!< Print log messages to the stdout. */
     LOG_TYPE_STDERR = 2, /*!< Print log messages to the stderr. */
     LOG_TYPE_FILE   = 3  /*!< Generic logging to (unbuffered) file on the disk. */
-} logtype_t;
+} log_type_t;
 
 struct lookup_table {
     int id;
@@ -74,7 +74,7 @@ void log_perror(const int prio, const char *fmt, const int errnum);
  */
 char *log_fmt_hex(const int prio, const unsigned char *id, const size_t len);
 
-bool log_init(int type, int logmask);
-bool log_shutdown(int logtype);
+bool log_init(log_type_t log_type, int log_mask);
+bool log_shutdown(log_type_t log_type);
 
 #endif /* LOG_H */

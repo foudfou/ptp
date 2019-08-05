@@ -17,7 +17,7 @@ int main(int argc, char *argv[])
     if (rv < 2)
         return rv;
 
-    if (!log_init(conf.logtype, conf.loglevel)) {
+    if (!log_init(conf.log_type, conf.log_level)) {
         fprintf(stderr, "Could not setup logging. Aborting.\n");
         return EXIT_FAILURE;
     }
@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
 
     server_run(&conf);
 
-    log_shutdown(conf.logtype);
+    log_shutdown(conf.log_type);
 
     return EXIT_SUCCESS;
 }

@@ -14,13 +14,12 @@
 #include "config.h"
 
 const struct config CONFIG_DEFAULT = {
-    .conf_dir   = "~/.config/ptp", // FIXME intended for dht.state
-    .bind_addr  = "::",
-    .bind_port  = "22000",
-    // FIXME rename to log_*
-    .logtype    = LOG_TYPE_STDOUT,
-    .loglevel   = LOG_UPTO(LOG_INFO),
-    .max_peers  = 256,
+    .conf_dir  = "~/.config/ptp", // FIXME intended for dht.state
+    .bind_addr = "::",
+    .bind_port = "22000",
+    .log_type  = LOG_TYPE_STDOUT,
+    .log_level = LOG_UPTO(LOG_INFO),
+    .max_peers = 256,
 };
 
 static void usage(void)
@@ -128,7 +127,7 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
                 fprintf(stderr, "Wrong value for --log.\n");
                 return 1;
             }
-            conf->loglevel = sevmask;
+            conf->log_level = sevmask;
             break;
         }
 
@@ -164,7 +163,7 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
             break;
 
         case 's':
-            conf->logtype = LOG_TYPE_SYSLOG;
+            conf->log_type = LOG_TYPE_SYSLOG;
             break;
 
         case 'h':

@@ -196,12 +196,12 @@ bool log_queue_init(void)
     return true;
 }
 
-bool log_init(int logtype, int logmask)
+bool log_init(log_type_t log_type, int log_mask)
 {
     log_msg = &log_stream_msg;
     log_setmask = &log_stream_setlogmask;
 
-    switch (logtype) {
+    switch (log_type) {
     case LOG_TYPE_SYSLOG:
         log_msg = &syslog;
         log_setmask = &setlogmask;
@@ -217,11 +217,11 @@ bool log_init(int logtype, int logmask)
         break;
 
     default:
-        fprintf(stderr, "Unsupported log type %d.\n", logtype);
+        fprintf(stderr, "Unsupported log type %d.\n", log_type);
         return false;
     }
 
-    log_setmask(logmask);
+    log_setmask(log_mask);
 
     if (!log_queue_init()) {
         fprintf(stderr, "Failed to init message queue.\n");
@@ -237,11 +237,11 @@ bool log_init(int logtype, int logmask)
     return true;
 }
 
-bool log_shutdown(int logtype)
+bool log_shutdown(log_type_t log_type)
 {
     log_debug("Stopping logging.");
 
-    switch (logtype) {
+    switch (log_type) {
     case LOG_TYPE_SYSLOG: {
         closelog();
         break;

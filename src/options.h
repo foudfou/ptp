@@ -10,8 +10,8 @@ struct config {
     char       conf_dir[PATH_MAX];
     char       bind_addr[NI_MAXHOST];
     char       bind_port[NI_MAXSERV];
-    logtype_t  logtype;
-    int        loglevel;
+    log_type_t log_type;
+    int        log_level;
     size_t     max_peers;
 };
 
