@@ -2,7 +2,12 @@
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 project('ptp', 'c', version : '0.0.2', license : 'MIT',
-        default_options : ['c_std=c11'])
+        default_options : [
+            'c_std=c11',
+            'warning_level=3',
+            'werror=true'
+        ],
+        meson_version: '>=0.50')
 
 conf = configuration_data()
 conf.set_quoted('packagename', meson.project_name())
@@ -10,7 +15,6 @@ conf.set_quoted('packagevers', meson.project_version())
 conf.set_quoted('packagecopy',
                 'Copyright (c) 2017 Foudil Brétel. All rights reserved.')
 
-add_project_arguments('-Wfatal-errors', '-pedantic', '-Wextra', language : 'c')
 compiler_id = meson.get_compiler('c').get_id()
 if compiler_id == 'clang'
   # Silence clang wrongly complaining about missing braces around

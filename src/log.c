@@ -154,7 +154,8 @@ bool log_queue_shutdown()
     if (log_ctx.mqw != (mqd_t)-1 && mq_close(log_ctx.mqw) == -1)
         ret = false;
 
-    int rv = pthread_join(log_ctx.th_cons, NULL); // FIXME: void **retval
+    // FIXME pass retval arg and check return value
+    pthread_join(log_ctx.th_cons, NULL);
 
     return ret;
 }
@@ -163,7 +164,7 @@ bool log_queue_init(void)
 {
     snprintf(log_queue_name, NAME_MAX, "/%s_log-%d", PACKAGE_NAME, getpid());
 
-    // FIXME:
+    // FIXME
     struct mq_attr attr;
     attr.mq_flags = 0;
     attr.mq_maxmsg = 10;
