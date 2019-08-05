@@ -21,7 +21,7 @@ static const lookup_entry smth_names[] = {
 int main(void)
 {
     assert(strcmp(lookup_by_id(smth_names, SMTH_ONE), "one") == 0);
-    assert(lookup_by_id(smth_names, 42) == NULL);
+    assert(!lookup_by_id(smth_names, 42));
 
     assert(lookup_by_name(smth_names, "one", 5) == SMTH_ONE);
     assert(lookup_by_name(smth_names, "none", 5) == 0);

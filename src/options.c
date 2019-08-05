@@ -5,16 +5,22 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 #include "utils/safer.h"
 #include "options.h"
+#include "file.h"
 #include "config.h"
 
 const struct config CONFIG_DEFAULT = {
-    .bind_addr = "::",
-    .bind_port = "22000",
-    .logtype   = LOG_TYPE_STDOUT,
-    .loglevel  = LOG_UPTO(LOG_INFO),
-    .max_peers = 256,
+    .conf_dir   = "~/.config/ptp", // FIXME intended for dht.state
+    .bind_addr  = "::",
+    .bind_port  = "22000",
+    // FIXME rename to log_*
+    .logtype    = LOG_TYPE_STDOUT,
+    .loglevel   = LOG_UPTO(LOG_INFO),
+    .max_peers  = 256,
 };
 
 static void usage(void)
@@ -22,6 +28,7 @@ static void usage(void)
     printf("Usage: %s [parameters]\n", PACKAGE_NAME);
     printf("\nParameters:\n"
            " -a, --addr=[addr]       Set bind address (ip4 or ip6)\n"
+           " -c, --config=[path]     Set the config directory path\n"
            " -l, --log=[level]       Set log level (debug..critical)\n"
            " -m, --max-peers=[max]   Set maximum number of peers\n"
            " -o, --output=[file]     Set log output file\n"
@@ -29,6 +36,43 @@ static void usage(void)
            " -s, --syslog            Use syslog\n"
            " -h, --help              Print help and usage\n"
            " -v, --version           Print version of the server\n");
+}
+
+bool init_conf_dir(struct config *conf) {
+    char abspath[PATH_MAX] = "\0";
+    if (!resolve_path(conf->conf_dir, abspath)) {
+        fprintf(stderr, "Cannot resolve path %s.\n", conf->conf_dir);
+        return false;
+    }
+
+    if (access(abspath, R_OK | W_OK) == -1) {
+        if (errno == ENOENT) {
+            printf("Init: creating configuration directory: %s\n", abspath);
+            if (mkdir(abspath, 0700) == -1) {
+                perror(abspath);
+                return false;
+            }
+        }
+        else {
+            perror(abspath);
+            return false;
+        }
+    }
+
+    if (!strcpy_safer(conf->conf_dir, abspath, PATH_MAX)) {
+        fprintf(stderr, "Configuration directory initialization failed.\n");
+        return false;
+    }
+    return true;
+}
+
+
+bool init_config(struct config *conf) {
+    if (!init_conf_dir(conf)) {
+        return false;
+    }
+
+    return true;
 }
 
 /**
@@ -41,6 +85,7 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
         int option_index = 0;
         static struct option long_options[] = {
             {"addr",       required_argument, 0, 'a'},
+            {"config",     required_argument, 0, 'c'},
             {"log",        required_argument, 0, 'l'},
             {"max-peers",  required_argument, 0, 'm'},
             {"output",     required_argument, 0, 'o'},
@@ -51,7 +96,7 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
             {0}
         };
 
-        c = getopt_long(argc, argv, "a:l:m:o:p:shv",
+        c = getopt_long(argc, argv, "a:c:l:m:o:p:shv",
                         long_options, &option_index);
         if (c == -1)
             break;
@@ -60,6 +105,13 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
         case 'a':
             if (!strcpy_safer(conf->bind_addr, optarg, NI_MAXHOST)) {
                 fprintf(stderr, "Wrong value for --listen.\n");
+                return 1;
+            }
+            break;
+
+        case 'c':
+            if (!strcpy_safer(conf->conf_dir, optarg, PATH_MAX)) {
+                fprintf(stderr, "Wrong value for --config.\n");
                 return 1;
             }
             break;
@@ -140,6 +192,11 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
         while (optind < argc)
             fprintf(stderr, "%s ", argv[optind++]);
         fprintf(stderr, "\n");
+    }
+
+    if (!init_config(conf)) {
+        fprintf(stderr, "Configuration initialization failed. Aborting\n");
+        return 1;
     }
 
     return 2;

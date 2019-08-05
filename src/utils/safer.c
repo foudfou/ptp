@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include "safer.h"
 
+// http://blog.liw.fi/posts/strncpy/
 bool strcpy_safer(char *dst, const char *src, size_t size)
 {
     if (strlen(src) + 1 > size)

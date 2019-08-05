@@ -2,6 +2,7 @@
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 tests_sources = [
+    'file.c',
     'utils/aatree.c',
     'utils/bitfield.c',
     'utils/queue.c',

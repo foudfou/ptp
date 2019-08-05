@@ -22,7 +22,6 @@
 #define assert_compilation(isTrue) \
     void assert_compilation(char x[1 - (!(isTrue))])
 
-// http://blog.liw.fi/posts/strncpy/
 bool strcpy_safer(char *dst, const char *src, size_t size);
 
 #endif /* SAFER_H */
