@@ -1,3 +1,4 @@
+/* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #ifndef KAD_TESTS_H
 #define KAD_TESTS_H
 

@@ -1,5 +1,5 @@
 # -*- mode: python -*-
-# Copyright (c) 2017 Foudil Brétel.  All rights reserved.
+# Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
 
 integration_tests = [
     ['single-server', [main_exe]]

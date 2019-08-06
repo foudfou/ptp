@@ -1,4 +1,4 @@
-/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
+/* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include "u64.h"
 
 union u32 u32_hton(union u32 in)

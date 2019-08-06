@@ -1,5 +1,5 @@
 # -*- mode: python -*-
-# Copyright (c) 2017 Foudil Brétel.  All rights reserved.
+# Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
 
 project('ptp', 'c', version : '0.0.2', license : 'MIT',
         default_options : [
@@ -13,7 +13,7 @@ conf = configuration_data()
 conf.set_quoted('packagename', meson.project_name())
 conf.set_quoted('packagevers', meson.project_version())
 conf.set_quoted('packagecopy',
-                'Copyright (c) 2017 Foudil Brétel. All rights reserved.')
+                'Copyright (c) 2017-2019 Foudil Brétel. All rights reserved.')
 
 compiler_id = meson.get_compiler('c').get_id()
 if compiler_id == 'clang'

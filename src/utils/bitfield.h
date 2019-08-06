@@ -1,3 +1,4 @@
+/* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 // FIXME: naming consistency with byte_array.h (underscore or not).
 #ifndef BITFIELD_H
 #define BITFIELD_H
