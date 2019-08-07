@@ -12,8 +12,8 @@
 #include "utils/byte_array.h"
 #include "utils/list.h"
 #include "utils/lookup.h"
+#include "net/kad/bencode/parser.h"
 
-#define KAD_RPC_STR_MAX       256
 #define KAD_RPC_MSG_TX_ID_LEN 2
 
 #define KAD_RPC_MSG_INIT(msg) msg = (struct kad_rpc_msg){0};    \
@@ -108,7 +108,7 @@ struct kad_rpc_msg {
     kad_guid             node_id; /* from {a,r} dict: id_str */
     enum kad_rpc_type    type;  /* y {q,r,e} */
     unsigned long long   err_code;
-    char                 err_msg[KAD_RPC_STR_MAX];
+    char                 err_msg[BENC_PARSER_STR_LEN_MAX];
     enum kad_rpc_meth    meth;  /* q {"ping","find_node"} */
     kad_guid             target; /* from {a,r} dict: target, nodes */
     /*

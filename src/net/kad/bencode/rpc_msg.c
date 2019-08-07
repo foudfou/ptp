@@ -1,0 +1,296 @@
+#include "log.h"
+#include "net/kad/bencode/parser.h"
+#include "net/kad/bencode/rpc_msg.h"
+
+typedef enum {
+    KAD_GUID_T,
+    KAD_RPC_MSG_TX_ID_T
+} id_type;
+
+bool id_copy(id_type t, void *id, const struct benc_val *val)
+{
+    if (val->t != BENC_VAL_STR) {
+        log_error("Message node id not a string.");
+        return false;
+    }
+
+    switch(t) {
+    case KAD_GUID_T:
+        if (val->s.len != KAD_GUID_SPACE_IN_BYTES) {
+            log_error("Message node id has wrong length (%zu).", val->s.len);
+            return false;
+        }
+        kad_guid_set(id, (unsigned char*)val->s.p);
+        break;
+    case KAD_RPC_MSG_TX_ID_T:
+        if (val->s.len != KAD_RPC_MSG_TX_ID_LEN) {
+            log_error("Message tx id has wrong length (%zu).", val->s.len);
+            return false;
+        }
+        kad_rpc_msg_tx_id_set(id, (unsigned char*)val->s.p);
+        break;
+    default:
+        log_error("Unknown id type provided.");
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Populates @msg with @emit'ed @val'ue.
+ *
+ * "t" transaction id: 2 chars.
+ * "y" message type: "q" for query, "r" for response, or "e" for error.
+ *
+ * "q" query method name: str.
+ * "a" named arguments: dict.
+ * "r" named return values: dict.
+ *
+ * "e" list: error code (int), error msg (str).
+ */
+bool benc_fill_rpc_msg(struct benc_parser *p, struct kad_rpc_msg *msg,
+                       const enum benc_cont emit, const struct benc_val *val)
+{
+    switch (emit) {
+    case BENC_CONT_DICT_KEY: {
+        log_debug("dict_key: %.*s", val->s.len, val->s.p);
+        p->msg_field = lookup_by_name(kad_rpc_msg_field_names, val->s.p, 2);
+        break;
+    }
+
+    case BENC_CONT_DICT_VAL: {
+        // log_debug_val(val);
+        if (p->msg_field == KAD_RPC_MSG_FIELD_TX_ID) {
+            if (!id_copy(KAD_RPC_MSG_TX_ID_T, &msg->tx_id, val))
+                goto fail;
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODE_ID) {
+            if (!id_copy(KAD_GUID_T, &msg->node_id, val))
+                goto fail;
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_TYPE) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message type not a string.");
+                goto fail;
+            }
+            msg->type = lookup_by_name(kad_rpc_type_names, val->s.p, 1);
+            if (msg->type == KAD_RPC_TYPE_NONE) {
+                log_error("Unknown message type '%c'.", *val->s.p);
+                goto fail;
+            }
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_METH) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message method not a string.");
+                goto fail;
+            }
+            msg->meth = lookup_by_name(kad_rpc_meth_names, val->s.p, 10);
+            if (msg->meth == KAD_RPC_METH_NONE) {
+                log_error("Unknown message method '%.*s'.", val->s.len, val->s.p);
+                goto fail;
+            }
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_TARGET) {
+            if (!id_copy(KAD_GUID_T, &msg->target, val))
+                goto fail;
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NONE ||
+            p->msg_field == KAD_RPC_MSG_FIELD_ERR ||
+            p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
+            log_warning("Field (%d) as dict value ignored.", p->msg_field);
+        }
+
+        else {
+           log_error("Unsupported message field: %d.", p->msg_field);
+           goto fail;
+        }
+
+        p->msg_field = KAD_RPC_MSG_FIELD_NONE;
+        break;
+    }
+
+    case BENC_CONT_LIST_ELT: {
+        if (p->msg_field == KAD_RPC_MSG_FIELD_ERR) {
+            if (val->t == BENC_VAL_INT) {
+                if (msg->err_code) {
+                    log_error("Message err_code already set.");
+                    goto fail;
+                }
+                msg->err_code = val->i;
+            }
+            else if (val->t == BENC_VAL_STR) {
+                if (strlen(msg->err_msg) != 0) {
+                    log_error("Message err_msg already set.");
+                    goto fail;
+                }
+                memcpy(msg->err_msg, val->s.p, val->s.len);
+                msg->err_msg[val->s.len] = '\0';
+
+            }
+            else {
+                log_error("Unsupported message type for error field.");
+                goto fail;
+            }
+        }
+
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
+            if (!id_copy(KAD_GUID_T, &msg->nodes[msg->nodes_len].id, val))
+                goto fail;
+            p->msg_field = KAD_RPC_MSG_FIELD_NODES_HOST;
+        }
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_HOST) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message nodes_host not a string.");
+                goto fail;
+            }
+            memcpy(msg->nodes[msg->nodes_len].host, val->s.p, val->s.len);
+            msg->nodes[msg->nodes_len].host[val->s.len] = '\0';
+            p->msg_field = KAD_RPC_MSG_FIELD_NODES_SERVICE;
+        }
+        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_SERVICE) {
+            if (val->t != BENC_VAL_STR) {
+                log_error("Message nodes_service not a string.");
+                goto fail;
+            }
+            memcpy(msg->nodes[msg->nodes_len].service, val->s.p, val->s.len);
+            msg->nodes[msg->nodes_len].service[val->s.len] = '\0';
+            msg->nodes_len++;
+            p->msg_field = KAD_RPC_MSG_FIELD_NODES_ID;
+        }
+
+        else {
+           log_error("Unsupported message list element");
+           goto fail;
+        }
+
+        break;
+    }
+
+    case BENC_CONT_LIST_START:
+    case BENC_CONT_LIST_END:
+    case BENC_CONT_DICT_START:
+    case BENC_CONT_DICT_END:
+        // ignored
+        break;
+
+    default:
+        log_warning("Unsupported value for emit=%d", emit);
+        break;
+    }
+
+    return true;
+
+  fail:
+    p->err = true;
+    strcpy(p->err_msg, "Invalid input.");
+    return false;
+}
+
+bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t slen) {
+    return benc_parse(msg, (benc_fill_fn)benc_fill_rpc_msg, buf, slen);
+}
+
+/**
+ * Straight-forward serialization. NO VALIDATION is performed.
+ */
+bool benc_encode_rpc_msg(const struct kad_rpc_msg *msg, struct iobuf *buf)
+{
+    char tmps[2048];
+    size_t tmps_len = 0;
+
+    /* we avoid the burden of looking up into kad_rpc_msg_field_names just for single chars. */
+    sprintf(tmps, "d1:t%d:", KAD_RPC_MSG_TX_ID_LEN);
+    tmps_len += strlen(tmps);
+    memcpy(tmps + tmps_len, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
+    tmps_len += KAD_RPC_MSG_TX_ID_LEN;
+    iobuf_append(buf, tmps, tmps_len); // tx
+    iobuf_append(buf, "1:y1:", 5); // type
+    iobuf_append(buf, lookup_by_id(kad_rpc_type_names, msg->type), 1);
+
+    if (msg->type == KAD_RPC_TYPE_ERROR) {
+        sprintf(tmps, "1:eli%llue%zu:%se", msg->err_code,
+                strlen(msg->err_msg), msg->err_msg);
+        iobuf_append(buf, tmps, strlen(tmps));
+    }
+    else {
+
+        if (msg->type == KAD_RPC_TYPE_QUERY) {
+            const char * meth_name = lookup_by_id(kad_rpc_meth_names, msg->meth);
+            sprintf(tmps, "1:q%zu:%s", strlen(meth_name), meth_name);
+            iobuf_append(buf, tmps, strlen(tmps));
+
+            if (msg->meth == KAD_RPC_METH_PING) {
+                iobuf_append(buf, "1:ad2:id", 8);
+            }
+            else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
+                const char *field_target = lookup_by_id(
+                    kad_rpc_msg_field_names, KAD_RPC_MSG_FIELD_TARGET);
+                sprintf(tmps, "1:ad%zu:%s%d:", strlen(field_target),
+                        field_target, KAD_GUID_SPACE_IN_BYTES);
+                tmps_len = strlen(tmps);
+                memcpy(tmps + tmps_len, (char*)msg->target.bytes,
+                       KAD_GUID_SPACE_IN_BYTES);
+                tmps_len += KAD_GUID_SPACE_IN_BYTES;
+                memcpy(tmps + tmps_len, "2:id", 4);
+                tmps_len += 4;
+                iobuf_append(buf, tmps, tmps_len); // target
+            }
+            else {
+                log_error("Unsupported msg method while encoding.");
+                return false;
+            }
+
+        }
+        else if (msg->type == KAD_RPC_TYPE_RESPONSE) {
+
+            if (msg->meth == KAD_RPC_METH_PING) {
+                iobuf_append(buf, "1:rd2:id", 8);
+            }
+            else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
+                const char *field_nodes = lookup_by_id(
+                    kad_rpc_msg_field_names, KAD_RPC_MSG_FIELD_NODES_ID);
+                sprintf(tmps, "1:rd%zu:%sl", strlen(field_nodes), field_nodes);
+                iobuf_append(buf, tmps, strlen(tmps));
+                for (size_t i = 0; i < msg->nodes_len; i++) {
+                    sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES);
+                    tmps_len = strlen(tmps);
+                    memcpy(tmps + tmps_len, (char*)msg->nodes[i].id.bytes,
+                           KAD_GUID_SPACE_IN_BYTES);
+                    tmps_len += KAD_GUID_SPACE_IN_BYTES;
+                    sprintf(tmps + tmps_len, "%zu:%s%zu:%s",
+                            strlen(msg->nodes[i].host), msg->nodes[i].host,
+                            strlen(msg->nodes[i].service), msg->nodes[i].service);
+                    iobuf_append(buf, tmps, strlen(tmps)); // nodes
+                }
+                iobuf_append(buf, "e2:id", 5);
+            }
+            else {
+                log_error("Unsupported msg method while encoding.");
+                return false;
+            }
+
+        }
+        else {
+            log_error("Unsupported msg type while encoding.");
+            return false;
+        }
+
+        sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES);
+        tmps_len = strlen(tmps);
+        memcpy(tmps + tmps_len, (char*)msg->node_id.bytes,
+               KAD_GUID_SPACE_IN_BYTES);
+        tmps_len += KAD_GUID_SPACE_IN_BYTES;
+        iobuf_append(buf, tmps, tmps_len); // node_id
+
+        iobuf_append(buf, "e", 1);
+    }
+
+    iobuf_append(buf, "e", 1);
+    return true;
+}

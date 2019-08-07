@@ -1,7 +1,7 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include "log.h"
-#include "net/kad/bencode.h"
 #include "utils/safer.h"
+#include "net/kad/bencode/rpc_msg.h"
 #include "net/kad/rpc.h"
 
 bool kad_rpc_init(struct kad_ctx *ctx)
@@ -100,7 +100,7 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
         resp.node_id = ctx->dht->self_id;
         resp.type = KAD_RPC_TYPE_RESPONSE;
         resp.meth = KAD_RPC_METH_PING;
-        if (!benc_encode(&resp, rsp)) {
+        if (!benc_encode_rpc_msg(&resp, rsp)) {
             log_error("Error while encoding ping response.");
             return false;
         }
@@ -116,7 +116,7 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
         resp.meth = KAD_RPC_METH_FIND_NODE;
         resp.nodes_len = dht_find_closest(ctx->dht, &msg->target, resp.nodes,
                                           &msg->node_id);
-        if (!benc_encode(&resp, rsp)) {
+        if (!benc_encode_rpc_msg(&resp, rsp)) {
             log_error("Error while encoding find node response.");
             return false;
         }
@@ -168,7 +168,7 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
     struct kad_rpc_msg msg;
     KAD_RPC_MSG_INIT(msg);
 
-    if (!benc_decode(&msg, buf, slen) || !kad_rpc_msg_validate(&msg)) {
+    if (!benc_decode_rpc_msg(&msg, buf, slen) || !kad_rpc_msg_validate(&msg)) {
         log_error("Invalid message received.");
         struct kad_rpc_msg rspmsg;
         KAD_RPC_MSG_INIT(rspmsg);
@@ -181,7 +181,7 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
         rspmsg.err_code = KAD_RPC_ERR_PROTOCOL;
         strcpy(rspmsg.err_msg, lookup_by_id(kad_rpc_err_names,
                                             KAD_RPC_ERR_PROTOCOL));
-        if (!benc_encode(&rspmsg, rsp))
+        if (!benc_encode_rpc_msg(&rspmsg, rsp))
             log_error("Error while encoding error response.");
         ret = -1;
         goto end;
