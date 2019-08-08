@@ -26,6 +26,7 @@ enum kad_rpc_type {
     KAD_RPC_TYPE_RESPONSE,
 };
 
+#define KAD_RPC_TYPE_NAMES_MAX_LEN 1
 static const lookup_entry kad_rpc_type_names[] = {
     { KAD_RPC_TYPE_ERROR,    "e" },
     { KAD_RPC_TYPE_QUERY,    "q" },
@@ -39,34 +40,11 @@ enum kad_rpc_meth {
     KAD_RPC_METH_FIND_NODE,
 };
 
+#define KAD_RPC_METH_NAMES_MAX_LEN 9
 static const lookup_entry kad_rpc_meth_names[] = {
     { KAD_RPC_METH_PING,      "ping" },
     { KAD_RPC_METH_FIND_NODE, "find_node" },
     { 0,                      NULL },
-};
-
-enum kad_rpc_msg_field {
-    KAD_RPC_MSG_FIELD_NONE,
-    KAD_RPC_MSG_FIELD_TX_ID,
-    KAD_RPC_MSG_FIELD_NODE_ID,
-    KAD_RPC_MSG_FIELD_TYPE,
-    KAD_RPC_MSG_FIELD_ERR,
-    KAD_RPC_MSG_FIELD_METH,
-    KAD_RPC_MSG_FIELD_TARGET,
-    KAD_RPC_MSG_FIELD_NODES_ID,
-    KAD_RPC_MSG_FIELD_NODES_HOST,
-    KAD_RPC_MSG_FIELD_NODES_SERVICE,
-};
-
-static const lookup_entry kad_rpc_msg_field_names[] = {
-    { KAD_RPC_MSG_FIELD_TX_ID,    "t" },
-    { KAD_RPC_MSG_FIELD_NODE_ID,  "id" },
-    { KAD_RPC_MSG_FIELD_TYPE,     "y" },
-    { KAD_RPC_MSG_FIELD_ERR,      "e" },
-    { KAD_RPC_MSG_FIELD_METH,     "q" },
-    { KAD_RPC_MSG_FIELD_TARGET,   "target" },
-    { KAD_RPC_MSG_FIELD_NODES_ID, "nodes" },
-    { 0,                          NULL },
 };
 
 enum kad_rpc_err {

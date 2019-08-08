@@ -1,6 +1,6 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
-#ifndef PARSER_H
-#define PARSER_H
+#ifndef BENCODE_PARSER_H
+#define BENCODE_PARSER_H
 
 #include <stddef.h>
 #include <stdbool.h>
@@ -38,7 +38,7 @@ struct benc_parser {
     char            err_msg[BENC_PARSER_STR_LEN_MAX];
     enum benc_mark  stack[BENC_PARSER_STACK_MAX];
     size_t          stack_off;
-    int             msg_field;
+    int             msg_field;  /* enum */
 };
 
 enum benc_val_type {
@@ -71,4 +71,4 @@ typedef bool (*benc_fill_fn)(
 bool benc_parse(void *object, benc_fill_fn benc_fill_object,
                 const char buf[], const size_t slen);
 
-#endif /* PARSER_H */
+#endif /* BENCODE_PARSER_H */

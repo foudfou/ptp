@@ -1,6 +1,6 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
-#ifndef MISC_H
-#define MISC_H
+#ifndef LOOKUP_H
+#define LOOKUP_H
 
 #include <stdlib.h>
 #include <string.h>
@@ -28,4 +28,4 @@ static inline int lookup_by_name(const lookup_entry names[], const char name[], 
     return names->id;
 }
 
-#endif /* MISC_H */
+#endif /* LOOKUP_H */

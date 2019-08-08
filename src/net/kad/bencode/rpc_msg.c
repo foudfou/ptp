@@ -2,6 +2,31 @@
 #include "net/kad/bencode/parser.h"
 #include "net/kad/bencode/rpc_msg.h"
 
+enum kad_rpc_msg_field {
+    KAD_RPC_MSG_FIELD_NONE,
+    KAD_RPC_MSG_FIELD_TX_ID,
+    KAD_RPC_MSG_FIELD_NODE_ID,
+    KAD_RPC_MSG_FIELD_TYPE,
+    KAD_RPC_MSG_FIELD_ERR,
+    KAD_RPC_MSG_FIELD_METH,
+    KAD_RPC_MSG_FIELD_TARGET,
+    KAD_RPC_MSG_FIELD_NODES_ID,
+    KAD_RPC_MSG_FIELD_NODES_HOST,
+    KAD_RPC_MSG_FIELD_NODES_SERVICE,
+};
+
+#define KAD_RPC_MSG_FIELD_NAME_MAX_LEN 6
+static const lookup_entry kad_rpc_msg_field_names[] = {
+    { KAD_RPC_MSG_FIELD_TX_ID,    "t" },
+    { KAD_RPC_MSG_FIELD_NODE_ID,  "id" },
+    { KAD_RPC_MSG_FIELD_TYPE,     "y" },
+    { KAD_RPC_MSG_FIELD_ERR,      "e" },
+    { KAD_RPC_MSG_FIELD_METH,     "q" },
+    { KAD_RPC_MSG_FIELD_TARGET,   "target" },
+    { KAD_RPC_MSG_FIELD_NODES_ID, "nodes" },
+    { 0,                          NULL },
+};
+
 typedef enum {
     KAD_GUID_T,
     KAD_RPC_MSG_TX_ID_T
@@ -55,7 +80,8 @@ bool benc_fill_rpc_msg(struct benc_parser *p, struct kad_rpc_msg *msg,
     switch (emit) {
     case BENC_CONT_DICT_KEY: {
         log_debug("dict_key: %.*s", val->s.len, val->s.p);
-        p->msg_field = lookup_by_name(kad_rpc_msg_field_names, val->s.p, 2);
+        p->msg_field = lookup_by_name(kad_rpc_msg_field_names, val->s.p,
+                                      KAD_RPC_MSG_FIELD_NAME_MAX_LEN + 1);
         break;
     }
 
@@ -76,7 +102,8 @@ bool benc_fill_rpc_msg(struct benc_parser *p, struct kad_rpc_msg *msg,
                 log_error("Message type not a string.");
                 goto fail;
             }
-            msg->type = lookup_by_name(kad_rpc_type_names, val->s.p, 1);
+            msg->type = lookup_by_name(kad_rpc_type_names, val->s.p,
+                                       KAD_RPC_TYPE_NAMES_MAX_LEN + 1);
             if (msg->type == KAD_RPC_TYPE_NONE) {
                 log_error("Unknown message type '%c'.", *val->s.p);
                 goto fail;
@@ -88,7 +115,8 @@ bool benc_fill_rpc_msg(struct benc_parser *p, struct kad_rpc_msg *msg,
                 log_error("Message method not a string.");
                 goto fail;
             }
-            msg->meth = lookup_by_name(kad_rpc_meth_names, val->s.p, 10);
+            msg->meth = lookup_by_name(kad_rpc_meth_names, val->s.p,
+                                       KAD_RPC_METH_NAMES_MAX_LEN + 1);
             if (msg->meth == KAD_RPC_METH_NONE) {
                 log_error("Unknown message method '%.*s'.", val->s.len, val->s.p);
                 goto fail;
@@ -139,6 +167,9 @@ bool benc_fill_rpc_msg(struct benc_parser *p, struct kad_rpc_msg *msg,
             }
         }
 
+        /* FIXME use the "Compact node info" which is a 26-byte string (20-byte
+           node-id + 6-byte "Compact IP-address/port info" (4-byte IP (16-byte
+           for ip6) + 2-byte port all in network byte order))". */
         else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
             if (!id_copy(KAD_GUID_T, &msg->nodes[msg->nodes_len].id, val))
                 goto fail;
