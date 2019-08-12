@@ -5,70 +5,96 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#define BENC_PARSER_STACK_MAX   32
-#define BENC_PARSER_STR_LEN_MAX 256
+#define BENC_PARSER_STACK_MAX      32
+#define BENC_PARSER_STR_LEN_MAX    256
+#define BENC_NODE_CHILDREN_MAX 256
 
-enum benc_mark {
-    BENC_MARK_NONE,
-    BENC_MARK_VAL,           /* 1 */
-    BENC_MARK_INT,
-    BENC_MARK_STR,
-    BENC_MARK_LIST,          /* 4 */
-    BENC_MARK_DICT_KEY,      /* 5 */
-    BENC_MARK_DICT_VAL,      /* 6 */
-    BENC_MARK_END,
+enum benc_literal_type {
+    BENC_LITERAL_TYPE_NONE,
+    BENC_LITERAL_TYPE_INT,
+    BENC_LITERAL_TYPE_STR,
 };
 
-enum benc_cont {
-    BENC_CONT_NONE,
-    BENC_CONT_DICT_START,
-    BENC_CONT_DICT_KEY,
-    BENC_CONT_DICT_VAL,
-    BENC_CONT_DICT_END,
-    BENC_CONT_LIST_START,
-    BENC_CONT_LIST_ELT,
-    BENC_CONT_LIST_END ,
-};
-
-struct benc_parser {
-    const char     *beg;        /* pointer to begin of buffer */
-    const char     *cur;        /* pointer to current char in buffer */
-    const char     *end;        /* pointer to end of buffer */
-    bool            err;
-    char            err_msg[BENC_PARSER_STR_LEN_MAX];
-    enum benc_mark  stack[BENC_PARSER_STACK_MAX];
-    size_t          stack_off;
-    int             msg_field;  /* enum */
-};
-
-enum benc_val_type {
-    BENC_VAL_NONE,
-    BENC_VAL_INT,
-    BENC_VAL_STR,
-    BENC_VAL_LIST,
-    BENC_VAL_DICT,
-};
-
-struct benc_val {
-    enum benc_val_type t;
+/* Literal values are stored into an array. */
+struct benc_literal {
+    enum benc_literal_type t;
     union {
         long long      i;
         struct {
-            /* TODO: use an iobuf instead ? */
-            char       p[BENC_PARSER_STR_LEN_MAX];
+            /* TODO use an iobuf instead ? */
             size_t     len;
+            char       p[BENC_PARSER_STR_LEN_MAX];
         } s;
     };
 };
 
-typedef bool (*benc_fill_fn)(
-    struct benc_parser    *p,
-    void                  *object, // struct kad_rpc_msg *msg
-    const enum benc_cont   emit,
-    const struct benc_val *val
-);
+enum benc_node_type {
+    BENC_NODE_TYPE_NONE,
+    BENC_NODE_TYPE_LITERAL,     /* 1 */
+    BENC_NODE_TYPE_LIST,        /* 2 */
+    BENC_NODE_TYPE_DICT,        /* 3 */
+    BENC_NODE_TYPE_DICT_ENTRY,  /* 4 */
+};
 
-bool benc_parse(void *object, benc_fill_fn benc_fill_object,
-                const char buf[], const size_t slen);
+/* Parsing consists in building a representation of the bncode object. This is
+   done via 2 data structures: a tree of nodes and a list of literal values for
+   str|int. Nodes can be of type: dict|dict_entry|list|literal. In practice
+   nodes are stored into an array. Each node points to other nodes.
+
+  {d:["a", 1, {v:"none"}], i:42} translates to
+
+  dict
+  ├──entry, key=d
+  │  └──list
+  │     ├──str=literals[0]
+  │     ├──int=literals[1]
+  │     └──dict
+  │        └──entry, key=v
+  │           └──str=literals[2]
+  └──entry, key=i
+     └──str=literals[3]
+
+  literals=["a", 1, "none", 42]
+ */
+struct benc_node {
+    enum benc_node_type      typ;
+     // could be 'attr' or a list of, but actually only used for
+     // BENC_NODE_TYPE_DICT_ENTRY
+    char                     k[BENC_PARSER_STR_LEN_MAX];
+    size_t                   k_len;
+    union {
+        struct benc_literal *lit;
+        // TODO consider using a list
+        struct benc_node    *chd[BENC_NODE_CHILDREN_MAX];
+    };
+    size_t                   chd_off;
+};
+
+enum benc_tok {
+    BENC_TOK_NONE,
+    BENC_TOK_LITERAL,
+    BENC_TOK_LIST,
+    BENC_TOK_DICT,
+    BENC_TOK_END,
+};
+
+struct benc_repr {
+    struct benc_literal *lit;
+    size_t               lit_len;
+    size_t               lit_off;
+    struct benc_node    *n;
+    size_t               n_len;
+    size_t               n_off;
+};
+
+struct benc_parser {
+    const char       *beg;      /* pointer to begin of buffer */
+    const char       *cur;      /* pointer to current char in buffer */
+    const char       *end;      /* pointer to end of buffer */
+    bool              err;
+    char              err_msg[BENC_PARSER_STR_LEN_MAX];
+    struct benc_node *stack[BENC_PARSER_STACK_MAX];
+    size_t            stack_off;
+};
 
 #endif /* BENCODE_PARSER_H */

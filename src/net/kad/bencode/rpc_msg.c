@@ -32,9 +32,9 @@ typedef enum {
     KAD_RPC_MSG_TX_ID_T
 } id_type;
 
-bool id_copy(id_type t, void *id, const struct benc_val *val)
+bool id_copy(id_type t, void *id, const struct benc_literal *val)
 {
-    if (val->t != BENC_VAL_STR) {
+    if (val->t != BENC_LITERAL_TYPE_STR) {
         log_error("Message node id not a string.");
         return false;
     }
@@ -74,157 +74,17 @@ bool id_copy(id_type t, void *id, const struct benc_val *val)
  *
  * "e" list: error code (int), error msg (str).
  */
-bool benc_fill_rpc_msg(struct benc_parser *p, struct kad_rpc_msg *msg,
-                       const enum benc_cont emit, const struct benc_val *val)
+bool benc_fill_rpc_msg()
 {
-    switch (emit) {
-    case BENC_CONT_DICT_KEY: {
-        log_debug("dict_key: %.*s", val->s.len, val->s.p);
-        p->msg_field = lookup_by_name(kad_rpc_msg_field_names, val->s.p,
-                                      KAD_RPC_MSG_FIELD_NAME_MAX_LEN + 1);
-        break;
-    }
-
-    case BENC_CONT_DICT_VAL: {
-        // log_debug_val(val);
-        if (p->msg_field == KAD_RPC_MSG_FIELD_TX_ID) {
-            if (!id_copy(KAD_RPC_MSG_TX_ID_T, &msg->tx_id, val))
-                goto fail;
-        }
-
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODE_ID) {
-            if (!id_copy(KAD_GUID_T, &msg->node_id, val))
-                goto fail;
-        }
-
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_TYPE) {
-            if (val->t != BENC_VAL_STR) {
-                log_error("Message type not a string.");
-                goto fail;
-            }
-            msg->type = lookup_by_name(kad_rpc_type_names, val->s.p,
-                                       KAD_RPC_TYPE_NAMES_MAX_LEN + 1);
-            if (msg->type == KAD_RPC_TYPE_NONE) {
-                log_error("Unknown message type '%c'.", *val->s.p);
-                goto fail;
-            }
-        }
-
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_METH) {
-            if (val->t != BENC_VAL_STR) {
-                log_error("Message method not a string.");
-                goto fail;
-            }
-            msg->meth = lookup_by_name(kad_rpc_meth_names, val->s.p,
-                                       KAD_RPC_METH_NAMES_MAX_LEN + 1);
-            if (msg->meth == KAD_RPC_METH_NONE) {
-                log_error("Unknown message method '%.*s'.", val->s.len, val->s.p);
-                goto fail;
-            }
-        }
-
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_TARGET) {
-            if (!id_copy(KAD_GUID_T, &msg->target, val))
-                goto fail;
-        }
-
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_NONE ||
-            p->msg_field == KAD_RPC_MSG_FIELD_ERR ||
-            p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
-            log_warning("Field (%d) as dict value ignored.", p->msg_field);
-        }
-
-        else {
-           log_error("Unsupported message field: %d.", p->msg_field);
-           goto fail;
-        }
-
-        p->msg_field = KAD_RPC_MSG_FIELD_NONE;
-        break;
-    }
-
-    case BENC_CONT_LIST_ELT: {
-        if (p->msg_field == KAD_RPC_MSG_FIELD_ERR) {
-            if (val->t == BENC_VAL_INT) {
-                if (msg->err_code) {
-                    log_error("Message err_code already set.");
-                    goto fail;
-                }
-                msg->err_code = val->i;
-            }
-            else if (val->t == BENC_VAL_STR) {
-                if (strlen(msg->err_msg) != 0) {
-                    log_error("Message err_msg already set.");
-                    goto fail;
-                }
-                memcpy(msg->err_msg, val->s.p, val->s.len);
-                msg->err_msg[val->s.len] = '\0';
-
-            }
-            else {
-                log_error("Unsupported message type for error field.");
-                goto fail;
-            }
-        }
-
-        /* FIXME use the "Compact node info" which is a 26-byte string (20-byte
-           node-id + 6-byte "Compact IP-address/port info" (4-byte IP (16-byte
-           for ip6) + 2-byte port all in network byte order))". */
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_ID) {
-            if (!id_copy(KAD_GUID_T, &msg->nodes[msg->nodes_len].id, val))
-                goto fail;
-            p->msg_field = KAD_RPC_MSG_FIELD_NODES_HOST;
-        }
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_HOST) {
-            if (val->t != BENC_VAL_STR) {
-                log_error("Message nodes_host not a string.");
-                goto fail;
-            }
-            memcpy(msg->nodes[msg->nodes_len].host, val->s.p, val->s.len);
-            msg->nodes[msg->nodes_len].host[val->s.len] = '\0';
-            p->msg_field = KAD_RPC_MSG_FIELD_NODES_SERVICE;
-        }
-        else if (p->msg_field == KAD_RPC_MSG_FIELD_NODES_SERVICE) {
-            if (val->t != BENC_VAL_STR) {
-                log_error("Message nodes_service not a string.");
-                goto fail;
-            }
-            memcpy(msg->nodes[msg->nodes_len].service, val->s.p, val->s.len);
-            msg->nodes[msg->nodes_len].service[val->s.len] = '\0';
-            msg->nodes_len++;
-            p->msg_field = KAD_RPC_MSG_FIELD_NODES_ID;
-        }
-
-        else {
-           log_error("Unsupported message list element");
-           goto fail;
-        }
-
-        break;
-    }
-
-    case BENC_CONT_LIST_START:
-    case BENC_CONT_LIST_END:
-    case BENC_CONT_DICT_START:
-    case BENC_CONT_DICT_END:
-        // ignored
-        break;
-
-    default:
-        log_warning("Unsupported value for emit=%d", emit);
-        break;
-    }
-
     return true;
-
-  fail:
-    p->err = true;
-    strcpy(p->err_msg, "Invalid input.");
-    return false;
 }
 
 bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t slen) {
-    return benc_parse(msg, (benc_fill_fn)benc_fill_rpc_msg, buf, slen);
+    /* return benc_parse(msg, (benc_fill_fn)benc_fill_rpc_msg, buf, slen); */
+    (void)msg;
+    (void)buf;
+    (void)slen;
+    return true;
 }
 
 /**

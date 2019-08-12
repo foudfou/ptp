@@ -1,18 +1,22 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "log.h"
 #include "net/kad/bencode/parser.h"
 
 #define POINTER_OFFSET(beg, end) (((end) - (beg)) / sizeof(*beg))
 
+#define BENC_NODES_MAX 4096
 
 /* https://github.com/willemt/heapless-bencode/blob/master/bencode.c */
-static bool benc_parse_int(struct benc_parser *p, struct benc_val *val)
+static bool benc_extract_int(struct benc_parser *p, struct benc_literal *lit)
 {
-    val->t = BENC_VAL_INT;
-    long long val_tmp = val->i = 0;
+    lit->t = BENC_LITERAL_TYPE_INT;
+    long long val_tmp = lit->i = 0;
+    int val_digit = 0;
     int sign = 1;
 
     p->cur++;  // eat up 'i'
@@ -30,29 +34,31 @@ static bool benc_parse_int(struct benc_parser *p, struct benc_val *val)
         }
 
         val_tmp *= 10;
-        val_tmp += *p->cur - '0';
-
-        if (val_tmp < val->i) {
+        val_digit = *p->cur - '0';
+        if (val_tmp > LLONG_MAX - val_digit) {
             sprintf(p->err_msg, "Overflow in int parsing at %zu.",
                     (size_t)POINTER_OFFSET(p->beg, p->cur));
             p->err = true;
             return false;
         }
-        val->i = val_tmp;
+        else {
+            val_tmp += val_digit;
+        }
+
+        lit->i = val_tmp;
         p->cur++;
-    }
-    while (*p->cur != 'e');
+    } while (*p->cur != 'e');
     p->cur++;  // eat up 'e'
 
-    val->i *= sign;
+    lit->i *= sign;
 
     return true;
 }
 
-static bool benc_parse_str(struct benc_parser *p, struct benc_val *val)
+static bool benc_extract_str(struct benc_parser *p, struct benc_literal *lit)
 {
-    val->t = BENC_VAL_STR;
-    val->s.len = 0;
+    lit->t = BENC_LITERAL_TYPE_STR;
+    lit->s.len = 0;
     do {
         if (!isdigit(*p->cur)) {
             sprintf(p->err_msg, "Invalid character in rpc message at %zu.",
@@ -61,22 +67,21 @@ static bool benc_parse_str(struct benc_parser *p, struct benc_val *val)
             return false;
         }
 
-        val->s.len *= 10;
-        val->s.len += *p->cur - '0';
+        lit->s.len *= 10;
+        lit->s.len += *p->cur - '0';
         p->cur++;
-    }
-    while (*p->cur != ':');
+    } while (*p->cur != ':');
 
-    if (val->s.len > BENC_PARSER_STR_LEN_MAX) {
-            sprintf(p->err_msg, "String too long at %zu.",
-                    (size_t)POINTER_OFFSET(p->beg, p->cur));
-            p->err = true;
-            return false;
+    if (lit->s.len > BENC_PARSER_STR_LEN_MAX) {
+        sprintf(p->err_msg, "String too long at %zu.",
+                (size_t)POINTER_OFFSET(p->beg, p->cur));
+        p->err = true;
+        return false;
     }
 
     p->cur++;
-    memcpy(val->s.p, p->cur, val->s.len);
-    p->cur += val->s.len;
+    memcpy(lit->s.p, p->cur, lit->s.len);
+    p->cur += lit->s.len;
 
     return true;
 }
@@ -95,109 +100,239 @@ static void benc_parser_terminate(struct benc_parser *parser)
     (void)parser; // FIXME:
 }
 
-static bool benc_stack_push(struct benc_parser *p, enum benc_mark tok)
+static bool benc_stack_push(struct benc_parser *p, struct benc_node * const n)
 {
-    if (p->stack_off == BENC_PARSER_STACK_MAX) {
+    if (p->stack_off >= BENC_PARSER_STACK_MAX - 1) {
         p->err = true;
-        strcpy(p->err_msg, "Reached maximum nested level.");
+        strcpy(p->err_msg, "Parser stack reached maximum nested level.");
         return false;
     }
-    p->stack[p->stack_off] = tok;
+    p->stack[p->stack_off] = n;
     p->stack_off++;
     return true;
 }
 
-static bool benc_stack_pop(struct benc_parser *p, size_t n)
+static bool benc_stack_pop(struct benc_parser *p)
 {
-    for (size_t i = 0; i < n; i++) {
-        if (p->stack_off == 0) {
-            p->err = true;
-            strcpy(p->err_msg, "Parser stack already empty.");
-            return false;
-        }
-        p->stack_off--;
-        p->stack[p->stack_off] = BENC_MARK_NONE;
+    if (p->stack_off <= 0) {
+        p->err = true;
+        strcpy(p->err_msg, "Attempt to pop empty parser stack.");
+        return false;
     }
+    p->stack_off--;
+    p->stack[p->stack_off] = NULL;
     return true;
 }
 
-void log_debug_val(const struct benc_val *val)
+static struct benc_node*
+benc_repr_add_node(struct benc_repr *repr,
+                   const enum benc_node_type typ,
+                   const struct benc_literal *lit)
 {
-    if (val->t == BENC_VAL_INT)
-        log_debug("dict_val int: %lld", val->i);
-    else if (val->t == BENC_VAL_STR)
-        log_debug("dict_val str: %.*s", val->s.len, val->s.p);
-    else
-        log_debug("dict_val unsupported: %d", val->t);
+    struct benc_node *n = NULL;
+    struct benc_literal *litp = NULL;
+
+    if (typ == BENC_NODE_TYPE_LITERAL) {
+        if (repr->lit_off >= repr->lit_len - 1) {
+            return NULL;
+        }
+        litp = &repr->lit[repr->lit_off];
+        *litp = *lit;
+        if (lit->t == BENC_LITERAL_TYPE_STR) {
+            memcpy(litp->s.p, lit->s.p, lit->s.len);
+        }
+        repr->lit_off++;
+    }
+
+    if (repr->n_off >= repr->n_len - 1) {
+        return NULL;
+    }
+    n = &repr->n[repr->n_off];
+
+    if (typ == BENC_NODE_TYPE_LITERAL) {
+        n->typ = typ;
+        n->lit = litp;
+    }
+
+    else if (typ == BENC_NODE_TYPE_DICT_ENTRY) {
+        n->typ = typ;
+        memcpy(n->k, lit->s.p, lit->s.len);
+        n->k_len = lit->s.len;
+    }
+
+    else if (typ == BENC_NODE_TYPE_LIST ||
+             typ == BENC_NODE_TYPE_DICT) {
+        n->typ = typ;
+    }
+
+    else {
+        return NULL;
+    }
+
+    repr->n_off++;
+
+    log_debug("node typ=%d added", n->typ);
+    return n;
 }
 
-/*
-  DICT: 'd' STR VAL 'e'
-  LIST: 'l' VAL* 'e'
-  VAL: STR | INT | DICT | LIST
- */
-static bool benc_syntax_apply(struct benc_parser *p, struct benc_val *val,
-                              const enum benc_mark got, enum benc_cont *emit)
+
+static bool
+benc_repr_attach_node(struct benc_node *parent, struct benc_node *n)
 {
-    enum benc_mark mark = got;
-    while (mark != BENC_MARK_NONE && p->stack_off > 0) {
-        enum benc_mark stack_top = p->stack[p->stack_off-1];
-        /* log_debug("mark=%u, stack_top=%u, stack_off=%zu", */
-        /*           mark, stack_top, p->stack_off); */
+    if (parent->chd_off >= BENC_NODE_CHILDREN_MAX - 1) {
+        return false;
+    }
+    parent->chd[parent->chd_off] = n;
+    parent->chd_off++;
+    return true;
+}
 
-        if (mark == BENC_MARK_VAL) {
-            if (stack_top == BENC_MARK_LIST) {
-                *emit = BENC_CONT_LIST_ELT;
+void log_debug_literal(const struct benc_literal *lit)
+{
+    if (lit->t == BENC_LITERAL_TYPE_INT)
+        log_debug("literal int: %lld", lit->i);
+    else if (lit->t == BENC_LITERAL_TYPE_STR)
+        log_debug("literal str: %.*s", lit->s.len, lit->s.p);
+    else
+        log_debug("literal unsupported: %d", lit->t);
+}
+
+struct benc_node*
+find_dict_entry(const struct benc_node *dict,
+                const char key[], const size_t key_len)
+{
+    if (dict->typ != BENC_NODE_TYPE_DICT) {
+        return NULL;
+    }
+
+    struct benc_node *entry = NULL;
+    for (size_t i = 0; i < dict->chd_off; ++i) {
+        struct benc_node *n = dict->chd[i];
+        if (n->typ == BENC_NODE_TYPE_DICT_ENTRY &&
+            n->k_len == key_len &&
+            strncmp(n->k, key, key_len) == 0) {
+            entry = n;
+            break;
+        }
+    }
+    return entry;
+}
+
+static bool
+benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
+                const struct benc_literal *lit, const enum benc_tok tok)
+{
+    struct benc_node *n = NULL;
+    struct benc_node *stack_top = p->stack_off > 0
+        ? p->stack[p->stack_off - 1]
+        : NULL;
+
+    switch (tok) {
+    case BENC_TOK_LITERAL:
+        // dict key
+        if (lit->t == BENC_LITERAL_TYPE_STR &&
+            stack_top && stack_top->typ == BENC_NODE_TYPE_DICT) {
+            struct benc_node *dup = find_dict_entry(stack_top, lit->s.p, lit->s.len);
+            if (dup) {
+                log_error("Duplicate dict_entry");
+                return false;
+            };
+
+            n = benc_repr_add_node(repr, BENC_NODE_TYPE_DICT_ENTRY, lit);
+            if (!n) {
+                log_error("Can't add dict_entry node");
+                return false;
             }
-            else if (stack_top == BENC_MARK_DICT_VAL) {
-                benc_stack_pop(p, 1);
-                *emit = BENC_CONT_DICT_VAL;
-                benc_stack_push(p, BENC_MARK_DICT_KEY);
+
+            if (!benc_repr_attach_node(stack_top, n)) {
+                log_error("Can't attach dict_entry node to dict");
+                return false;
             }
-            else
-                goto fail;
-            mark = BENC_MARK_NONE;
+
+            if (!benc_stack_push(p, n)) {
+                log_error("Can't stack_push dict_entry node");
+                return false;
+            }
         }
 
-        else if (mark == BENC_MARK_INT) {
-            mark = BENC_MARK_VAL;
+        // normal case
+        else {
+            n = benc_repr_add_node(repr, BENC_NODE_TYPE_LITERAL, lit);
+            if (!n) {
+                log_error("Can't add literal node");
+                return false;
+            }
+
+            if (stack_top) {
+                if (stack_top->typ == BENC_NODE_TYPE_DICT_ENTRY) {
+                    if (!benc_repr_attach_node(stack_top, n) ||
+                        !benc_stack_pop(p)) {
+                        log_error("Can't attach literal node to dict_entry or stack_pop");
+                        return false;
+                    }
+                }
+                else if (stack_top->typ == BENC_NODE_TYPE_LIST) {
+                    if (!benc_repr_attach_node(stack_top, n)) {
+                        log_error("Can't attach literal node to list");
+                        return false;
+                    }
+                }
+                else {
+                    // nop
+                }
+            }
         }
 
-        else if (mark == BENC_MARK_STR) {
-            if (stack_top == BENC_MARK_DICT_KEY) {
-                benc_stack_pop(p, 1);
-                *emit = BENC_CONT_DICT_KEY;
-                benc_stack_push(p, BENC_MARK_DICT_VAL);
-                mark = BENC_MARK_NONE;
+        break;
+
+    case BENC_TOK_LIST:
+    case BENC_TOK_DICT: {
+        enum benc_node_type node_type = BENC_NODE_TYPE_NONE;
+        if (tok == BENC_TOK_LIST) {
+            node_type = BENC_NODE_TYPE_LIST;
+        } else if (tok == BENC_TOK_DICT) {
+            node_type = BENC_NODE_TYPE_DICT;
+        }
+        n = benc_repr_add_node(repr, node_type, lit);
+        if (!n) {
+            log_error("Can't add list/dict node");
+            return false;
+        }
+
+        if (stack_top) {
+            if (stack_top->typ == BENC_NODE_TYPE_DICT_ENTRY) {
+                if (!benc_repr_attach_node(stack_top, n) ||
+                    !benc_stack_pop(p)) {
+                    log_error("Can't attach list/dict node to dict_entry or stack_pop");
+                    return false;
+                }
+            }
+            else if (stack_top->typ == BENC_NODE_TYPE_LIST) {
+                if (!benc_repr_attach_node(stack_top, n)) {
+                    log_error("Can't attach list/dict node to list");
+                    return false;
+                }
             }
             else {
-                mark = BENC_MARK_VAL;
+                // nop
             }
         }
 
-        else if (mark == BENC_MARK_END) {
-            if (stack_top == BENC_MARK_LIST) {
-                benc_stack_pop(p, 1);
-                val->t = BENC_VAL_LIST;
-                *emit = BENC_CONT_LIST_END;
-                mark = BENC_MARK_VAL;
-            }
-            else if (stack_top == BENC_MARK_DICT_KEY ||
-                     stack_top == BENC_MARK_DICT_VAL) {
-                benc_stack_pop(p, 1);
-                val->t = BENC_VAL_LIST;
-                *emit = BENC_CONT_DICT_END;
-                mark = BENC_MARK_VAL;
-            }
-            else
-                goto fail;
+        if (!benc_stack_push(p, n)) return false;
+
+        break;
+    }
+
+    case BENC_TOK_END: {
+        if (!benc_stack_pop(p)) {
+            return false;
         }
 
-        else
-            goto fail;
+        break;
+    }
 
-        if (mark != BENC_MARK_NONE && *emit)
-            log_debug("__FIXME: emit (%u) will be overridden.", *emit);
+    default:
+        goto fail;
     }
 
     return true;
@@ -208,11 +343,15 @@ static bool benc_syntax_apply(struct benc_parser *p, struct benc_val *val,
     return false;
 }
 
-/* Bottom-up stream parsing: try to pull tokens one after one another, possibly
-   creating nested collections. This happens in a 3 stage loop: low-level
-   lexer, bencode syntax checking, and filling a struct like a kad message. */
-bool benc_parse(void *object, benc_fill_fn benc_fill_object,
-                const char buf[], const size_t slen)
+/**
+ * Bottom-up stream parsing: try to pull tokens one after one another, possibly
+ * creating nested collections. This happens in a 2-stage loop: low-level
+ * lexer, then bencode representation building.
+ *
+ * @param repr will hold the bencode object.
+ *             THE CALLER IS RESPONSIBLE FOR PROPER INITIALIZATION.
+ */
+bool benc_parse(struct benc_repr *repr, const char buf[], const size_t slen)
 {
     if (!slen) {
         log_error("Invalid void message.");
@@ -224,47 +363,43 @@ bool benc_parse(void *object, benc_fill_fn benc_fill_object,
     struct benc_parser parser;
     benc_parser_init(&parser, buf, slen);
 
-    enum benc_mark mark = BENC_MARK_NONE;
-    enum benc_cont emit = BENC_CONT_NONE;
-    struct benc_val val;
+    struct benc_literal lit;
+    enum benc_tok tok = BENC_TOK_NONE;
     while (parser.cur != parser.end) {
-        memset(&val, 0, sizeof(val));
-        mark = BENC_MARK_NONE;
-        emit = BENC_CONT_NONE;
+        memset(&lit, 0, sizeof(lit));
+        tok = BENC_TOK_NONE;
 
         if (*parser.cur == 'i') { // int
-            if (benc_parse_int(&parser, &val)) {
-                mark = BENC_MARK_INT;
+            if (benc_extract_int(&parser, &lit)) {
+                tok = BENC_TOK_LITERAL;
+                log_debug("INT");
             }
+            else {log_error("Extract int failed");}
         }
 
         else if (isdigit(*parser.cur)) { // string
-            if (benc_parse_str(&parser, &val)) {
-                mark = BENC_MARK_STR;
+            if (benc_extract_str(&parser, &lit)) {
+                tok = BENC_TOK_LITERAL;
+                log_debug("STR");
             }
+            else {log_error("Extract str failed");}
         }
 
         else if (*parser.cur == 'l') { // list
             parser.cur++;
-            if (benc_stack_push(&parser, BENC_MARK_LIST)) {
-                emit = BENC_CONT_LIST_START;
-                log_debug("LIST");
-            }
+            tok = BENC_TOK_LIST;
+            log_debug("LIST");
         }
 
         else if (*parser.cur == 'd') { // dict
             parser.cur++;
-            /* For dict we store the awaited state, starting with dict_key and
-               alternating btw. dict_key/dict_val. */
-            if (benc_stack_push(&parser, BENC_MARK_DICT_KEY)) {
-                emit = BENC_CONT_DICT_START;
-                log_debug("DICT");
-            }
+            tok = BENC_TOK_DICT;
+            log_debug("DICT");
         }
 
         else if (*parser.cur == 'e') {
             parser.cur++;
-            mark = BENC_MARK_END;
+            tok = BENC_TOK_END;
             log_debug("END");
         }
 
@@ -273,13 +408,14 @@ bool benc_parse(void *object, benc_fill_fn benc_fill_object,
             strcpy(parser.err_msg, "Syntax error."); // TODO: send reply
         }
 
-        if (parser.err ||
-            !benc_syntax_apply(&parser, &val, mark, &emit) ||
-            !benc_fill_object(&parser, object, emit, &val)) {
+        if (tok == BENC_TOK_NONE ||
+            parser.err ||
+            !benc_repr_build(repr, &parser, &lit, tok)) {
             log_error(parser.err_msg);  // TODO: send reply
             ret = false;
             goto cleanup;
         }
+
     }
 
     if (parser.stack_off > 0) {

@@ -15,7 +15,7 @@ tests_sources = [
     'utils/rbtree.c',
     'utils/u64.c',
     'kad/bencode/parser.c',
-    'kad/bencode/rpc_msg.c',
+    # 'kad/bencode/rpc_msg.c',
     'kad/dht.c',
     'kad/rpc.c',
 ]
