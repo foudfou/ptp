@@ -198,8 +198,8 @@ void log_debug_literal(const struct benc_literal *lit)
 }
 
 struct benc_node*
-find_dict_entry(const struct benc_node *dict,
-                const char key[], const size_t key_len)
+benc_node_find_dict_entry(const struct benc_node *dict,
+                          const char key[], const size_t key_len)
 {
     if (dict->typ != BENC_NODE_TYPE_DICT) {
         return NULL;
@@ -227,12 +227,19 @@ benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
         ? p->stack[p->stack_off - 1]
         : NULL;
 
+    /* We only allow a single object, no juxtaposition. There is a single
+       entry point in a benc_repr: the root node, repr->n[0]. */
+    if (!stack_top && repr->n_off > 0 && tok != BENC_TOK_END) {
+        log_error("Orphan node not allowed");
+        return false;
+    }
+
     switch (tok) {
     case BENC_TOK_LITERAL:
         // dict key
         if (lit->t == BENC_LITERAL_TYPE_STR &&
             stack_top && stack_top->typ == BENC_NODE_TYPE_DICT) {
-            struct benc_node *dup = find_dict_entry(stack_top, lit->s.p, lit->s.len);
+            struct benc_node *dup = benc_node_find_dict_entry(stack_top, lit->s.p, lit->s.len);
             if (dup) {
                 log_error("Duplicate dict_entry");
                 return false;
@@ -343,13 +350,10 @@ benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
     return false;
 }
 
-/**
+/*
  * Bottom-up stream parsing: try to pull tokens one after one another, possibly
  * creating nested collections. This happens in a 2-stage loop: low-level
  * lexer, then bencode representation building.
- *
- * @param repr will hold the bencode object.
- *             THE CALLER IS RESPONSIBLE FOR PROPER INITIALIZATION.
  */
 bool benc_parse(struct benc_repr *repr, const char buf[], const size_t slen)
 {

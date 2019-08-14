@@ -26,7 +26,6 @@ enum kad_rpc_type {
     KAD_RPC_TYPE_RESPONSE,
 };
 
-#define KAD_RPC_TYPE_NAMES_MAX_LEN 1
 static const lookup_entry kad_rpc_type_names[] = {
     { KAD_RPC_TYPE_ERROR,    "e" },
     { KAD_RPC_TYPE_QUERY,    "q" },
@@ -40,7 +39,6 @@ enum kad_rpc_meth {
     KAD_RPC_METH_FIND_NODE,
 };
 
-#define KAD_RPC_METH_NAMES_MAX_LEN 9
 static const lookup_entry kad_rpc_meth_names[] = {
     { KAD_RPC_METH_PING,      "ping" },
     { KAD_RPC_METH_FIND_NODE, "find_node" },
@@ -67,34 +65,19 @@ static const lookup_entry kad_rpc_err_names[] = {
 BYTE_ARRAY_GENERATE(kad_rpc_msg_tx_id, KAD_RPC_MSG_TX_ID_LEN)
 
 /**
- * Naive flattened dictionary for all possible messages.
+ * KRPC message.
  *
- * Please use the KAD_RPC_MSG_INIT() initializing.
- *
- * The protocol being relatively tiny, data size considered limited (a Kad
- * message must fit into an UDP buffer: no application flow control), every
- * awaited value should fit into well-defined fields. So we don't bother to
- * serialize lists and dicts for now.
- *
- * Although we have all mechanics to build a bstree with dict_key as the key,
- * and struct benc_val as data, it seems more convenient to avoid malloc(3) at
- * this stage.
+ * Initialize KAD_RPC_MSG_INIT().
  */
 struct kad_rpc_msg {
     struct list_item     item;
     kad_rpc_msg_tx_id    tx_id; /* t */
     kad_guid             node_id; /* from {a,r} dict: id_str */
     enum kad_rpc_type    type;  /* y {q,r,e} */
+    enum kad_rpc_meth    meth;  /* q {"ping","find_node"} */
     unsigned long long   err_code;
     char                 err_msg[BENC_PARSER_STR_LEN_MAX];
-    enum kad_rpc_meth    meth;  /* q {"ping","find_node"} */
     kad_guid             target; /* from {a,r} dict: target, nodes */
-    /*
-     * We diverge here from the BitTorrent spec where a compact node info is
-     * node_id (20B) + IP (4B) + port (2B), assuming ip4. A node info comprises
-     * 3 strings. Which implies that node infos are encoded in lists: ["id1",
-     * "host1", "service1", "id2", "host2", "service3", ...].
-     */
     struct kad_node_info nodes[KAD_K_CONST]; /* from {a,r} dict: target, nodes */
     size_t               nodes_len;
 };

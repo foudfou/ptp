@@ -78,6 +78,14 @@ enum benc_tok {
     BENC_TOK_END,
 };
 
+#define BENC_REPR_DECL_INIT(name, max_literals, max_nodes)              \
+    struct benc_literal name##_literals[max_literals] = {0};            \
+    struct benc_node name##_nodes[max_nodes] = {0};                     \
+    struct benc_repr name = {                                           \
+        .lit=name##_literals, .lit_len=(max_literals), .lit_off=0,      \
+        .n=name##_nodes,      .n_len=(max_nodes),      .n_off=0         \
+    };
+
 struct benc_repr {
     struct benc_literal *lit;
     size_t               lit_len;
@@ -96,5 +104,15 @@ struct benc_parser {
     struct benc_node *stack[BENC_PARSER_STACK_MAX];
     size_t            stack_off;
 };
+
+struct benc_node* benc_node_find_dict_entry(const struct benc_node *dict,
+                                            const char key[], const size_t key_len);
+/**
+ * Creates a tree-like representation of a bencode object from @buf.
+ *
+ * @param repr will hold the resulting bencode object. Use BENC_REPR_DECL_INIT
+ *             to declare and initialize.
+ */
+bool benc_parse(struct benc_repr *repr, const char buf[], const size_t slen);
 
 #endif /* BENCODE_PARSER_H */

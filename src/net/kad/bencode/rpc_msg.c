@@ -2,28 +2,32 @@
 #include "net/kad/bencode/parser.h"
 #include "net/kad/bencode/rpc_msg.h"
 
-enum kad_rpc_msg_field {
-    KAD_RPC_MSG_FIELD_NONE,
-    KAD_RPC_MSG_FIELD_TX_ID,
-    KAD_RPC_MSG_FIELD_NODE_ID,
-    KAD_RPC_MSG_FIELD_TYPE,
-    KAD_RPC_MSG_FIELD_ERR,
-    KAD_RPC_MSG_FIELD_METH,
-    KAD_RPC_MSG_FIELD_TARGET,
-    KAD_RPC_MSG_FIELD_NODES_ID,
-    KAD_RPC_MSG_FIELD_NODES_HOST,
-    KAD_RPC_MSG_FIELD_NODES_SERVICE,
+#define KAD_RPC_MSG_LITERAL_MAX 10 + KAD_K_CONST
+#define KAD_RPC_MSG_NODES_MAX   32
+
+enum kad_rpc_msg_key {
+    KAD_RPC_MSG_KEY_NONE,
+    KAD_RPC_MSG_KEY_TX_ID,
+    KAD_RPC_MSG_KEY_NODE_ID,
+    KAD_RPC_MSG_KEY_TYPE,
+    KAD_RPC_MSG_KEY_METH,
+    KAD_RPC_MSG_KEY_ERROR,
+    KAD_RPC_MSG_KEY_ARG,
+    KAD_RPC_MSG_KEY_RES,
+    KAD_RPC_MSG_KEY_TARGET,
+    KAD_RPC_MSG_KEY_NODES,
 };
 
-#define KAD_RPC_MSG_FIELD_NAME_MAX_LEN 6
-static const lookup_entry kad_rpc_msg_field_names[] = {
-    { KAD_RPC_MSG_FIELD_TX_ID,    "t" },
-    { KAD_RPC_MSG_FIELD_NODE_ID,  "id" },
-    { KAD_RPC_MSG_FIELD_TYPE,     "y" },
-    { KAD_RPC_MSG_FIELD_ERR,      "e" },
-    { KAD_RPC_MSG_FIELD_METH,     "q" },
-    { KAD_RPC_MSG_FIELD_TARGET,   "target" },
-    { KAD_RPC_MSG_FIELD_NODES_ID, "nodes" },
+static const lookup_entry kad_rpc_msg_key_names[] = {
+    { KAD_RPC_MSG_KEY_TX_ID,    "t" },
+    { KAD_RPC_MSG_KEY_NODE_ID,  "id" },
+    { KAD_RPC_MSG_KEY_TYPE,     "y" },
+    { KAD_RPC_MSG_KEY_METH,     "q" },
+    { KAD_RPC_MSG_KEY_ERROR,    "e" },
+    { KAD_RPC_MSG_KEY_ARG,      "a" },
+    { KAD_RPC_MSG_KEY_RES,      "r" },
+    { KAD_RPC_MSG_KEY_TARGET,   "target" },
+    { KAD_RPC_MSG_KEY_NODES,    "nodes" },
     { 0,                          NULL },
 };
 
@@ -32,27 +36,27 @@ typedef enum {
     KAD_RPC_MSG_TX_ID_T
 } id_type;
 
-bool id_copy(id_type t, void *id, const struct benc_literal *val)
+bool id_copy(id_type t, void *id, const struct benc_literal *lit)
 {
-    if (val->t != BENC_LITERAL_TYPE_STR) {
+    if (lit->t != BENC_LITERAL_TYPE_STR) {
         log_error("Message node id not a string.");
         return false;
     }
 
     switch(t) {
     case KAD_GUID_T:
-        if (val->s.len != KAD_GUID_SPACE_IN_BYTES) {
-            log_error("Message node id has wrong length (%zu).", val->s.len);
+        if (lit->s.len != KAD_GUID_SPACE_IN_BYTES) {
+            log_error("Message node id has wrong length (%zu).", lit->s.len);
             return false;
         }
-        kad_guid_set(id, (unsigned char*)val->s.p);
+        kad_guid_set(id, (unsigned char*)lit->s.p);
         break;
     case KAD_RPC_MSG_TX_ID_T:
-        if (val->s.len != KAD_RPC_MSG_TX_ID_LEN) {
-            log_error("Message tx id has wrong length (%zu).", val->s.len);
+        if (lit->s.len != KAD_RPC_MSG_TX_ID_LEN) {
+            log_error("Message tx id has wrong length (%zu).", lit->s.len);
             return false;
         }
-        kad_rpc_msg_tx_id_set(id, (unsigned char*)val->s.p);
+        kad_rpc_msg_tx_id_set(id, (unsigned char*)lit->s.p);
         break;
     default:
         log_error("Unknown id type provided.");
@@ -62,8 +66,63 @@ bool id_copy(id_type t, void *id, const struct benc_literal *val)
     return true;
 }
 
+static struct benc_node*
+benc_node_find_literal_str(const struct benc_node *dict,
+                           const char key[], const size_t key_len)
+{
+    struct benc_node *n = benc_node_find_dict_entry(dict, key, key_len);
+    if (!n) {
+        log_error("Missing entry (%s) in decoded bencode object.", key);
+        return NULL;
+    }
+    if (n->chd[0]->typ != BENC_NODE_TYPE_LITERAL ||
+        n->chd[0]->lit->t != BENC_LITERAL_TYPE_STR) {
+        log_error("Invalid entry %s.", key);
+        return NULL;
+    }
+    return n;
+}
+
+static enum kad_rpc_meth
+benc_msg_get_meth_from_dict(const struct benc_node *dict)
+{
+    const char *key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_METH);
+    struct benc_node *n = benc_node_find_literal_str(dict, key, 1);
+    if (!n) {
+        return KAD_RPC_METH_NONE;
+    }
+    return lookup_by_name(kad_rpc_meth_names, n->chd[0]->lit->s.p, 10);
+}
+
+static bool
+benc_msg_set_node_id_from_key(struct kad_rpc_msg *msg,
+                              const struct benc_node *dict, const enum kad_rpc_msg_key k)
+{
+    const char *key = lookup_by_id(kad_rpc_msg_key_names, k);
+    struct benc_node *n = benc_node_find_dict_entry(dict, key, strlen(key));
+    if (!n) {
+        log_error("Missing entry (%s) in decoded bencode object.", key);
+        return false;
+    }
+    if (n->chd[0]->typ != BENC_NODE_TYPE_DICT) {
+        log_error("Invalid entry %s.", key);
+        return false;
+    }
+    key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_NODE_ID);
+    n = benc_node_find_dict_entry(n->chd[0], key, 2);
+    if (!n) {
+        log_error("Missing entry (%s) in decoded bencode object.", key);
+        return false;
+    }
+    if (!id_copy(KAD_GUID_T, &msg->node_id, n->chd[0]->lit)) {
+        log_error("Node_id copy failed.");
+        return false;
+    }
+    return true;
+}
+
 /**
- * Populates @msg with @emit'ed @val'ue.
+ * Parses @buf and populates @msg accordingly
  *
  * "t" transaction id: 2 chars.
  * "y" message type: "q" for query, "r" for response, or "e" for error.
@@ -73,29 +132,125 @@ bool id_copy(id_type t, void *id, const struct benc_literal *val)
  * "r" named return values: dict.
  *
  * "e" list: error code (int), error msg (str).
+ *
+ * Note about node info encoding: we diverge here from the BitTorrent spec
+ * where a where "Compact node info" is a 26-byte string (20-byte node-id +
+ * 6-byte "Compact IP-address/port info" (4-byte IP (16-byte for ip6) + 2-byte
+ * port all in network byte order))". Our node info list are encoded in the
+ * form: [["id1", "host1", "service1"], ["id2", "host2", "service3"], ...].
  */
-bool benc_fill_rpc_msg()
-{
-    return true;
-}
-
 bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t slen) {
-    /* return benc_parse(msg, (benc_fill_fn)benc_fill_rpc_msg, buf, slen); */
-    (void)msg;
-    (void)buf;
-    (void)slen;
+    BENC_REPR_DECL_INIT(repr, KAD_RPC_MSG_LITERAL_MAX, KAD_RPC_MSG_NODES_MAX);
+
+    if (!benc_parse(&repr, buf, slen)) {
+        return false;
+    }
+
+    // is_dict
+    if (repr.n[0].typ != BENC_NODE_TYPE_DICT) {
+        log_error("Decoded bencode object not a dict.");
+        return false;
+    }
+
+    const char *key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_TX_ID);
+    struct benc_node *n = benc_node_find_literal_str(&repr.n[0], key, 1);
+    if (!n || n->chd[0]->lit->s.len != 2) {
+        return false;
+    }
+    if (!id_copy(KAD_RPC_MSG_TX_ID_T, &msg->tx_id, n->chd[0]->lit)) {
+        log_error("Tx_id copy failed.");
+        return false;
+    }
+
+    key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_TYPE);
+    n = benc_node_find_literal_str(&repr.n[0], key, 1);
+    if (!n || n->chd[0]->lit->s.len != 1) {
+        return false;
+    }
+    msg->type = lookup_by_name(kad_rpc_type_names, n->chd[0]->lit->s.p, 1);
+    if (msg->type == KAD_RPC_TYPE_NONE) {
+        log_error("Unknown message type '%c'.", n->chd[0]->lit->s.p);
+        return false;
+    }
+
+    switch (msg->type) {
+    case KAD_RPC_TYPE_ERROR: {
+        key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_ERROR);
+        n = benc_node_find_dict_entry(&repr.n[0], key, 1);
+        if (!n) {
+            log_error("Missing entry (%s) in decoded bencode object.", key);
+            return false;
+        }
+        if (n->chd[0]->typ != BENC_NODE_TYPE_LIST) {
+            log_error("Invalid entry %s.", key);
+            return false;
+        }
+        n = n->chd[0];
+        if (n->chd[0]->typ != BENC_NODE_TYPE_LITERAL ||
+            n->chd[0]->lit->t != BENC_LITERAL_TYPE_INT) {
+            log_error("Invalid value type for elt[0] of %s.", key);
+            return false;
+        }
+        msg->err_code = n->chd[0]->lit->i;
+        if (n->chd[1]->typ != BENC_NODE_TYPE_LITERAL ||
+            n->chd[1]->lit->t != BENC_LITERAL_TYPE_STR) {
+            log_error("Invalid value type for elt[0] of %s.", key);
+            return false;
+        }
+        memcpy(msg->err_msg, n->chd[1]->lit->s.p, n->chd[1]->lit->s.len);
+        break;
+    }
+
+    case KAD_RPC_TYPE_QUERY: {
+        msg->meth = benc_msg_get_meth_from_dict(&repr.n[0]);
+        if (msg->meth == KAD_RPC_METH_NONE) {
+            log_error("Unknown message method '%c'.", n->chd[0]->lit->s.p);
+            return false;
+        }
+
+        if (msg->meth == KAD_RPC_METH_PING) {
+            // get "a":{"id":"abcdefghij0123456789"}
+            if (!benc_msg_set_node_id_from_key(msg, &repr.n[0], KAD_RPC_MSG_KEY_ARG)) {
+                return false;
+            }
+        }
+
+        else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
+        }
+
+        else {
+        }
+
+        break;
+    }
+
+    case KAD_RPC_TYPE_RESPONSE: {
+        // get "r":{"id":"abcdefghij0123456789"}
+        if (!benc_msg_set_node_id_from_key(msg, &repr.n[0], KAD_RPC_MSG_KEY_RES)) {
+            return false;
+        }
+
+        break;
+    }
+
+    default:
+        break;
+    }
+
+
     return true;
 }
 
 /**
  * Straight-forward serialization. NO VALIDATION is performed.
  */
+// FIXME dict entries supposed to be sorted
 bool benc_encode_rpc_msg(const struct kad_rpc_msg *msg, struct iobuf *buf)
 {
     char tmps[2048];
     size_t tmps_len = 0;
 
-    /* we avoid the burden of looking up into kad_rpc_msg_field_names just for single chars. */
+    /* we avoid the burden of looking up into kad_rpc_msg_key_names just for single chars. */
     sprintf(tmps, "d1:t%d:", KAD_RPC_MSG_TX_ID_LEN);
     tmps_len += strlen(tmps);
     memcpy(tmps + tmps_len, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
@@ -121,7 +276,7 @@ bool benc_encode_rpc_msg(const struct kad_rpc_msg *msg, struct iobuf *buf)
             }
             else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
                 const char *field_target = lookup_by_id(
-                    kad_rpc_msg_field_names, KAD_RPC_MSG_FIELD_TARGET);
+                    kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_TARGET);
                 sprintf(tmps, "1:ad%zu:%s%d:", strlen(field_target),
                         field_target, KAD_GUID_SPACE_IN_BYTES);
                 tmps_len = strlen(tmps);
@@ -145,7 +300,7 @@ bool benc_encode_rpc_msg(const struct kad_rpc_msg *msg, struct iobuf *buf)
             }
             else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
                 const char *field_nodes = lookup_by_id(
-                    kad_rpc_msg_field_names, KAD_RPC_MSG_FIELD_NODES_ID);
+                    kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_NODES);
                 sprintf(tmps, "1:rd%zu:%sl", strlen(field_nodes), field_nodes);
                 iobuf_append(buf, tmps, strlen(tmps));
                 for (size_t i = 0; i < msg->nodes_len; i++) {
