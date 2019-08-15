@@ -3,6 +3,8 @@
 #include "utils/safer.h"
 #include "net/kad/dht.c"      // testing static functions
 
+#include <stdio.h>
+#include "net/util.h"
 int main ()
 {
     size_t bkt_idx = kad_bucket_hash(
@@ -36,8 +38,11 @@ int main ()
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_dht *dht = dht_init();
 
-    struct kad_node_info info = { .id = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
-                                  .host = "1.1.1.1", .service = "22" };
+    struct kad_node_info info = { .id = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}}, {0} };
+    struct sockaddr_in *sa = (struct sockaddr_in*)&info.addr;
+    sa->sin_family=AF_INET; sa->sin_port=htons(0x0016); sa->sin_addr.s_addr=htonl(0x01020304);
+    fmt_sockaddr_storage(info.addr_str, &info.addr);
+    assert(strcmp(info.addr_str, "01020304:0016") == 0);
     assert(dht_update(dht, &info) == 1);
     assert(dht_insert(dht, &info));
     /* dht_get...() is not exposed. So we're not supposed to do bad things like

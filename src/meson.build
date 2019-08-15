@@ -14,6 +14,7 @@ libmain_sources = [
     'log.c',
     'net/iobuf.c',
     'net/msg.c',
+    'net/util.c',
     'options.c',
     'server.c',
     'signals.c',

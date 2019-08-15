@@ -30,9 +30,9 @@
 BYTE_ARRAY_GENERATE(kad_guid, KAD_GUID_SPACE_IN_BYTES)
 
 struct kad_node_info {
-    kad_guid id;
-    char     host[NI_MAXHOST];
-    char     service[NI_MAXSERV];
+    kad_guid                id;
+    struct sockaddr_storage addr;
+    char                    addr_str[32+1+4+1];
 };
 
 /* Nodes (DHT) are not peers (network). */
@@ -69,8 +69,8 @@ static inline void kad_node_info_copy(struct kad_node_info *dst,
                                       const struct kad_node_info *src)
 {
     dst->id = src->id;
-    strcpy(dst->host, src->host);
-    strcpy(dst->service, src->service);
+    dst->addr = src->addr;
+    strcpy(dst->addr_str, src->addr_str);
 }
 
 struct kad_dht *dht_init();

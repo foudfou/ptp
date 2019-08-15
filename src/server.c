@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "net/util.h"
 #include "utils/bits.h"
 #include "utils/cont.h"
 #include "utils/list.h"
@@ -33,8 +34,9 @@ enum conn_ret {CONN_OK, CONN_CLOSED};
 struct peer {
     struct list_item        item;
     int                     fd;
-    char                    host[NI_MAXHOST];
-    char                    service[NI_MAXSERV];
+    struct sockaddr_storage addr;
+    // used for logging = addr:port in hex
+    char                    addr_str[32+1+4+1];
     struct proto_msg_parser parser;
 };
 
@@ -172,31 +174,22 @@ static bool socket_shutdown(int sock)
 }
 
 static struct peer*
-peer_register(struct list_item *peers, int conn,
-              struct sockaddr_storage *addr, socklen_t *addr_len)
+peer_register(struct list_item *peers, int conn, struct sockaddr_storage *addr)
 {
-    char host[NI_MAXHOST], service[NI_MAXSERV];
-    int rv = getnameinfo((struct sockaddr *) addr, *addr_len,
-                         host, NI_MAXHOST, service, NI_MAXSERV,
-                         NI_NUMERICHOST | NI_NUMERICSERV);
-    if (rv) {
-        log_error("Failed to getnameinfo: %s.", gai_strerror(rv));
-        return NULL;
-    }
-
     struct peer *peer = malloc(sizeof(struct peer));
+    memset(peer, 0, sizeof(struct peer));
     if (!peer) {
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return NULL;
     }
 
     peer->fd = conn;
-    strcpy(peer->host, host);
-    strcpy(peer->service, service);
+    peer->addr = *addr;
+    fmt_sockaddr_storage(peer->addr_str, &peer->addr);
     proto_msg_parser_init(&peer->parser);
     list_init(&(peer->item));
     list_append(peers, &(peer->item));
-    log_debug("Peer [%s]:%s registered (fd=%d).", host, service, conn);
+    log_debug("Peer %s registered (fd=%d).", peer->addr_str, conn);
 
     return peer;
 }
@@ -222,7 +215,7 @@ peer_find_by_fd(struct list_item *peers, const int fd)
 
 static void peer_unregister(struct peer *peer)
 {
-    log_debug("Unregistering peer [%s]:%s.", peer->host, peer->service);
+    log_debug("Unregistering peer %s.", peer->addr_str);
     proto_msg_parser_terminate(&peer->parser);
     list_delete(&peer->item);
     free_safer(peer);
@@ -289,7 +282,7 @@ static int peer_conn_accept_all(const int listenfd, struct list_item *peers,
             continue;
         }
 
-        struct peer *p = peer_register(peers, conn, &peer_addr, &peer_addr_len);
+        struct peer *p = peer_register(peers, conn, &peer_addr);
         if (!p) {
             log_error("Failed to register peer fd=%d."
                       " Trying to close connection gracefully.", conn);
@@ -301,7 +294,7 @@ static int peer_conn_accept_all(const int listenfd, struct list_item *peers,
             }
             continue;
         }
-        log_info("Accepted connection from peer [%s]:%s.", p->host, p->service);
+        log_info("Accepted connection from peer %s.", p->addr_str);
         npeer++;
 
     } while (conn != -1);
@@ -317,7 +310,7 @@ static int peer_conn_accept_all(const int listenfd, struct list_item *peers,
 static bool peer_conn_close(struct peer *peer)
 {
     bool ret = true;
-    log_info("Closing connection with peer [%s]:%s.", peer->host, peer->service);
+    log_info("Closing connection with peer %s.", peer->addr_str);
     if (!sock_close(peer->fd)) {
         log_perror(LOG_ERR, "Failed closed for peer: %s.", errno);
         ret = false;
@@ -354,7 +347,7 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *kctx)
     }
 
     if (slen == 0) {
-        log_info("Peer [%s]:%s closed connection.", peer->host, peer->service);
+        log_info("Peer %s closed connection.", peer->addr_str);
         ret = CONN_CLOSED;
         goto end;
     }
@@ -375,12 +368,10 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *kctx)
         const char err[] = "Could not parse chunk.";
         union u32 err_len = {strlen(err)};
         if (peer_msg_send(peer, PROTO_MSG_TYPE_ERROR, err, err_len)) {
-            log_info("Notified peer [%s]:%s of error state.",
-                     peer->host, peer->service);
+            log_info("Notified peer %s of error state.", peer->addr_str);
         }
         else {
-            log_warning("Failed to notify peer [%s]:%s of error state.",
-                        peer->host, peer->service);
+            log_warning("Failed to notify peer %s of error state.", peer->addr_str);
             ret = CONN_CLOSED;
         }
         goto end;
@@ -388,9 +379,9 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *kctx)
     log_debug("Successful parsing of chunk.");
 
     if (peer->parser.stage == PROTO_MSG_STAGE_NONE) {
-        log_info("Got msg %s from peer [%s]:%s.",
+        log_info("Got msg %s from peer %s.",
                  lookup_by_id(proto_msg_type_names, peer->parser.msg_type),
-                 peer->host, peer->service);
+                 peer->addr_str);
         // TODO: call tcp handlers here.
     }
 
@@ -415,17 +406,8 @@ static bool node_handle_data(int sock, struct kad_ctx *kctx)
     }
     log_debug("Received %d bytes.", slen);
 
-    char host[NI_MAXHOST], service[NI_MAXSERV];
-    int rv = getnameinfo((struct sockaddr *) &node_addr, node_addr_len,
-                         host, NI_MAXHOST, service, NI_MAXSERV,
-                         NI_NUMERICHOST | NI_NUMERICSERV);
-    if (rv) {
-        log_error("Failed to getnameinfo: %s.", gai_strerror(rv));
-        return false;
-    }
-
     struct iobuf rsp = {0};
-    int has_resp = kad_rpc_handle(kctx, host, service, buf, (size_t)slen, &rsp);
+    int has_resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, &rsp);
     if (has_resp > 0) {
         if (rsp.pos <= SERVER_UDP_BUFLEN) {
             slen = sendto(sock, rsp.buf, rsp.pos, 0,

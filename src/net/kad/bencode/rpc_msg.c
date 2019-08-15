@@ -133,11 +133,10 @@ benc_msg_set_node_id_from_key(struct kad_rpc_msg *msg,
  *
  * "e" list: error code (int), error msg (str).
  *
- * Note about node info encoding: we diverge here from the BitTorrent spec
- * where a where "Compact node info" is a 26-byte string (20-byte node-id +
- * 6-byte "Compact IP-address/port info" (4-byte IP (16-byte for ip6) + 2-byte
- * port all in network byte order))". Our node info list are encoded in the
- * form: [["id1", "host1", "service1"], ["id2", "host2", "service3"], ...].
+ * Note about node info encoding: we embrace the BitTorrent spec where a where
+ * "Compact node info" is a 26-byte string (20-byte node-id + 6-byte "Compact
+ * IP-address/port info" (4-byte IP (16-byte for ip6) + 2-byte port all in
+ * network byte order))".
  */
 bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t slen) {
     BENC_REPR_DECL_INIT(repr, KAD_RPC_MSG_LITERAL_MAX, KAD_RPC_MSG_NODES_MAX);
@@ -244,7 +243,7 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
 /**
  * Straight-forward serialization. NO VALIDATION is performed.
  */
-// FIXME dict entries supposed to be sorted
+// FIXME dict entries supposed to be sorted when serialized
 bool benc_encode_rpc_msg(const struct kad_rpc_msg *msg, struct iobuf *buf)
 {
     char tmps[2048];
@@ -304,15 +303,32 @@ bool benc_encode_rpc_msg(const struct kad_rpc_msg *msg, struct iobuf *buf)
                 sprintf(tmps, "1:rd%zu:%sl", strlen(field_nodes), field_nodes);
                 iobuf_append(buf, tmps, strlen(tmps));
                 for (size_t i = 0; i < msg->nodes_len; i++) {
-                    sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES);
+                    unsigned compact_len = 0;
+                    unsigned char compact[21] = {0};
+                    const struct sockaddr_storage *ss = &msg->nodes[i].addr;
+                    if (ss->ss_family == AF_INET) {
+                        compact_len = 6;
+                        const struct sockaddr_in *sa = (struct sockaddr_in *)ss;
+                        memcpy(compact, (unsigned char*)&sa->sin_addr, 4);
+                        memcpy(compact + 4, (unsigned char*)&sa->sin_port, 2);
+                    }
+                    else if (ss->ss_family == AF_INET6) {
+                        compact_len = 18;
+                        const struct sockaddr_in6 *sa = (struct sockaddr_in6 *)ss;
+                        memcpy(compact, (unsigned char*)&sa->sin6_addr, 16);
+                        memcpy(compact + 16, (unsigned char*)&sa->sin6_port, 2);
+                    }
+                    else {
+                        log_error("Unsupported socket address family (%d).", ss->ss_family);
+                        return false;
+                    }
+
+                    sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES + compact_len);
                     tmps_len = strlen(tmps);
-                    memcpy(tmps + tmps_len, (char*)msg->nodes[i].id.bytes,
-                           KAD_GUID_SPACE_IN_BYTES);
+                    memcpy(tmps + tmps_len, (char*)msg->nodes[i].id.bytes, KAD_GUID_SPACE_IN_BYTES);
                     tmps_len += KAD_GUID_SPACE_IN_BYTES;
-                    sprintf(tmps + tmps_len, "%zu:%s%zu:%s",
-                            strlen(msg->nodes[i].host), msg->nodes[i].host,
-                            strlen(msg->nodes[i].service), msg->nodes[i].service);
-                    iobuf_append(buf, tmps, strlen(tmps)); // nodes
+                    iobuf_append(buf, tmps, tmps_len);
+                    iobuf_append(buf, (char*)compact, compact_len);
                 }
                 iobuf_append(buf, "e2:id", 5);
             }

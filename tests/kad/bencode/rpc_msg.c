@@ -101,9 +101,6 @@ int main ()
 
     // Message encoding
 
-    /* The order of fields shouldn't matter. Our implementation is just
-       deterministic. */
-
     struct iobuf msgbuf = {0};
 
     // KAD_TEST_ERROR
@@ -159,16 +156,23 @@ int main ()
     msg.type = KAD_RPC_TYPE_RESPONSE;
     msg.meth = KAD_RPC_METH_FIND_NODE;
     msg.node_id = (kad_guid){.bytes = "0123456789abcdefghij"};
+    struct sockaddr_storage ss = {0};
+    struct sockaddr_in *sa = (struct sockaddr_in*)&ss;
     msg.nodes[0] = (struct kad_node_info){
-        .id = {.bytes = "abcdefghij0123456789"}, "192.168.168.15", "12120" };
+        .id = {.bytes = "abcdefghij0123456789"}, {0}, {0}};
+    sa->sin_family=AF_INET; sa->sin_port=htons(0x2f58);
+    sa->sin_addr.s_addr=htonl(0xc0a8a80f); sa->sin_port=htons(0x2f58);
+    msg.nodes[0].addr = ss;
     msg.nodes[1] = (struct kad_node_info){
-        .id = {.bytes = "mnopqrstuvwxyz123456"}, "192.168.168.25", "12121" };
+        .id = {.bytes = "mnopqrstuvwxyz123456"}, {0}, {0}};
+    sa->sin_addr.s_addr=htonl(0xc0a8a819); sa->sin_port=htons(0x2f59);
+    msg.nodes[1].addr = ss;
     msg.nodes_len = 2;
-    assert(check_encoded_msg(&msg, &msgbuf,"d1:t2:aa1:y1:r1:rd5:nodesl"
-                             "20:abcdefghij012345678914:192.168.168.155:12120"
-                             "20:mnopqrstuvwxyz12345614:192.168.168.255:12121"
+    assert(check_encoded_msg(&msg, &msgbuf, "d1:t2:aa1:y1:r1:rd5:nodesl"
+                             "26:abcdefghij0123456789\xc0\xa8\xa8\x0f\x2f\x58"
+                             "26:mnopqrstuvwxyz123456\xc0\xa8\xa8\x19\x2f\x59"
                              "e2:id20:0123456789abcdefghijee",
-                             150));
+                             114));
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
     log_shutdown(LOG_TYPE_STDOUT);

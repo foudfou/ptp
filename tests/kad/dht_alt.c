@@ -1,5 +1,6 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
+#include "net/util.h"
 #include "net/kad/dht.c"      // testing static functions
 
 /* _alt tests get a tiny guid space (4 bits) for easier reasoning.
@@ -71,9 +72,19 @@
      (bucket 2)
      (bucket 0)
 */
+
+bool sockaddr_cmp(struct sockaddr_storage *a, struct sockaddr_storage *b)
+{
+    return
+        ((struct sockaddr_in*)a)->sin_addr.s_addr ==
+        ((struct sockaddr_in*)b)->sin_addr.s_addr &&
+        ((struct sockaddr_in*)a)->sin_port ==
+        ((struct sockaddr_in*)b)->sin_port;
+}
+
 int main ()
 {
-    assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_DEBUG)));
+    assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_dht *dht = dht_init();
 
     dht->self_id.bytes[0] = 0xa0; // 0b1010
@@ -86,20 +97,33 @@ int main ()
         struct kad_node_info info;
         int                  bucket;
     } peers[] = {
-        {{{{0x10}, true}, "1.1.1.1", "22"}, 3},
-        {{{{0xb0}, true}, "1.1.2.0", "22"}, 0},
-        {{{{0x80}, true}, "1.1.2.1", "22"}, 1},
-        {{{{0xd0}, true}, "1.1.2.2", "22"}, 2},
-        {{{{0x70}, true}, "1.1.2.3", "22"}, 3},
+        {{{{0x10}, true}, {0}, {0}}, 3},
+        {{{{0xb0}, true}, {0}, {0}}, 0},
+        {{{{0x80}, true}, {0}, {0}}, 1},
+        {{{{0xd0}, true}, {0}, {0}}, 2},
+        {{{{0x70}, true}, {0}, {0}}, 3},
     };
+
+    struct sockaddr_storage ss = {0};
+    struct sockaddr_in *sa = (struct sockaddr_in*)&ss;
+    sa->sin_family=AF_INET; sa->sin_port=htons(0x0016);
+    sa->sin_addr.s_addr=htonl(0x01010101); peers[0].info.addr = ss;
+    sa->sin_addr.s_addr=htonl(0x01010200); peers[1].info.addr = ss;
+    sa->sin_addr.s_addr=htonl(0x01010201); peers[2].info.addr = ss;
+    sa->sin_addr.s_addr=htonl(0x01010202); peers[3].info.addr = ss;
+    sa->sin_addr.s_addr=htonl(0x01010203); peers[4].info.addr = ss;
+
     struct peer_test *peer = peers;
     struct peer_test *peer_end = peers + sizeof(peers)/sizeof(peers[0]);
     while (peer < peer_end) {
+        assert(fmt_sockaddr_storage(peer->info.addr_str, &peer->info.addr));
+
         assert(dht_insert(dht, &peer->info));
 
         struct kad_node_info bucket[KAD_K_CONST];
         int bucket_len = kad_bucket_get_nodes(&dht->buckets[peer->bucket], bucket, 0, NULL);
-        assert(strcmp(peer->info.host, bucket[bucket_len-1].host) == 0);
+        assert(sockaddr_cmp(&peer->info.addr, &bucket[bucket_len-1].addr));
+        printf("%s == %s\n", peer->info.addr_str, bucket[bucket_len-1].addr_str);
 
         peer++;
     }
@@ -112,7 +136,7 @@ int main ()
 
     int peer_order[] = {2, 1, 3, 0, 4};
     for (size_t i = 0; i < added; ++i) {
-        assert(strcmp(nodes[i].host, peers[peer_order[i]].info.host) == 0);
+        assert(sockaddr_cmp(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
     kad_guid_set(&target, (unsigned char[]){0xc0}); // 0b1100
@@ -120,7 +144,7 @@ int main ()
     assert(added == 5);
     memcpy(peer_order, (int[]){3, 2, 0, 4, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
-        assert(strcmp(nodes[i].host, peers[peer_order[i]].info.host) == 0);
+        assert(sockaddr_cmp(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
     kad_guid_set(&target, (unsigned char[]){0x03}); // 0b0011
@@ -128,7 +152,7 @@ int main ()
     assert(added == 5);
     memcpy(peer_order, (int[]){0, 4, 2, 3, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
-        assert(strcmp(nodes[i].host, peers[peer_order[i]].info.host) == 0);
+        assert(sockaddr_cmp(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
     dht_terminate(dht);

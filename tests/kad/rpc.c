@@ -11,13 +11,17 @@ int main ()
 
     struct iobuf rsp = {0};
 
-    assert(kad_rpc_handle(&ctx, "::1", "35000", "", 0, &rsp) == -1);
+    struct sockaddr_storage ss = {0};
+    struct sockaddr_in6 *sa = (struct sockaddr_in6*)&ss;
+    sa->sin6_family=AF_INET6; sa->sin6_port=htons(0x88b8);
+    memcpy(sa->sin6_addr.s6_addr, (unsigned char[]){0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}, sizeof(struct in6_addr));
+    assert(kad_rpc_handle(&ctx, &ss, "", 0, &rsp) == -1);
     assert(rsp.pos != 0);
     iobuf_reset(&rsp);
 
     char buf[] = "d1:t2:aa1:y1:r1:rd2:id20:\x17""E\xc4\xed\xca\x16" \
         "3\xf0Q\x8e\x1f""6\n\xc7\xe1\xad'A\x86""3ee";
-    assert(kad_rpc_handle(&ctx, "::1", "35000", buf, 47, &rsp) == -1);
+    assert(kad_rpc_handle(&ctx, &ss, buf, 47, &rsp) == -1);
     assert(rsp.pos == 0);
     iobuf_reset(&rsp);
 

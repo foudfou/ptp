@@ -2,6 +2,7 @@
 #include "log.h"
 #include "utils/safer.h"
 #include "net/kad/bencode/rpc_msg.h"
+#include "net/util.h"
 #include "net/kad/rpc.h"
 
 bool kad_rpc_init(struct kad_ctx *ctx)
@@ -52,20 +53,20 @@ kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
 }
 
 static void
-kad_rpc_update_dht(struct kad_ctx *ctx, const char host[], const char service[],
+kad_rpc_update_dht(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
                    const struct kad_rpc_msg *msg)
 {
     char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     struct kad_node_info info = {0};
     info.id = msg->node_id;
-    strcpy(info.host, host);
-    strcpy(info.service, service);
+    info.addr = *addr;
+    fmt_sockaddr_storage(info.addr_str, addr);
     int updated = dht_update(ctx->dht, &info);
     if (updated == 0)
-        log_debug("DHT update of [%s]:%s (id=%s).", host, service, id);
+        log_debug("DHT update of %s (id=%s).", &info.addr_str, id);
     else if (updated > 0) { // insert needed
         if (dht_insert(ctx->dht, &info))
-            log_debug("DHT insert of [%s]:%s (id=%s).", host, service, id);
+            log_debug("DHT insert of %s (id=%s).", &info.addr_str, id);
         else
             log_warning("Failed to insert kad_node (id=%s).", id);
     }
@@ -160,7 +161,7 @@ static void kad_rpc_generate_tx_id(kad_rpc_msg_tx_id *tx_id)
  *
  * Returns 0 on success, -1 on failure, 1 if a response is ready.
  */
-int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
+int kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
                    const char buf[], const size_t slen, struct iobuf *rsp)
 {
     int ret = 0;
@@ -189,7 +190,7 @@ int kad_rpc_handle(struct kad_ctx *ctx, const char host[], const char service[],
     kad_rpc_msg_log(&msg); // TESTING
 
     if (msg.node_id.is_set)
-        kad_rpc_update_dht(ctx, host, service, &msg);
+        kad_rpc_update_dht(ctx, addr, &msg);
     else
         log_warning("Node id not set, DHT not updated.");
 
@@ -250,8 +251,7 @@ void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
     for (size_t i = 0; i < msg->nodes_len; i++) {
         node_id = log_fmt_hex(LOG_DEBUG, msg->nodes[i].id.bytes,
                               KAD_GUID_SPACE_IN_BYTES);
-        log_debug("  nodes[%zu]=0x%s:[%s]:%s", i, node_id,
-                  msg->nodes[i].host, msg->nodes[i].service);
+        log_debug("  nodes[%zu]=0x%s %s", i, node_id, msg->nodes[i].addr_str);
         free_safer(node_id);
     }
     log_debug("}");
