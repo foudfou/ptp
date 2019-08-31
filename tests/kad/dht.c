@@ -1,10 +1,9 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
+#include "net/util.h"
 #include "utils/safer.h"
 #include "net/kad/dht.c"      // testing static functions
 
-#include <stdio.h>
-#include "net/util.h"
 int main ()
 {
     size_t bkt_idx = kad_bucket_hash(
@@ -41,7 +40,7 @@ int main ()
     struct kad_node_info info = { .id = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}}, {0} };
     struct sockaddr_in *sa = (struct sockaddr_in*)&info.addr;
     sa->sin_family=AF_INET; sa->sin_port=htons(0x0016); sa->sin_addr.s_addr=htonl(0x01020304);
-    fmt_sockaddr_storage(info.addr_str, &info.addr);
+    sockaddr_storage_fmt(info.addr_str, &info.addr);
     assert(strcmp(info.addr_str, "01020304:0016") == 0);
     assert(dht_update(dht, &info) == 1);
     assert(dht_insert(dht, &info));

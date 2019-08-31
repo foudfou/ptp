@@ -9,6 +9,6 @@
 #include "net/kad/rpc.h"
 
 bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t slen);
-bool benc_encode_rpc_msg(const struct kad_rpc_msg *msg, struct iobuf *buf);
+bool benc_encode_rpc_msg(struct iobuf *buf, const struct kad_rpc_msg *msg);
 
 #endif /* BENCODE_RPC_MSG_H */

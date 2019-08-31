@@ -32,6 +32,7 @@ BYTE_ARRAY_GENERATE(kad_guid, KAD_GUID_SPACE_IN_BYTES)
 struct kad_node_info {
     kad_guid                id;
     struct sockaddr_storage addr;
+    // hex reprensatation of IP:PORT for logging/debugging
     char                    addr_str[32+1+4+1];
 };
 

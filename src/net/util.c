@@ -1,8 +1,9 @@
 #include <stdio.h>
+#include <string.h>
 #include "net/util.h"
 
 // https://beej.us/guide/bgnet/html/multi/sockaddr_inman.html
-bool fmt_sockaddr_storage(char str[], const struct sockaddr_storage *ss)
+bool sockaddr_storage_fmt(char str[], const struct sockaddr_storage *ss)
 {
     char *p = str;
     if (ss->ss_family == AF_INET) {
@@ -29,4 +30,22 @@ bool fmt_sockaddr_storage(char str[], const struct sockaddr_storage *ss)
         return false;
     }
     return true;
+}
+
+bool sockaddr_storage_cmp4(struct sockaddr_storage *a, struct sockaddr_storage *b)
+{
+    return
+        ((struct sockaddr_in*)a)->sin_addr.s_addr ==
+        ((struct sockaddr_in*)b)->sin_addr.s_addr &&
+        ((struct sockaddr_in*)a)->sin_port ==
+        ((struct sockaddr_in*)b)->sin_port;
+}
+
+bool sockaddr_storage_cmp6(struct sockaddr_storage *a, struct sockaddr_storage *b)
+{
+    return
+        (0 == memcmp(&((struct sockaddr_in6*)a)->sin6_addr.s6_addr,
+                     &((struct sockaddr_in6*)b)->sin6_addr.s6_addr, 16) &&
+         ((struct sockaddr_in6*)a)->sin6_port ==
+         ((struct sockaddr_in6*)b)->sin6_port);
 }

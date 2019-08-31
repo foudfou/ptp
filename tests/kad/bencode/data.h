@@ -23,11 +23,16 @@
 
 // {"t":"aa", "y":"r", "r": {"id":"0123456789abcdefghij", "nodes": "def456..."}}
 #define KAD_TEST_FIND_NODE_RESPONSE "d1:rd2:id20:0123456789abcdefghij5:nodesl" \
-    "20:abcdefghij012345678913:192.168.168.15:12120"                    \
-    "20:mnopqrstuvwxyz12345613:192.168.168.25:12121e"                   \
-    "e1:t2:aa1:y1:re"
+    "26:abcdefghij0123456789\xc0\xa8\xa8\x0f\x2f\x58"                   \
+    "26:mnopqrstuvwxyz123456\xc0\xa8\xa8\x19\x2f\x59"                   \
+    "ee1:t2:aa1:y1:re"
+
+#define KAD_TEST_FIND_NODE_RESPONSE_IP6 "d1:rd2:id20:0123456789abcdefghij5:nodesl" \
+    "38:abcdefghij0123456789\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x02\x03"                   \
+    "38:mnopqrstuvwxyz123456\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\xaa\x03\x04"                   \
+    "ee1:t2:aa1:y1:re"
 
 #define KAD_TEST_FIND_NODE_RESPONSE_BOGUS "d1:rd2:id20:0123456789abcdefghij" \
-    "5:nodesl4:abcd13:192.168.168.15:12120ee1:t2:aa1:y1:re"
+    "5:nodesl10:abcd\xc0\xa8\xa8\x0f\x2f\x58""ee1:t2:aa1:y1:re"
 
 #endif /* KAD_TESTS_H */

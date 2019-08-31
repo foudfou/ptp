@@ -73,15 +73,6 @@
      (bucket 0)
 */
 
-bool sockaddr_cmp(struct sockaddr_storage *a, struct sockaddr_storage *b)
-{
-    return
-        ((struct sockaddr_in*)a)->sin_addr.s_addr ==
-        ((struct sockaddr_in*)b)->sin_addr.s_addr &&
-        ((struct sockaddr_in*)a)->sin_port ==
-        ((struct sockaddr_in*)b)->sin_port;
-}
-
 int main ()
 {
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
@@ -116,13 +107,13 @@ int main ()
     struct peer_test *peer = peers;
     struct peer_test *peer_end = peers + sizeof(peers)/sizeof(peers[0]);
     while (peer < peer_end) {
-        assert(fmt_sockaddr_storage(peer->info.addr_str, &peer->info.addr));
+        assert(sockaddr_storage_fmt(peer->info.addr_str, &peer->info.addr));
 
         assert(dht_insert(dht, &peer->info));
 
         struct kad_node_info bucket[KAD_K_CONST];
         int bucket_len = kad_bucket_get_nodes(&dht->buckets[peer->bucket], bucket, 0, NULL);
-        assert(sockaddr_cmp(&peer->info.addr, &bucket[bucket_len-1].addr));
+        assert(sockaddr_storage_cmp4(&peer->info.addr, &bucket[bucket_len-1].addr));
         printf("%s == %s\n", peer->info.addr_str, bucket[bucket_len-1].addr_str);
 
         peer++;
@@ -136,7 +127,7 @@ int main ()
 
     int peer_order[] = {2, 1, 3, 0, 4};
     for (size_t i = 0; i < added; ++i) {
-        assert(sockaddr_cmp(&nodes[i].addr, &peers[peer_order[i]].info.addr));
+        assert(sockaddr_storage_cmp4(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
     kad_guid_set(&target, (unsigned char[]){0xc0}); // 0b1100
@@ -144,7 +135,7 @@ int main ()
     assert(added == 5);
     memcpy(peer_order, (int[]){3, 2, 0, 4, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
-        assert(sockaddr_cmp(&nodes[i].addr, &peers[peer_order[i]].info.addr));
+        assert(sockaddr_storage_cmp4(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
     kad_guid_set(&target, (unsigned char[]){0x03}); // 0b0011
@@ -152,7 +143,7 @@ int main ()
     assert(added == 5);
     memcpy(peer_order, (int[]){0, 4, 2, 3, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
-        assert(sockaddr_cmp(&nodes[i].addr, &peers[peer_order[i]].info.addr));
+        assert(sockaddr_storage_cmp4(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
     dht_terminate(dht);

@@ -185,7 +185,7 @@ peer_register(struct list_item *peers, int conn, struct sockaddr_storage *addr)
 
     peer->fd = conn;
     peer->addr = *addr;
-    fmt_sockaddr_storage(peer->addr_str, &peer->addr);
+    sockaddr_storage_fmt(peer->addr_str, &peer->addr);
     proto_msg_parser_init(&peer->parser);
     list_init(&(peer->item));
     list_append(peers, &(peer->item));
@@ -391,6 +391,8 @@ static int peer_conn_handle_data(struct peer *peer, struct kad_ctx *kctx)
 
 static bool node_handle_data(int sock, struct kad_ctx *kctx)
 {
+    bool ret = true;
+
     char buf[SERVER_UDP_BUFLEN];
     memset(buf, 0, SERVER_UDP_BUFLEN);
     struct sockaddr_storage node_addr;
@@ -402,32 +404,35 @@ static bool node_handle_data(int sock, struct kad_ctx *kctx)
             log_perror(LOG_ERR, "Failed recv: %s", errno);
             return false;
         }
-        goto end;
+        return true;
     }
     log_debug("Received %d bytes.", slen);
 
     struct iobuf rsp = {0};
-    int has_resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, &rsp);
-    if (has_resp > 0) {
-        if (rsp.pos <= SERVER_UDP_BUFLEN) {
-            slen = sendto(sock, rsp.buf, rsp.pos, 0,
-                          (struct sockaddr *)&node_addr, node_addr_len);
-            if (slen < 0) {
-                if (errno != EWOULDBLOCK) {
-                    log_perror(LOG_ERR, "Failed sendto: %s", errno);
-                    return false;
-                }
-                goto end;
-            }
-            log_debug("Sent %d bytes.", slen);
-        }
-        else
-            log_error("Response too long.");
+    bool resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, &rsp);
+    if (rsp.pos <= 0) {
+        log_info("Empty response. Not responding.");
+        ret = resp; goto cleanup;
     }
-    iobuf_reset(&rsp);
+    if (rsp.pos > SERVER_UDP_BUFLEN) {
+        log_error("Response too long.");
+        ret = false; goto cleanup;
+    }
 
-  end:
-    return true;
+    slen = sendto(sock, rsp.buf, rsp.pos, 0,
+                  (struct sockaddr *)&node_addr, node_addr_len);
+    if (slen < 0) {
+        if (errno != EWOULDBLOCK) {
+            log_perror(LOG_ERR, "Failed sendto: %s", errno);
+            ret = false; goto cleanup;
+        }
+        goto cleanup;
+    }
+    log_debug("Sent %d bytes.", slen);
+
+  cleanup:
+    iobuf_reset(&rsp);
+    return ret;
 }
 
 static int pollfds_update(struct pollfd fds[], const int nlisten,

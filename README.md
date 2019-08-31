@@ -22,6 +22,9 @@ Then
 
 `kldload mqueuefs` on FreeBSD.
 
+    src/ptp -h                    # print help
+    src/ptp -a 127.0.0.1 -p 2222  # start binding to 127.0.0.1:2222
+
 ## Acknowledgements
 
 ### Algorithms
