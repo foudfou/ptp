@@ -5,9 +5,9 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#define BENC_PARSER_STACK_MAX      32
-#define BENC_PARSER_STR_LEN_MAX    256
-#define BENC_NODE_CHILDREN_MAX 256
+#define BENC_PARSER_STACK_MAX   32
+#define BENC_PARSER_STR_LEN_MAX 256
+#define BENC_NODE_CHILDREN_MAX  256
 
 enum benc_literal_type {
     BENC_LITERAL_TYPE_NONE,
@@ -105,8 +105,9 @@ struct benc_parser {
     size_t            stack_off;
 };
 
-struct benc_node* benc_node_find_dict_entry(const struct benc_node *dict,
-                                            const char key[], const size_t key_len);
+struct benc_node* benc_node_find_key(const struct benc_node *dict,
+                                     const char key[], const size_t key_len);
+
 /**
  * Creates a tree-like representation of a bencode object from @buf.
  *

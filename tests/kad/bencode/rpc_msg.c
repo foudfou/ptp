@@ -4,7 +4,7 @@
 #include "net/util.h"
 #include "net/kad/rpc.h"
 #include "net/kad/bencode/rpc_msg.h"
-#include "data.h"
+#include "data_rpc_msg.h"
 
 #define BENC_PARSER_BUF_MAX 1400
 
@@ -71,6 +71,10 @@ int main ()
     assert(kad_guid_eq(&msg.node_id, &(kad_guid){.bytes = "\x17\x45\xc4\xed" \
                     "\xca\x16\x33\xf0\x51\x8e\x1f\x36\x0a\xc7\xe1\xad" \
                     "\x27\x41\x86\x33", .is_set = true}));
+
+    strcpy(buf, KAD_TEST_FIND_NODE_QUERY_BOGUS);
+    memset(&msg, 0, sizeof(msg));
+    assert(!benc_decode_rpc_msg(&msg, buf, strlen(buf)));
 
     strcpy(buf, KAD_TEST_FIND_NODE_QUERY);
     memset(&msg, 0, sizeof(msg));

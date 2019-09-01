@@ -1,6 +1,6 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
-#ifndef KAD_TESTS_H
-#define KAD_TESTS_H
+#ifndef KAD_TEST_RPC_MSG_H
+#define KAD_TEST_RPC_MSG_H
 
 // {"t":"aa", "y":"e", "e":[201, "A Generic Error Ocurred"]}
 #define KAD_TEST_ERROR "d1:eli201e23:A Generic Error Ocurrede1:t2:aa1:y1:ee"
@@ -21,6 +21,10 @@
 #define KAD_TEST_FIND_NODE_QUERY "d1:ad2:id20:abcdefghij01234567896:target" \
     "20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe"
 
+// {"t":"aa", "y":"q", "q":"find_node", "x": {"id":"abcdefghij0123456789", "target":"mnopqrstuvwxyz123456"}}
+#define KAD_TEST_FIND_NODE_QUERY_BOGUS "d1:xd2:id20:abcdefghij01234567896:target" \
+    "20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe"
+
 // {"t":"aa", "y":"r", "r": {"id":"0123456789abcdefghij", "nodes": "def456..."}}
 #define KAD_TEST_FIND_NODE_RESPONSE "d1:rd2:id20:0123456789abcdefghij5:nodesl" \
     "26:abcdefghij0123456789\xc0\xa8\xa8\x0f\x2f\x58"                   \
@@ -35,4 +39,4 @@
 #define KAD_TEST_FIND_NODE_RESPONSE_BOGUS "d1:rd2:id20:0123456789abcdefghij" \
     "5:nodesl10:abcd\xc0\xa8\xa8\x0f\x2f\x58""ee1:t2:aa1:y1:re"
 
-#endif /* KAD_TESTS_H */
+#endif /* KAD_TEST_RPC_MSG_H */

@@ -198,8 +198,8 @@ void log_debug_literal(const struct benc_literal *lit)
 }
 
 struct benc_node*
-benc_node_find_dict_entry(const struct benc_node *dict,
-                          const char key[], const size_t key_len)
+benc_node_find_key(const struct benc_node *dict,
+                   const char key[], const size_t key_len)
 {
     if (dict->typ != BENC_NODE_TYPE_DICT) {
         return NULL;
@@ -239,7 +239,7 @@ benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
         // dict key
         if (lit->t == BENC_LITERAL_TYPE_STR &&
             stack_top && stack_top->typ == BENC_NODE_TYPE_DICT) {
-            struct benc_node *dup = benc_node_find_dict_entry(stack_top, lit->s.p, lit->s.len);
+            struct benc_node *dup = benc_node_find_key(stack_top, lit->s.p, lit->s.len);
             if (dup) {
                 log_error("Duplicate dict_entry");
                 return false;

@@ -16,6 +16,7 @@ tests_sources = [
     'utils/u64.c',
     'kad/bencode/parser.c',
     'kad/bencode/rpc_msg.c',
+    'kad/bencode/dht.c',
     'kad/dht.c',
     'kad/rpc.c',
 ]

@@ -66,6 +66,20 @@ struct kad_dht {
     struct list_item replacement; // kad_node list
 };
 
+/**
+ * Intermediary structure for de-/serialization.
+ *
+ * While libtorrent seems to only include compact host info (address:port) when
+ * serializing a dht, and supposingly pinging them when deserializing, we
+ * prefer to store the node-id's as well. Besides, we store node-id's as raw
+ * bytes network-ordered, while libtorrent uses a readable hex string.
+ */
+struct kad_dht_encoded {
+    kad_guid             self_id;
+    struct kad_node_info nodes[KAD_GUID_SPACE_IN_BITS*KAD_K_CONST];
+    size_t               nodes_len;
+};
+
 static inline void kad_node_info_copy(struct kad_node_info *dst,
                                       const struct kad_node_info *src)
 {

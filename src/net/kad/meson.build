@@ -5,7 +5,9 @@ libkad_sources = [
     'dht.c',
     'rpc.c',
     'bencode/parser.c',
+    'bencode/serde.c',
     'bencode/rpc_msg.c',
+    'bencode/dht.c',
 ]
 
 subdir('.full')
