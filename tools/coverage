@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+OUTDIR=$MESON_BUILD_ROOT/cover
+
+[ -x "$OUTDIR" ] || mkdir $OUTDIR
+
+gcovr                                           \
+  -j4                                           \
+  --root $MESON_SOURCE_ROOT                     \
+  --html-details                                \
+  --output $OUTDIR/index.html                   \
+  --exclude '.*/tests/.*'
