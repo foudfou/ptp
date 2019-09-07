@@ -1,13 +1,26 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
+#include <limits.h>
+#include <unistd.h>
 #include "log.h"
 #include "utils/safer.h"
 #include "net/kad/bencode/rpc_msg.h"
 #include "net/util.h"
 #include "net/kad/rpc.h"
 
-bool kad_rpc_init(struct kad_ctx *ctx)
+#define DHT_STATE_FILENAME "dht.state"
+
+bool kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
 {
-    ctx->dht = dht_init();
+    char dht_state_path[PATH_MAX];
+    snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
+    dht_state_path[PATH_MAX-1] = '\0';
+    if (access(dht_state_path, R_OK|W_OK) != -1 ) {
+        ctx->dht = dht_read(dht_state_path);
+    } else {
+        log_info("DHT state file not readable and writable. Generating new DHT.");
+        ctx->dht = dht_create();
+    }
+
     if (!ctx->dht) {
         log_error("Could not initialize dht.");
         return false;
@@ -19,7 +32,7 @@ bool kad_rpc_init(struct kad_ctx *ctx)
 
 void kad_rpc_terminate(struct kad_ctx *ctx)
 {
-    dht_terminate(ctx->dht);
+    dht_destroy(ctx->dht);
     struct list_item *query = &ctx->queries;
     list_free_all(query, struct kad_rpc_msg, item);
     log_debug("DHT terminated.");

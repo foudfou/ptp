@@ -32,7 +32,8 @@ bool sockaddr_storage_fmt(char str[], const struct sockaddr_storage *ss)
     return true;
 }
 
-bool sockaddr_storage_cmp4(struct sockaddr_storage *a, struct sockaddr_storage *b)
+bool sockaddr_storage_cmp4(const struct sockaddr_storage *a,
+                           const struct sockaddr_storage *b)
 {
     return
         ((struct sockaddr_in*)a)->sin_addr.s_addr ==
@@ -41,7 +42,8 @@ bool sockaddr_storage_cmp4(struct sockaddr_storage *a, struct sockaddr_storage *
         ((struct sockaddr_in*)b)->sin_port;
 }
 
-bool sockaddr_storage_cmp6(struct sockaddr_storage *a, struct sockaddr_storage *b)
+bool sockaddr_storage_cmp6(const struct sockaddr_storage *a,
+                           const struct sockaddr_storage *b)
 {
     return
         (0 == memcmp(&((struct sockaddr_in6*)a)->sin6_addr.s6_addr,

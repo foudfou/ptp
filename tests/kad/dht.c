@@ -2,10 +2,20 @@
 #include <assert.h>
 #include "net/util.h"
 #include "utils/safer.h"
+#include "kad/test_util.h"
 #include "net/kad/dht.c"      // testing static functions
 
-int main ()
+NODES_TEST_DECL;
+
+int main(int argc, char *argv[])
 {
+    if (argc < 2) {
+        fprintf(stdout, "Missing SOURCE_DIR argument\n");
+        exit(1);
+    }
+    char *source_dir = argv[1];
+
+
     size_t bkt_idx = kad_bucket_hash(
         &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
         &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
@@ -35,7 +45,7 @@ int main ()
         &(kad_guid){.bytes = "\x00""bcdefghij0123456789"}));
 
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
-    struct kad_dht *dht = dht_init();
+    struct kad_dht *dht = dht_create();
 
     struct kad_node_info info = { .id = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}}, {0} };
     struct sockaddr_in *sa = (struct sockaddr_in*)&info.addr;
@@ -69,9 +79,24 @@ int main ()
     }
     assert(!list_is_empty(&dht->replacement));
 
-    dht_terminate(dht);
-    log_shutdown(LOG_TYPE_STDOUT);
+    dht_destroy(dht);
 
+
+    char path[256];
+    snprintf(path, 256, "%s/%s", source_dir, "tests/kad/dht.dat");
+    path[255] = '\0';
+    assert(access(path, R_OK) != -1 );
+    dht = dht_read(path);
+    assert(memcmp(dht->self_id.bytes, "0123456789abcdefghij5", KAD_GUID_SPACE_IN_BYTES) == 0);
+    for (size_t i=0; i<ARRAY_LEN(nodes_test); i++) {
+        const struct kad_node *knode = dht_find(dht, &nodes_test[i].id);
+        assert(knode);
+        assert(kad_node_info_equals(&knode->info, &nodes_test[i]));
+    }
+
+    dht_destroy(dht);
+
+    log_shutdown(LOG_TYPE_STDOUT);
 
     return 0;
 }

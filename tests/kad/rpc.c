@@ -7,7 +7,7 @@ int main ()
 {
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_ctx ctx = {0};
-    assert(kad_rpc_init(&ctx));
+    assert(kad_rpc_init(&ctx, ".__NOFILE#!?__"));
 
     struct iobuf rsp = {0};
 

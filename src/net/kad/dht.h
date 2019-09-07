@@ -88,8 +88,10 @@ static inline void kad_node_info_copy(struct kad_node_info *dst,
     strcpy(dst->addr_str, src->addr_str);
 }
 
-struct kad_dht *dht_init();
-void dht_terminate(struct kad_dht * dht);
+struct kad_dht *dht_read(const char state_path[]);
+bool dht_write(const char state_path[], const struct kad_dht *dht);
+struct kad_dht *dht_create();
+void dht_destroy(struct kad_dht * dht);
 
 /**
  * « When a Kademlia node receives any message (re- quest or reply) from
@@ -109,5 +111,6 @@ bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info);
 bool dht_delete(struct kad_dht *dht, const kad_guid *node_id);
 size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
                         struct kad_node_info nodes[], const kad_guid *caller);
+const struct kad_node *dht_find(const struct kad_dht *dht, const kad_guid *node_id);
 
 #endif /* DHT_H */

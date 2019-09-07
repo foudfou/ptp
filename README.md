@@ -7,6 +7,7 @@ Pet project to study P2P concepts.
 * Some data structures (list, hash, trees), non-thread-safe.
 * Non-blocking IO event loop.
 * Kademlia DHT.
+* [Bencode](https://www.bittorrent.org/beps/bep_0003.html) de-/serialization.
 
 ## Build
 

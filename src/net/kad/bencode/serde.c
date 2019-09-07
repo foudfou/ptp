@@ -1,5 +1,6 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include "log.h"
+#include "net/util.h"
 #include "net/kad/bencode/parser.h"
 #include "net/kad/bencode/serde.h"
 
@@ -36,8 +37,8 @@ bool benc_read_guid(kad_guid *id, const struct benc_literal *lit)
 
 const struct benc_node*
 benc_node_navigate_to_key(const struct benc_node *dict,
-                                 const lookup_entry k_names[],
-                                 const int k1, const int k2)
+                          const lookup_entry k_names[],
+                          const int k1, const int k2)
 {
     const char *key = lookup_by_id(k_names, k1);
     struct benc_node *n = benc_node_find_key(dict, key, strlen(key));
@@ -63,9 +64,9 @@ benc_node_navigate_to_key(const struct benc_node *dict,
 }
 
 bool benc_read_nodes_from_key(struct kad_node_info nodes[], size_t *nodes_len,
-                                 const struct benc_node *dict,
-                                 const lookup_entry k_names[],
-                                 const int k1, const int k2)
+                              const struct benc_node *dict,
+                              const lookup_entry k_names[],
+                              const int k1, const int k2)
 {
     const struct benc_node *n = benc_node_navigate_to_key(dict, k_names, k1, k2);
     if (!n) {
@@ -90,19 +91,22 @@ bool benc_read_nodes_from_key(struct kad_node_info nodes[], size_t *nodes_len,
         if (node->lit->s.len == BENC_KAD_NODE_INFO_IP4_LEN_IN_BYTES) {
             kad_guid_set(&nodes[i].id, (unsigned char*)node->lit->s.p);
             struct sockaddr_in *sa = (struct sockaddr_in*)&nodes[i].addr;
+            sa->sin_family = AF_INET;
             memcpy(&sa->sin_addr, (unsigned char*)node->lit->s.p + 20, 4);
             memcpy(&sa->sin_port, (unsigned char*)node->lit->s.p + 24, 2);
         }
         else if (node->lit->s.len == BENC_KAD_NODE_INFO_IP6_LEN_IN_BYTES) {
             kad_guid_set(&nodes[i].id, (unsigned char*)node->lit->s.p);
-            struct sockaddr_in6 *sa = (struct sockaddr_in6*)&nodes[i].addr;
-            memcpy(&sa->sin6_addr, (unsigned char*)node->lit->s.p + 20, 16);
-            memcpy(&sa->sin6_port, (unsigned char*)node->lit->s.p + 36, 2);
+            struct sockaddr_in6 *sa6 = (struct sockaddr_in6*)&nodes[i].addr;
+            sa6->sin6_family = AF_INET6;
+            memcpy(&sa6->sin6_addr, (unsigned char*)node->lit->s.p + 20, 16);
+            memcpy(&sa6->sin6_port, (unsigned char*)node->lit->s.p + 36, 2);
         }
         else {
             log_error("Invalid node info in position #%d.", i);
             return false;
         }
+        sockaddr_storage_fmt(nodes[i].addr_str, &nodes[i].addr);
     }
 
     return true;

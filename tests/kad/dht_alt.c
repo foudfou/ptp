@@ -76,7 +76,7 @@
 int main ()
 {
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
-    struct kad_dht *dht = dht_init();
+    struct kad_dht *dht = dht_create();
 
     dht->self_id.bytes[0] = 0xa0; // 0b1010
     char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
@@ -146,7 +146,7 @@ int main ()
         assert(sockaddr_storage_cmp4(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
-    dht_terminate(dht);
+    dht_destroy(dht);
     log_shutdown(LOG_TYPE_STDOUT);
 
 

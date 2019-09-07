@@ -481,7 +481,7 @@ void server_run(const struct config *conf)
              conf->bind_addr, conf->bind_port);
 
     struct kad_ctx kctx = {0};
-    kad_rpc_init(&kctx);
+    kad_rpc_init(&kctx, conf->conf_dir);
 
     int nlisten = 2;
     struct pollfd fds[nlisten+conf->max_peers];

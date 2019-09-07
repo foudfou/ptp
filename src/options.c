@@ -71,6 +71,8 @@ bool init_config(struct config *conf) {
         return false;
     }
 
+    // could do more here...
+
     return true;
 }
 

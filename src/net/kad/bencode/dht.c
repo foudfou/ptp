@@ -53,13 +53,14 @@ bool benc_decode_dht(struct kad_dht_encoded *dht, const char buf[], const size_t
         return false;
     }
     if (!benc_read_nodes_from_key(dht->nodes, &dht->nodes_len, &repr.n[0],
-                                     kad_dht_encoded_key_names,
-                                     KAD_DHT_ENCODED_KEY_NODES, KAD_DHT_ENCODED_KEY_NONE)) {
+                                  kad_dht_encoded_key_names,
+                                  KAD_DHT_ENCODED_KEY_NODES, KAD_DHT_ENCODED_KEY_NONE)) {
         return false;
     }
 
     return true;
 }
+
 /**
  * Serialize a representation of a DHT.
  *

@@ -7,12 +7,14 @@
  * 0x0100 ^ 0x0110 = 0x0010, common prefix "00". It thus really represents a
  * distance in the tree.
  */
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 #include <unistd.h>
 #include "log.h"
 #include "utils/bitfield.h"
 #include "utils/bits.h"
+#include "net/kad/bencode/dht.h"
 #include "net/kad/dht.h"
 
 static void kad_generate_id(kad_guid *uid)
@@ -23,7 +25,61 @@ static void kad_generate_id(kad_guid *uid)
     kad_guid_set(uid, rand);
 }
 
-struct kad_dht *dht_init()
+static void dht_init(struct kad_dht *dht)
+{
+    memset(&dht->self_id, 0, sizeof(kad_guid));
+    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
+        list_init(&dht->buckets[i]);
+    list_init(&dht->replacement);
+}
+
+struct kad_dht *dht_read(const char state_path[]) {
+    char buf[4096];
+    size_t slen = 0;
+
+    FILE *fp = fopen(state_path, "rb");
+    fp = fopen(state_path, "rb");
+    fseek(fp, 0, SEEK_END);
+    slen = ftell(fp);
+    rewind(fp);
+    fread(buf, slen, 1, fp);
+    fclose(fp);
+
+    struct kad_dht_encoded encoded;
+    if (!benc_decode_dht(&encoded, buf, slen)) {
+        log_error("Decoding of DHT state file (%s) failed.", state_path);
+        return NULL;
+    }
+
+    struct kad_dht *dht = malloc(sizeof(struct kad_dht));
+    if (!dht) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        return NULL;
+    }
+    dht_init(dht);
+
+    dht->self_id = encoded.self_id;
+    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    log_debug("self_id=%s", id);
+    free_safer(id);
+
+    for (size_t i = 0; i < encoded.nodes_len; i++) {
+        if (!dht_insert(dht, &encoded.nodes[i])) {
+            log_error("DHT node insert from encoded [%d] failed.", i);
+            return NULL;
+        }
+    }
+
+    return dht;
+}
+
+bool dht_write(const char state_path[], const struct kad_dht *dht) {
+    (void)state_path;
+    (void)dht;
+    return true;
+}
+
+struct kad_dht *dht_create()
 {
     struct timespec time;
     if (clock_gettime(CLOCK_REALTIME, &time) < 0)
@@ -35,6 +91,8 @@ struct kad_dht *dht_init()
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return NULL;
     }
+    dht_init(dht);
+
     /* « Node IDs are currently just random 160-bit identifiers, though they
        could equally well be constructed as in Chord. » */
     kad_generate_id(&dht->self_id);
@@ -42,14 +100,10 @@ struct kad_dht *dht_init()
     log_debug("self_id=%s", id);
     free_safer(id);
 
-    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
-        list_init(&dht->buckets[i]);
-    list_init(&dht->replacement);
-
     return dht;
 }
 
-void dht_terminate(struct kad_dht * dht)
+void dht_destroy(struct kad_dht *dht)
 {
     for (int i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
         struct list_item *bucket = &dht->buckets[i];
@@ -287,4 +341,15 @@ bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
     list_delete(&node->item);
     free_safer(node);
     return true;
+}
+
+const struct kad_node *
+dht_find(const struct kad_dht *dht, const kad_guid *node_id)
+{
+    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
+        struct kad_node *node = dht_get_from_list(&dht->buckets[i], node_id);
+        if (node)
+            return node;
+    }
+    return NULL;
 }

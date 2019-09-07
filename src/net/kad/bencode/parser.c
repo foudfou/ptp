@@ -27,7 +27,7 @@ static bool benc_extract_int(struct benc_parser *p, struct benc_literal *lit)
 
     do {
         if (!isdigit(*p->cur)) {
-            sprintf(p->err_msg, "Invalid character in rpc message at %zu.",
+            sprintf(p->err_msg, "Invalid character in bencode at %zu.",
                     (size_t)POINTER_OFFSET(p->beg, p->cur));
             p->err = true;
             return false;
@@ -61,7 +61,7 @@ static bool benc_extract_str(struct benc_parser *p, struct benc_literal *lit)
     lit->s.len = 0;
     do {
         if (!isdigit(*p->cur)) {
-            sprintf(p->err_msg, "Invalid character in rpc message at %zu.",
+            sprintf(p->err_msg, "Invalid character in bencode at %zu.",
                     (size_t)POINTER_OFFSET(p->beg, p->cur));
             p->err = true;
             return false;

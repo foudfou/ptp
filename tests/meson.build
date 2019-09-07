@@ -1,6 +1,18 @@
 # -*- mode: python -*-
 # Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
 
+libtest_sources = [
+    'kad/test_util.c',
+]
+
+libtest_so = shared_library(
+    proj_name+'test', libtest_sources,
+    c_args : lib_cargs,
+    include_directories : main_inc,
+    dependencies : lib_deps,
+    link_with : libmain_a,
+)
+
 tests_sources = [
     'file.c',
     'utils/aatree.c',
@@ -28,9 +40,9 @@ foreach fname : tests_sources
                    # propagated for inclusion of .c files in tests.
                    c_args : lib_cargs,
                    dependencies : lib_deps,
-                   link_with : libmain_a,
+                   link_with : [libmain_a, libtest_so],
   )
-  test(fname, exe)
+  test(fname, exe, args : meson.source_root())
 endforeach
 
 tests_alt_sources = [
