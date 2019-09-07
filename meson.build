@@ -1,11 +1,11 @@
-# -*- mode: python -*-
+# -*- mode: meson -*-
 # Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
 
 project('ptp', 'c', version : '0.0.2', license : 'MIT',
         default_options : [
-            'c_std=c11',
-            'warning_level=3',
-            'werror=true'
+          'c_std=c11',
+          'warning_level=3',
+          'werror=true'
         ],
         meson_version: '>=0.50')
 

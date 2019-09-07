@@ -1,8 +1,8 @@
-# -*- mode: python -*-
+# -*- mode: meson -*-
 # Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
 
 integration_tests = [
-    ['single-server default options', 'single-server', [main_exe, '-c', '/tmp/.NONEXISTENT_FOR_DEFAULTS']],
+  ['single-server default options', 'single-server', [main_exe, '-c', '/tmp/.NONEXISTENT_FOR_DEFAULTS']],
 ]
 
 foreach t : integration_tests
