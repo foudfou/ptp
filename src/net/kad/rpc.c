@@ -79,11 +79,11 @@ kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
 
 static void
 kad_rpc_update_dht(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
-                   const struct kad_rpc_msg *msg)
+                   const kad_guid *node_id)
 {
-    char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex(LOG_DEBUG, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
     struct kad_node_info info = {0};
-    info.id = msg->node_id;
+    info.id = *node_id;
     info.addr = *addr;
     sockaddr_storage_fmt(info.addr_str, addr);
     int updated = dht_update(ctx->dht, &info);
@@ -167,6 +167,8 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
         return false;
     }
 
+    // TODO maybe ?...
+
     list_delete(&query->item);
     free_safer(query);
     return true;
@@ -216,7 +218,7 @@ bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
     kad_rpc_msg_log(&msg); // TESTING
 
     if (msg.node_id.is_set)
-        kad_rpc_update_dht(ctx, addr, &msg);
+        kad_rpc_update_dht(ctx, addr, &msg.node_id);
     else
         log_warning("Node id not set, DHT not updated.");
 

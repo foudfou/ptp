@@ -113,8 +113,8 @@ int main ()
 
         struct kad_node_info bucket[KAD_K_CONST];
         int bucket_len = kad_bucket_get_nodes(&dht->buckets[peer->bucket], bucket, 0, NULL);
+        /* printf("%s == %s\n", peer->info.addr_str, bucket[bucket_len-1].addr_str); */
         assert(sockaddr_storage_cmp4(&peer->info.addr, &bucket[bucket_len-1].addr));
-        printf("%s == %s\n", peer->info.addr_str, bucket[bucket_len-1].addr_str);
 
         peer++;
     }

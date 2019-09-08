@@ -59,54 +59,62 @@ bool resolve_path(const char path[], char out[])
 // TODO look into using iobuf
 bool file_read(char buf[], size_t *buf_len, const char path[])
 {
+    bool ret = true;
+
     FILE *fp = fopen(path, "rb");
     if (!fp) {
         perror("Failed fopen");
-        return false;
+        ret = false; goto cleanup;
     }
     if (fseek(fp, 0L, SEEK_END) < 0) {
         perror("Failed fseek");
-        return false;
+        ret = false; goto cleanup;
     }
     long pos = ftell(fp);
     if (pos < 0) {
         perror("Failed ftell");
-        return false;
+        ret = false; goto cleanup;
     }
     *buf_len = pos;
     if (fseek(fp, 0L, SEEK_SET) < 0) {
         perror("Failed rewind");
-        return false;
+        ret = false; goto cleanup;
     }
     clearerr(fp);
     fread(buf, *buf_len, 1, fp);
     if (ferror(fp)) {
         perror("Failed fread");
-        return false;
+        ret = false; goto cleanup;
     }
+
+  cleanup:
     if (fclose(fp)) {
         perror("Failed fclose");
-        return false;
+        ret = false;
     }
-    return true;
+    return ret;
 }
 
 bool file_write(const char path[], char buf[], size_t buf_len)
 {
+    bool ret = true;
+
     FILE *fp = fopen(path, "wb");
     if (!fp) {
         perror("Failed fopen");
-        return false;
+        ret = false; goto cleanup;
     }
     clearerr(fp);
     fwrite((void*)buf, buf_len, 1, fp);
     if (ferror(fp)) {
         perror("Failed fwrite");
-        return false;
+        ret = false; goto cleanup;
     }
+
+  cleanup:
     if (fclose(fp)) {
         perror("Failed fclose");
-        return false;
+        ret = false;
     }
-    return true;
+    return ret;
 }
