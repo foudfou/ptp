@@ -1,11 +1,22 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
+#include "file.h"
 #include "net/util.h"
 #include "utils/safer.h"
 #include "kad/test_util.h"
 #include "net/kad/dht.c"      // testing static functions
 
-NODES_TEST_DECL;
+KAD_TEST_NODES_DECL;
+
+bool files_eq(const char f1[], const char f2[]) {
+    char buf1[256];
+    size_t buf1_len = 0;
+    if (!file_read(buf1, &buf1_len, f1)) return false;
+    char buf2[256];
+    size_t buf2_len = 0;
+    if (!file_read(buf2, &buf2_len, f2)) return false;
+    return buf1_len == buf2_len && memcmp(buf1, buf2, buf1_len) == 0;
+}
 
 int main(int argc, char *argv[])
 {
@@ -83,16 +94,27 @@ int main(int argc, char *argv[])
 
 
     char path[256];
-    snprintf(path, 256, "%s/%s", source_dir, "tests/kad/dht.dat");
+    snprintf(path, 256, "%s/%s", source_dir, "tests/kad/data/dht.dat");
     path[255] = '\0';
     assert(access(path, R_OK) != -1 );
     dht = dht_read(path);
     assert(memcmp(dht->self_id.bytes, "0123456789abcdefghij5", KAD_GUID_SPACE_IN_BYTES) == 0);
-    for (size_t i=0; i<ARRAY_LEN(nodes_test); i++) {
-        const struct kad_node *knode = dht_find(dht, &nodes_test[i].id);
+    for (size_t i=0; i<ARRAY_LEN(kad_test_nodes); i++) {
+        const struct kad_node *knode = dht_find(dht, &kad_test_nodes[i].id);
         assert(knode);
-        assert(kad_node_info_equals(&knode->info, &nodes_test[i]));
+        assert(kad_node_info_equals(&knode->info, &kad_test_nodes[i]));
     }
+
+    char tpl[] = "/tmp/tmpXXXXXX";
+    assert(mkdtemp(tpl));
+    snprintf(path, 255, "%s/%s", tpl, "dht.dat");
+    assert(dht_write(dht, path));
+    char ref[256];
+    snprintf(ref, 255, "%s/%s", source_dir, "tests/kad/data/dht_sorted.dat");
+    assert(files_eq(path, ref));
+    assert(!remove(path));
+    assert(!remove(tpl));
+
 
     dht_destroy(dht);
 

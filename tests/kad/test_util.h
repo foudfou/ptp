@@ -20,7 +20,7 @@ struct kad_node_info_data {
  * CAUTION: Only use with kad_node_info_*() ! Consumer MUST htons() s_addr and
  * sin_port. This can't be done here because htons(0x1020) is not constant.
  */
-#define NODES_TEST_DECL struct kad_node_info_data nodes_test[] = {      \
+#define KAD_TEST_NODES_DECL struct kad_node_info_data kad_test_nodes[] = {      \
     { .id = {.bytes = "abcdefghij0123456789", .is_set = true},          \
       .addr4 = {.sin_family=AF_INET, .sin_addr.s_addr=0xc0a8a80f, .sin_port=0x2f58} }, \
     { .id = {.bytes = "mnopqrstuvwxyz123456", .is_set = true},          \

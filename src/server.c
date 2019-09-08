@@ -570,7 +570,7 @@ void server_run(const struct config *conf)
 
     peer_conn_close_all(&peer_list);
 
-    kad_rpc_terminate(&kctx);
+    kad_rpc_terminate(&kctx, conf->conf_dir);
 
     socket_shutdown(sock_tcp);
     socket_shutdown(sock_udp);

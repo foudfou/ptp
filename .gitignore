@@ -30,7 +30,7 @@
 
 build*/
 TAGS
-data/
+/data/
 __pycache__/
 meson-logs/
 meson-private/

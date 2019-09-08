@@ -85,7 +85,7 @@ name##_get(struct list_item* hash, const size_t size, const HASH_KEY_TYPE key) \
     list_for(it, slot) {                                                \
         found = cont(it, struct name, field_item);                      \
         if (!found)                                                     \
-            return NULL                                                 \
+            return NULL;                                                \
         if (!name##_compare(found->field_key, key))                     \
             return found;                                               \
     }                                                                   \

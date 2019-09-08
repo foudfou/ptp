@@ -89,7 +89,7 @@ static inline void kad_node_info_copy(struct kad_node_info *dst,
 }
 
 struct kad_dht *dht_read(const char state_path[]);
-bool dht_write(const char state_path[], const struct kad_dht *dht);
+bool dht_write(const struct kad_dht *dht, const char state_path[]);
 struct kad_dht *dht_create();
 void dht_destroy(struct kad_dht * dht);
 

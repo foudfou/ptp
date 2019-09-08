@@ -4,12 +4,14 @@
 """Script for single server integration tests."""
 
 
+import importlib
 import os
 import pty
 import re
 import socket
 import subprocess as sub
 import sys
+import tempfile
 
 SERVER_HOST = '::1'
 # SERVER_PORT is used by the server and the client. We thus can't simply bind
@@ -19,33 +21,14 @@ SERVER_HOST = '::1'
 SERVER_PORT = 22220
 TIMEOUT_IN_SEC = 1
 
-MESSAGES = {
-    # name -> message send, expected response
-    "ping request":
-    (b'd1:ad2:id20:\x16\x01\xfb\xa7\xca\x18P\x9e\xe5\x1d\xcc\x0e\xf8\xc6Z\x1a\xfe<s\x81e1:q4:ping1:t2:aa1:y1:qe',
-     b'^d1:t2:aa1:y1:r1:rd2:id20:.{20}ee$'),
-    "ping request missing id":
-    (b'd1:ade1:q4:ping1:t2:XX1:y1:qe', b'^d1:t2:XX1:y1:e1:eli203e14:Protocol Erroree$'),
-    "find_node request":
-    (b'd1:ad2:id20:abcdefghij01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe',
-     b'^d1:t2:aa1:y1:r1:rd5:nodesl(26|38):.*ee$'),
-}
-
-
 path = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
 
-server_bin = sys.argv[1]
-command = [server_bin, "-l", "error", "-a", SERVER_HOST, "-p", str(SERVER_PORT)]  # pylint: disable=invalid-name
-command.extend(sys.argv[2:])
-# It's generally hard to get the live output of a running subprocess in
-# python. One trick is to use an intermediary fd, and use `os.read(master_fd,
-# 512)`. But we want to avoid checking the logs and test server error handling
-# in unit tests.
-master_fd, slave_fd = pty.openpty()
-# server = sub.Popen(command, stdout=slave_fd, stderr=sub.STDOUT, close_fds=True)
-server = sub.Popen(command, stderr=sub.STDOUT, close_fds=True)
-os.close(slave_fd)
+run = importlib.import_module("runs." + sys.argv[1])
 
+server_bin  = sys.argv[2]
+server_args = sys.argv[3:]
+command = [server_bin, "-l", "error", "-a", SERVER_HOST, "-p", str(SERVER_PORT)]  # pylint: disable=invalid-name
+command.extend(server_args)
 
 def poll_data(sock):
     data = None
@@ -79,15 +62,40 @@ def check_data(expect, data):
     return failure
 
 
+
 try:
+    config_idx = command.index('-c')
+except ValueError:
+    try:
+        config_idx = command.index('--config')
+    except ValueError:
+        config_idx = -1
+if config_idx > 0:
+    conf_orig = command[config_idx+1]
+    conf_tmp = tempfile.TemporaryDirectory()
+    if os.path.isdir(conf_orig):
+        print("YEAH")
+        from distutils.dir_util import copy_tree
+        copy_tree(conf_orig, conf_tmp.name)
+    command[config_idx+1] = conf_tmp.name
+
+try:
+    # It's generally hard to get the live output of a running subprocess in
+    # python. One trick is to use an intermediary fd, and use `os.read(master_fd,
+    # 512)`. But we want to avoid checking the logs and test server error handling
+    # in unit tests.
+    master_fd, slave_fd = pty.openpty()
+    server = sub.Popen(command, stderr=sub.STDOUT, close_fds=True)
+    os.close(slave_fd)
+
     with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as s:
         s.settimeout(TIMEOUT_IN_SEC)
         s.connect((SERVER_HOST, SERVER_PORT))
 
         failures = 0
-        messages_len = len(MESSAGES)
+        messages_len = len(run.MESSAGES)
         i = 0
-        for name, (msg, expect) in MESSAGES.items():
+        for name, (msg, expect) in run.MESSAGES.items():
             i += 1
             data = poll_data(s)
             failures += check_data(expect, data)

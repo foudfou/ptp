@@ -9,7 +9,7 @@
 
 #define BENC_PARSER_BUF_MAX 256
 
-NODES_TEST_DECL;
+KAD_TEST_NODES_DECL;
 
 int main ()
 {
@@ -21,10 +21,10 @@ int main ()
     strcpy(buf, KAD_TEST_DHT);
     assert(benc_decode_dht(&encoded, buf, strlen(buf)));
     assert(kad_guid_eq(&encoded.self_id, &(kad_guid){.bytes = "0123456789abcdefghij", .is_set = true}));
-    assert(encoded.nodes_len == ARRAY_LEN(nodes_test));
+    assert(encoded.nodes_len == ARRAY_LEN(kad_test_nodes));
 
-    for (size_t i=0; i<ARRAY_LEN(nodes_test); i++) {
-        assert(kad_node_info_equals(&encoded.nodes[i], &nodes_test[i]));
+    for (size_t i=0; i<ARRAY_LEN(kad_test_nodes); i++) {
+        assert(kad_node_info_equals(&encoded.nodes[i], &kad_test_nodes[i]));
     }
 
     struct iobuf dhtbuf = {0};
@@ -38,10 +38,10 @@ int main ()
     memset(&encoded, 0, sizeof(encoded));
     encoded.self_id = (kad_guid){.bytes = "0123456789abcdefghij"};
 
-    for (size_t i=0; i<ARRAY_LEN(nodes_test); i++) {
-        kad_node_info_set(&encoded.nodes[i], &nodes_test[i]);
+    for (size_t i=0; i<ARRAY_LEN(kad_test_nodes); i++) {
+        kad_node_info_set(&encoded.nodes[i], &kad_test_nodes[i]);
     }
-    encoded.nodes_len = ARRAY_LEN(nodes_test);
+    encoded.nodes_len = ARRAY_LEN(kad_test_nodes);
 
     assert(benc_encode_dht(&dhtbuf, &encoded));
     assert(strncmp(dhtbuf.buf, KAD_TEST_DHT, dhtbuf.pos) == 0);

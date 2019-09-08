@@ -7,17 +7,22 @@
 #include "net/util.h"
 #include "net/kad/rpc.h"
 
-#define DHT_STATE_FILENAME "dht.state"
+#define DHT_STATE_FILENAME "dht.dat"
 
 bool kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
 {
-    char dht_state_path[PATH_MAX];
-    snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
-    dht_state_path[PATH_MAX-1] = '\0';
-    if (access(dht_state_path, R_OK|W_OK) != -1 ) {
-        ctx->dht = dht_read(dht_state_path);
-    } else {
-        log_info("DHT state file not readable and writable. Generating new DHT.");
+    if (conf_dir) {
+        char dht_state_path[PATH_MAX];
+        snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
+        dht_state_path[PATH_MAX-1] = '\0';
+        if (access(dht_state_path, R_OK|W_OK) != -1 ) {
+            ctx->dht = dht_read(dht_state_path);
+        } else {
+            log_info("DHT state file not readable and writable. Generating new DHT.");
+            ctx->dht = dht_create();
+        }
+    }
+    else {
         ctx->dht = dht_create();
     }
 
@@ -30,8 +35,17 @@ bool kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
     return true;
 }
 
-void kad_rpc_terminate(struct kad_ctx *ctx)
+void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
 {
+    if (conf_dir) {
+        char dht_state_path[PATH_MAX];
+        snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
+        dht_state_path[PATH_MAX-1] = '\0';
+        if (!dht_write(ctx->dht, dht_state_path)) {
+            log_error("Saving DHT failed.");
+        }
+    }
+
     dht_destroy(ctx->dht);
     struct list_item *query = &ctx->queries;
     list_free_all(query, struct kad_rpc_msg, item);

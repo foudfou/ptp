@@ -12,10 +12,13 @@
 #include <time.h>
 #include <unistd.h>
 #include "log.h"
+#include "file.h"
 #include "utils/bitfield.h"
 #include "utils/bits.h"
 #include "net/kad/bencode/dht.h"
 #include "net/kad/dht.h"
+
+#define DHT_STATE_LEN_IN_BYTES 4096
 
 static void kad_generate_id(kad_guid *uid)
 {
@@ -31,52 +34,6 @@ static void dht_init(struct kad_dht *dht)
     for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
         list_init(&dht->buckets[i]);
     list_init(&dht->replacement);
-}
-
-struct kad_dht *dht_read(const char state_path[]) {
-    char buf[4096];
-    size_t slen = 0;
-
-    FILE *fp = fopen(state_path, "rb");
-    fp = fopen(state_path, "rb");
-    fseek(fp, 0, SEEK_END);
-    slen = ftell(fp);
-    rewind(fp);
-    fread(buf, slen, 1, fp);
-    fclose(fp);
-
-    struct kad_dht_encoded encoded;
-    if (!benc_decode_dht(&encoded, buf, slen)) {
-        log_error("Decoding of DHT state file (%s) failed.", state_path);
-        return NULL;
-    }
-
-    struct kad_dht *dht = malloc(sizeof(struct kad_dht));
-    if (!dht) {
-        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-        return NULL;
-    }
-    dht_init(dht);
-
-    dht->self_id = encoded.self_id;
-    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
-    log_debug("self_id=%s", id);
-    free_safer(id);
-
-    for (size_t i = 0; i < encoded.nodes_len; i++) {
-        if (!dht_insert(dht, &encoded.nodes[i])) {
-            log_error("DHT node insert from encoded [%d] failed.", i);
-            return NULL;
-        }
-    }
-
-    return dht;
-}
-
-bool dht_write(const char state_path[], const struct kad_dht *dht) {
-    (void)state_path;
-    (void)dht;
-    return true;
 }
 
 struct kad_dht *dht_create()
@@ -147,23 +104,23 @@ static inline size_t kad_bucket_hash(const kad_guid *self_id,
 
 static inline size_t
 kad_bucket_get_nodes(const struct list_item *bucket,
-                     struct kad_node_info nodes[], size_t start,
+                     struct kad_node_info nodes[], size_t nodes_pos,
                      const kad_guid *caller) {
-    size_t nodes_pos = start;
     const struct list_item *it = bucket;
     struct kad_node *node;
+    size_t bucket_pos = 0;
     list_for(it, bucket) {
-        if (nodes_pos >= KAD_K_CONST)
+        if (bucket_pos >= KAD_K_CONST)
             break;
         node = cont(it, struct kad_node, item);
         if (caller && kad_guid_eq(&node->info.id, caller)) {
             log_debug("%s: ignoring known caller", __func__);
             continue;
         }
-        kad_node_info_copy(&nodes[nodes_pos], &node->info);
-        nodes_pos += 1;
+        kad_node_info_copy(&nodes[nodes_pos+bucket_pos], &node->info);
+        bucket_pos += 1;
     }
-    return nodes_pos;
+    return bucket_pos;
 }
 
 /**
@@ -185,9 +142,9 @@ size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
     int prefix_idx = KAD_GUID_SPACE_IN_BITS - bucket_idx;
     kad_guid prefix_mask, target_next;
     while (prefix_idx >= 0) {
-        nodes_pos = kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
+        nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
         BITFIELD_SET(visited, bucket_idx, 1);
-        // FIXME: generalize inclusion of __func__
+        // TODO generalize inclusion of __func__
         log_debug("%s: nodes added from bucket %d, total=%zu", __func__, bucket_idx, nodes_pos);
         // log_debug("__bucket_idx=%zu, prefix=%zu, added=%zu", bucket_idx, prefix_idx, nodes_pos);
         if (nodes_pos >= KAD_K_CONST)
@@ -205,7 +162,7 @@ size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
     for (int i = KAD_GUID_SPACE_IN_BITS - 1; i >= 0; i--) {
         if (!BITFIELD_GET(visited, i)) {
             bucket = &dht->buckets[i];
-            nodes_pos = kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
+            nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
             BITFIELD_SET(visited, i, 1);
             log_debug("%s: other nodes added from bucket %d, total=%zu", __func__, i, nodes_pos);
         }
@@ -352,4 +309,73 @@ dht_find(const struct kad_dht *dht, const kad_guid *node_id)
             return node;
     }
     return NULL;
+}
+
+struct kad_dht *dht_read(const char state_path[]) {
+    char buf[DHT_STATE_LEN_IN_BYTES];
+    size_t buf_len = 0;
+    if (!file_read(buf, &buf_len, state_path)) {
+        log_error("Failed to read DHT state file (%s).", state_path);
+        return false;
+    }
+
+    struct kad_dht_encoded encoded;
+    if (!benc_decode_dht(&encoded, buf, buf_len)) {
+        log_error("Decoding of DHT state file (%s) failed.", state_path);
+        return NULL;
+    }
+
+    struct kad_dht *dht = malloc(sizeof(struct kad_dht));
+    if (!dht) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        return NULL;
+    }
+    dht_init(dht);
+
+    dht->self_id = encoded.self_id;
+    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    log_debug("self_id=%s", id);
+    free_safer(id);
+
+    for (size_t i = 0; i < encoded.nodes_len; i++) {
+        if (!dht_insert(dht, &encoded.nodes[i])) {
+            log_error("DHT node insert from encoded [%d] failed.", i);
+            return NULL;
+        }
+    }
+
+    return dht;
+}
+
+static size_t
+dht_encode(const struct kad_dht *dht, struct kad_dht_encoded *encoded)
+{
+    encoded->self_id = dht->self_id;
+    size_t start = encoded->nodes_len;
+    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
+        encoded->nodes_len += kad_bucket_get_nodes(&dht->buckets[i], encoded->nodes, encoded->nodes_len, NULL);
+    }
+    return encoded->nodes_len - start;
+}
+
+bool dht_write(const struct kad_dht *dht, const char state_path[]) {
+    bool res = true;
+
+    struct kad_dht_encoded encoded = {0};
+    dht_encode(dht, &encoded);
+
+    struct iobuf buf = {0};
+    if (!benc_encode_dht(&buf, &encoded)) {
+        log_error("Encoding of DHT state file (%s) failed.", state_path);
+        res = false; goto cleanup;
+    }
+
+    if (!file_write(state_path, buf.buf, buf.pos)) {
+        log_error("Failed to write DHT state file (%s).", state_path);
+        res = false; goto cleanup;
+    }
+
+  cleanup:
+    iobuf_reset(&buf);
+    return res;
 }
