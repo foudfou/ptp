@@ -176,8 +176,7 @@ static bool socket_shutdown(int sock)
 static struct peer*
 peer_register(struct list_item *peers, int conn, struct sockaddr_storage *addr)
 {
-    struct peer *peer = malloc(sizeof(struct peer));
-    memset(peer, 0, sizeof(struct peer));
+    struct peer *peer = calloc(1, sizeof(struct peer));
     if (!peer) {
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return NULL;
@@ -201,6 +200,10 @@ peer_find_by_fd(struct list_item *peers, const int fd)
     struct list_item * it = peers;
     list_for(it, peers) {
         p = cont(it, struct peer, item);
+        if (!p) {
+            log_error("Undefined container in list.");
+            return NULL;
+        }
         if (p->fd == fd)
             break;
     }
@@ -410,7 +413,7 @@ static bool node_handle_data(int sock, struct kad_ctx *kctx)
 
     struct iobuf rsp = {0};
     bool resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, &rsp);
-    if (rsp.pos <= 0) {
+    if (rsp.pos == 0) {
         log_info("Empty response. Not responding.");
         ret = resp; goto cleanup;
     }
@@ -442,6 +445,11 @@ static int pollfds_update(struct pollfd fds[], const int nlisten,
     int npeer = nlisten;
     list_for(it, peer_list) {
         struct peer *p = cont(it, struct peer, item);
+        if (!p) {
+            log_error("Undefined container in list.");
+            return npeer;
+        }
+
         fds[npeer].fd = p->fd;
         /* TODO: we will have to add POLLOUT when all data haven't been written
            in one loop, and probably have 1 inbuf and 1 outbuf. */

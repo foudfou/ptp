@@ -37,6 +37,7 @@ HASH_GENERATE(stoi, item, key)
 struct person {
     struct list_item item;
     uint64_t key;
+    // cppcheck-suppress unusedStructMember
     struct {char* name; int age; char gender;} val;
 };
 
@@ -90,6 +91,7 @@ int main ()
     int values[2] = {0}; int j = 0;
     hash_for_all(hash, HASH_SIZE, i, it) {
         struct stoi* tmp = cont(it, struct stoi, item);
+        assert(tmp);
         values[j++] = tmp->val;
     }
     int rule1[] = {2, 1}; int rule2[] = {1, 2};

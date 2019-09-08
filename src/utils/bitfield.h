@@ -20,7 +20,7 @@ typedef uint32_t bitfield;
 #define BITFIELD_BIT_IDX(x) ((x)&0x1f)
 #define BITFIELD_GET(array, index) (((array)[BITFIELD_DWORD_IDX(index)]>>BITFIELD_BIT_IDX(index))&1)
 #define BITFIELD_SET(array, index, bit)                                 \
-    ((bit)&1 ? ((array)[BITFIELD_DWORD_IDX(index)] |= UINT32_C(1)<<BITFIELD_BIT_IDX(index)) \
+    (((bit)&1) ? ((array)[BITFIELD_DWORD_IDX(index)] |= UINT32_C(1)<<BITFIELD_BIT_IDX(index)) \
      : ((array)[BITFIELD_DWORD_IDX(index)] &= ~(UINT32_C(1)<<BITFIELD_BIT_IDX(index))) \
      , (void)0                                                          \
         )

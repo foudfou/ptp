@@ -99,7 +99,6 @@ bool proto_msg_parse(struct proto_msg_parser *parser,
                 parser->stage = PROTO_MSG_STAGE_NONE;
 
             goto while_end; // we've got all we need from this chunk
-            break;
         }
 
         default:

@@ -16,7 +16,6 @@ static bool benc_extract_int(struct benc_parser *p, struct benc_literal *lit)
 {
     lit->t = BENC_LITERAL_TYPE_INT;
     long long val_tmp = lit->i = 0;
-    int val_digit = 0;
     int sign = 1;
 
     p->cur++;  // eat up 'i'
@@ -34,7 +33,7 @@ static bool benc_extract_int(struct benc_parser *p, struct benc_literal *lit)
         }
 
         val_tmp *= 10;
-        val_digit = *p->cur - '0';
+        long long val_digit = *p->cur - '0';
         if (val_tmp > LLONG_MAX - val_digit) {
             sprintf(p->err_msg, "Overflow in int parsing at %zu.",
                     (size_t)POINTER_OFFSET(p->beg, p->cur));
@@ -114,7 +113,7 @@ static bool benc_stack_push(struct benc_parser *p, struct benc_node * const n)
 
 static bool benc_stack_pop(struct benc_parser *p)
 {
-    if (p->stack_off <= 0) {
+    if (p->stack_off == 0) {
         p->err = true;
         strcpy(p->err_msg, "Attempt to pop empty parser stack.");
         return false;
@@ -187,6 +186,7 @@ benc_repr_attach_node(struct benc_node *parent, struct benc_node *n)
     return true;
 }
 
+/*
 void log_debug_literal(const struct benc_literal *lit)
 {
     if (lit->t == BENC_LITERAL_TYPE_INT)
@@ -196,6 +196,7 @@ void log_debug_literal(const struct benc_literal *lit)
     else
         log_debug("literal unsupported: %d", lit->t);
 }
+*/
 
 struct benc_node*
 benc_node_find_key(const struct benc_node *dict,

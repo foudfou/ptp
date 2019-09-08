@@ -225,6 +225,8 @@ name##opt##_insert(BSTREE_NODE(type) **tree, struct name *data)     \
                                                                     \
     while (*it) {                                                   \
         struct name *this = cont(*it, struct name, field);          \
+        if (!this)                                                  \
+            return false;                                           \
         int result = name##_compare(data->key, this->key);          \
                                                                     \
         if (result == 0)                                            \
@@ -253,6 +255,8 @@ name##_search(BSTREE_NODE(type) *tree, BSTREE_KEY_TYPE val)  \
                                                              \
     while (it) {                                             \
         struct name *this = cont(it, struct name, field);    \
+        if (!this)                                           \
+            return false;                                    \
         int result = name##_compare(val, this->key);         \
                                                              \
         if (result == 0)                                     \

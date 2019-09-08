@@ -81,7 +81,6 @@ bool init_config(struct config *conf) {
  */
 int options_parse(struct config *conf, const int argc, char *const argv[])
 {
-    int c;
     while (1) {
         int option_index = 0;
         static struct option long_options[] = {
@@ -97,7 +96,7 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
             {0}
         };
 
-        c = getopt_long(argc, argv, "a:c:l:m:o:p:shv",
+        int c = getopt_long(argc, argv, "a:c:l:m:o:p:shv",
                         long_options, &option_index);
         if (c == -1)
             break;

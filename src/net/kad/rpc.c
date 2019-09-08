@@ -45,6 +45,10 @@ kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
     struct list_item * it = &ctx->queries;
     list_for(it, &ctx->queries) {
         m = cont(it, struct kad_rpc_msg, item);
+        if (!m) {
+            log_error("Undefined container in list.");
+            return NULL;
+        }
         if (memcmp(m->tx_id.bytes, tx_id->bytes, KAD_RPC_MSG_TX_ID_LEN) == 0)
             break;
     }

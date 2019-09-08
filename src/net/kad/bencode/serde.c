@@ -115,8 +115,6 @@ bool benc_read_nodes_from_key(struct kad_node_info nodes[], size_t *nodes_len,
 bool benc_write_nodes(struct iobuf *buf, const struct kad_node_info nodes[], size_t nodes_len)
 {
     char tmps[64];
-    size_t tmps_len = 0;
-
     for (size_t i = 0; i < nodes_len; i++) {
         unsigned compact_len = 0;
         unsigned char compact[21] = {0};
@@ -138,8 +136,8 @@ bool benc_write_nodes(struct iobuf *buf, const struct kad_node_info nodes[], siz
             return false;
         }
 
-        sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES + compact_len);
-        tmps_len = strlen(tmps);
+        sprintf(tmps, "%u:", KAD_GUID_SPACE_IN_BYTES + compact_len);
+        size_t tmps_len = strlen(tmps);
         memcpy(tmps + tmps_len, (char*)nodes[i].id.bytes, KAD_GUID_SPACE_IN_BYTES);
         tmps_len += KAD_GUID_SPACE_IN_BYTES;
         iobuf_append(buf, tmps, tmps_len);

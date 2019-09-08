@@ -56,6 +56,7 @@ int main ()
     int i = 0;
     list_for(it, &list) {
         struct something* tmp = cont(it, struct something, item);
+        assert(tmp);
         assert(rule[i] == tmp->val);
         i++;
     }
@@ -63,6 +64,7 @@ int main ()
     i = 3;
     while ((it = it->prev) != &list) { // backward
         struct something* tmp = cont(it, struct something, item);
+        assert(tmp);
         assert(rule[i] == tmp->val);
         i--;
     }
