@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+cd build || {
+  printf "Unknown build path\n"
+  exit 1
+}
+
+# Redirect output to stderr.
+exec 1>&2
+
+ninja test || exit 1
+
+ninja cppcheck || exit 1

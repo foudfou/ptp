@@ -29,3 +29,6 @@ base_inc = include_directories(['src'])
 subdir('src')
 subdir('tests')
 subdir('tools')
+
+sh = find_program('sh')
+run_command(sh, '-c', 'git config core.hooksPath tools/git-hooks')
