@@ -1,5 +1,6 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
+#include <netinet/in.h>
 #include "log.h"
 #include "net/kad/rpc.h"
 

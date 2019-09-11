@@ -10,6 +10,7 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <time.h>
 #include "kad_defs.h"
 #include "utils/cont.h"

@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <sys/socket.h>
 #include "net/util.h"
 
 // https://beej.us/guide/bgnet/html/multi/sockaddr_inman.html
