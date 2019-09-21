@@ -16,7 +16,7 @@ Then
 
     mkdir build && cd build
     meson
-    # meson configure -Db_coverage=true -Db_sanitize=address
+    # meson configure -Db_coverage=true -Db_sanitize=address,undefined
     ninja
 
 ## Usage

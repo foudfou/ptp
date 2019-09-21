@@ -150,12 +150,12 @@ socket_init(const int socktype, const char bind_addr[], const char bind_port[])
         sock_close(sockfd);
     }
 
+    freeaddrinfo(addrs);
+
     if (!it) {
         log_perror(LOG_ERR, "Failed connect: %s.", errno);
         return -1;
     }
-
-    freeaddrinfo(addrs);
 
     if (socktype == SOCK_STREAM && listen(sockfd, 32)) {
         log_perror(LOG_ERR, "Failed listen: %s.", errno);

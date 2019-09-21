@@ -39,7 +39,7 @@ static void usage(void)
 
 bool init_conf_dir(struct config *conf) {
     char abspath[PATH_MAX] = "\0";
-    if (!resolve_path(conf->conf_dir, abspath)) {
+    if (!resolve_path(conf->conf_dir, abspath, sizeof(conf->conf_dir))) {
         fprintf(stderr, "Cannot resolve path %s.\n", conf->conf_dir);
         return false;
     }
@@ -58,7 +58,7 @@ bool init_conf_dir(struct config *conf) {
         }
     }
 
-    if (!strcpy_safer(conf->conf_dir, abspath, PATH_MAX)) {
+    if (!strcpy_safer(conf->conf_dir, abspath, sizeof(conf->conf_dir))) {
         fprintf(stderr, "Configuration directory initialization failed.\n");
         return false;
     }
@@ -103,14 +103,14 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
 
         switch (c) {
         case 'a':
-            if (!strcpy_safer(conf->bind_addr, optarg, NI_MAXHOST)) {
+            if (!strcpy_safer(conf->bind_addr, optarg, sizeof(conf->bind_addr))) {
                 fprintf(stderr, "Wrong value for --listen.\n");
                 return 1;
             }
             break;
 
         case 'c':
-            if (!strcpy_safer(conf->conf_dir, optarg, PATH_MAX)) {
+            if (!strcpy_safer(conf->conf_dir, optarg, sizeof(conf->conf_dir))) {
                 fprintf(stderr, "Wrong value for --config.\n");
                 return 1;
             }
@@ -157,7 +157,7 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
             break;
 
         case 'p':
-            if (!strcpy_safer(conf->bind_port, optarg, NI_MAXSERV)) {
+            if (!strcpy_safer(conf->bind_port, optarg, sizeof(conf->bind_port))) {
                 fprintf(stderr, "Wrong value for --port.\n");
                 return 1;
             }

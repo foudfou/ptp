@@ -7,11 +7,11 @@
 #include <unistd.h>
 #include "utils/safer.h"
 
-bool get_home_dir(char out[])
+bool get_home_dir(char out[], const size_t len)
 {
     char *home = getenv("HOME");
     if (home) {
-        return strcpy_safer(out, home, PATH_MAX);
+        return strcpy_safer(out, home, len);
     }
 
     char *login = getlogin();
@@ -31,19 +31,19 @@ bool get_home_dir(char out[])
     return strcpy_safer(out, pw_result->pw_dir, PATH_MAX);
 }
 
-bool resolve_path(const char path[], char out[])
+bool resolve_path(const char path[], char out[], const size_t out_len)
 {
     if (strncmp(path, "~/", 2) == 0) {
         char home[PATH_MAX] = "\0";
-        if (!get_home_dir(home))
+        if (!get_home_dir(home, PATH_MAX))
             return false;
-        if (snprintf(out, PATH_MAX, "%s%s", home, path+1) > PATH_MAX) {
+        if ((size_t)snprintf(out, PATH_MAX, "%s%s", home, path+1) > out_len) {
             fprintf(stderr, "Can't snprintf as destination buffer too small\n");
             return false;
         }
     }
     else {
-        if (snprintf(out, PATH_MAX, "%s", path) > PATH_MAX) {
+        if ((size_t)snprintf(out, PATH_MAX, "%s", path) > out_len) {
             fprintf(stderr, "Can't snprintf as destination buffer too small\n");
             return false;
         }
