@@ -17,6 +17,7 @@
 #include "signals.h"
 #include "net/kad/rpc.h"
 #include "net/msg.h"
+#include "timers.h"
 #include "server.h"
 
 // FIXME: low for testing purpose.
@@ -459,6 +460,11 @@ static int pollfds_update(struct pollfd fds[], const int nlisten,
     return npeer;
 }
 
+static bool kad_refresh_cb(int hi) {
+    log_info("FIXME some action %d", hi);
+    return true;
+}
+
 /**
  * Main event loop
  *
@@ -475,6 +481,11 @@ static int pollfds_update(struct pollfd fds[], const int nlisten,
  */
 void server_run(const struct config *conf)
 {
+    if (!timers_clock_res_is_millis()) {
+        log_fatal("Time resolution is greater than millisecond. Aborting.");
+        return;
+    }
+
     int sock_tcp = socket_init(SOCK_STREAM, conf->bind_addr, conf->bind_port);
     if (sock_tcp < 0) {
         log_fatal("Failed to start tcp socket. Aborting.");
@@ -501,17 +512,35 @@ void server_run(const struct config *conf)
     int nfds = nlisten;
     struct list_item peer_list = LIST_ITEM_INIT(peer_list);
 
-    bool server_end = false;
-    do {
+    struct list_item timer_list = LIST_ITEM_INIT(timer_list);
+    struct timer timer_kad_refresh = {
+        .name={"kad-refresh"},
+        .ms = 300000,
+        .cb=kad_refresh_cb,
+        .item=LIST_ITEM_INIT(timer_kad_refresh.item)
+    };
+    list_append(&timer_list, &timer_kad_refresh.item);
+    if (!timers_init(&timer_list)) {
+        log_fatal("Timers' initialization failed. Aborting.");
+        return;
+    }
+
+    /* TODO use proper event queue: enqueue network and timer events
+       instead of handling them directly. */
+    while (true) {
         if (BITS_CHK(sig_events, EV_SIGINT)) {
             BITS_CLR(sig_events, EV_SIGINT);
             log_info("Caught SIGINT. Shutting down.");
-            server_end = true;
             break;
         }
 
-        log_debug("Waiting to poll...");
-        if (poll(fds, nfds, -1) < 0) {  // event_wait
+        int timeout = timers_get_soonest(&timer_list);
+        if (timeout < -1) {
+            log_fatal("Timeout calculation failed. Aborting.");
+            break;
+        }
+        log_debug("Waiting to poll (timeout=%li)...", timeout);
+        if (poll(fds, nfds, timeout) < 0) {  // event_wait
             if (errno == EINTR)
                 continue;
             else {
@@ -527,8 +556,7 @@ void server_run(const struct config *conf)
 
             if (!BITS_CHK(fds[i].revents, POLL_EVENTS)) {
                 log_error("Unexpected revents: %#x", fds[i].revents);
-                server_end = true;
-                break;
+                goto server_end;
             }
 
             if (fds[i].fd == sock_udp) {
@@ -540,8 +568,7 @@ void server_run(const struct config *conf)
                 if (peer_conn_accept_all(sock_tcp, &peer_list, nfds, conf) >= 0)
                     continue;
                 else {
-                    server_end = true;
-                    break;
+                    goto server_end;
                 }
             }
 
@@ -551,23 +578,27 @@ void server_run(const struct config *conf)
             struct peer *p = peer_find_by_fd(&peer_list, fds[i].fd);
             if (!p) {
                 log_fatal("Unregistered peer fd=%d.", fds[i].fd);
-                server_end = true;
-                break;
+                goto server_end;
             }
 
             if (peer_conn_handle_data(p, &kctx) == CONN_CLOSED &&
                 !peer_conn_close(p)) {
                 log_fatal("Could not close connection of peer fd=%d.", fds[i].fd);
-                server_end = true;
-                break;
+                goto server_end;
             }
 
         } /* End loop poll fds */
 
         nfds = pollfds_update(fds, nlisten, &peer_list);
 
-    } while (!server_end);
+        if (!timers_apply(&timer_list)) {
+            log_error("Timers' application failed.");
+            break;
+        }
 
+    } /* End event loop */
+
+  server_end:
     peer_conn_close_all(&peer_list);
 
     kad_rpc_terminate(&kctx, conf->conf_dir);

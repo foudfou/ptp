@@ -18,6 +18,7 @@ libmain_sources = [
   'options.c',
   'server.c',
   'signals.c',
+  'timers.c',
   'utils/safer.c',
   'utils/u64.c',
 ]
