@@ -2,7 +2,6 @@
 #include <limits.h>
 #include <time.h>
 #include "utils/cont.h"
-#include "log.h"
 #include "timers.h"
 
 static clockid_t clockid = CLOCK_MONOTONIC;
@@ -98,7 +97,7 @@ bool timers_apply(struct list_item *timers)
             while (t->expire <= tack) {
                 log_debug("timer '%s' (missed=%ux)", t->name, missed);
                 if (!t->cb(missed)) {
-                    log_error("Timer '%s' callback failed.");
+                    log_error("Timer '%s' callback failed.", t->name);
                     // FIXME ignoring for now
                 }
                 /* FIXME handle `catch_up` flag: defaults to false, tells if we

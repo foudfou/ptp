@@ -14,23 +14,24 @@ libtest_so = shared_library(
 )
 
 tests_sources = [
-  'file.c',
   'utils/aatree.c',
   'utils/bitfield.c',
-  'utils/queue.c',
   'utils/bits.c',
   'utils/bstree.c',
   'utils/byte_array.c',
   'utils/hash.c',
   'utils/list.c',
   'utils/lookup.c',
+  'utils/queue.c',
   'utils/rbtree.c',
   'utils/u64.c',
+  'file.c',
+  'kad/bencode/dht.c',
   'kad/bencode/parser.c',
   'kad/bencode/rpc_msg.c',
-  'kad/bencode/dht.c',
   'kad/dht.c',
   'kad/rpc.c',
+  'timers.c',
 ]
 
 foreach fname : tests_sources

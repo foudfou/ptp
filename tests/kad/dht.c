@@ -2,6 +2,7 @@
 #include <assert.h>
 #include "file.h"
 #include "net/util.h"
+#include "utils/array.h"
 #include "utils/safer.h"
 #include "kad/test_util.h"
 #include "net/kad/dht.c"      // testing static functions

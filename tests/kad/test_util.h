@@ -3,8 +3,6 @@
 
 #include "net/kad/dht.h"
 
-#define ARRAY_LEN(a) sizeof(a)/sizeof(a[0])
-
 /**
  * Helper to initialize sockaddr_storage. Handy to initialize kad_node_info.
  */
@@ -33,5 +31,7 @@ struct kad_node_info_data {
 
 void kad_node_info_set(struct kad_node_info *dst, const struct kad_node_info_data *src);
 bool kad_node_info_equals(const struct kad_node_info *got, const struct kad_node_info_data *expected);
+
+int msleep(long ms);
 
 #endif /* _KAD_UTILS_H */

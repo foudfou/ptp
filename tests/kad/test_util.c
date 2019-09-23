@@ -1,3 +1,5 @@
+#include <errno.h>
+#include <time.h>
 #include "net/util.h"
 #include "kad/test_util.h"
 
@@ -41,4 +43,26 @@ bool kad_node_info_equals(const struct kad_node_info *got,
         // TODO
     }
     return false;
+}
+
+/* https://stackoverflow.com/a/1157217/421846 */
+int msleep(long ms)
+{
+    struct timespec ts;
+    int res;
+
+    if (ms < 0)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+
+    ts.tv_sec = ms / 1000;
+    ts.tv_nsec = (ms % 1000) * 1000000;
+
+    do {
+        res = nanosleep(&ts, &ts);
+    } while (res && errno == EINTR);
+
+    return res;
 }

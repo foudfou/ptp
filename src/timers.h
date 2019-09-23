@@ -17,6 +17,7 @@
  * See also https://nodejs.org/fa/docs/guides/event-loop-timers-and-nexttick/
  */
 #include <stdbool.h>
+#include "log.h"
 #include "utils/list.h"
 
 #define TIMER_NAME_MAX 64

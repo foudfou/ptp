@@ -4,6 +4,7 @@
 #include "net/util.h"
 #include "net/kad/dht.h"
 #include "net/kad/bencode/dht.h"
+#include "utils/array.h"
 #include "kad/test_util.h"
 #include "data_dht.h"
 

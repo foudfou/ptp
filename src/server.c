@@ -514,7 +514,7 @@ void server_run(const struct config *conf)
 
     struct list_item timer_list = LIST_ITEM_INIT(timer_list);
     struct timer timer_kad_refresh = {
-        .name={"kad-refresh"},
+        .name="kad-refresh",
         .ms = 300000,
         .cb=kad_refresh_cb,
         .item=LIST_ITEM_INIT(timer_kad_refresh.item)
