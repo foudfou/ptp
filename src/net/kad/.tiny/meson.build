@@ -1,5 +1,5 @@
-# -*- mode: python -*-
-# Copyright (c) 2017 Foudil Brétel.  All rights reserved.
+# -*- mode: meson -*-
+# Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
 
 defs_alt = configuration_data()
 # DON'T CHANGE THESE VALUES! TESTS RELY ON IT.

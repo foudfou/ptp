@@ -1,0 +1,59 @@
+.\" mdoc
+.Dd $Mdocdate$ \" March 9, 2019
+.Dt @PROJ_NAME_UPPER@ 1
+.Os \" Current operating system.
+.Sh NAME
+.Nm @PROJ_NAME@
+.Nd peer-to-peer client
+.Sh SYNOPSIS
+.Nm
+.Op Fl hsv
+.Op Fl a Ar addr
+.Op Fl c Ar config
+.Op Fl l Ar loglevel
+.Op Fl m Ar maxpeers
+.Op Fl o Ar output
+.Op Fl p Ar port
+.Sh DESCRIPTION
+.Nm
+is a peer-to-peer client built for educational purpose.
+The arguments are as follows:
+.Bl -tag -width Ds
+.It Fl a Ns , Fl \-addr Ns = Ns Ar addr
+Set bind address (ip4 or ip6).
+Default is localhost.
+.It Fl c Ns , Fl \-config Ns = Ns Ar confdir
+Set the config directory path.
+.It Fl l Ns , Fl \-log Ns = Ns Ar loglevel
+Set log level (debug..critical).
+.It Fl m Ns , Fl \-max-peers Ns = Ns Ar maxpeers
+Set maximum number of peers.
+.It Fl o Ns , Fl \-output Ns = Ns Ar outfile
+Set log output file.
+.It Fl p Ns , Fl \-port Ns = Ns Ar port
+Set bind port for both tcp and upd sockets.
+.It Fl s Ns , Fl \-syslog
+Use syslog
+.It Fl h Ns , Fl \-help
+Print help and usage and exit.
+.It Fl v Ns , Fl \-version
+Print version information and exit.
+.El
+.Pp
+FIXME complete
+.Sh EXAMPLES
+The following starts
+.Nm
+binding to
+.Qq 127.0.0.1:2222
+.Bd -literal -offset indent
+@PROJ_NAME@ -a 127.0.0.1 -p 2222
+.Ed
+.Sh EXIT STATUS
+.Ex -std
+.Pp
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa ~/.config/@PROJ_NAME@
+User's configuration directory.
+.El

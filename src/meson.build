@@ -1,8 +1,6 @@
 # -*- mode: meson -*-
 # Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
 
-proj_name = meson.project_name()
-
 configure_file(input : 'config.h.in',
                output : 'config.h',
                configuration : conf)

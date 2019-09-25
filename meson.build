@@ -9,6 +9,8 @@ project('ptp', 'c', version : '0.0.2', license : 'MIT',
         ],
         meson_version: '>=0.50')
 
+proj_name = meson.project_name()
+
 conf = configuration_data()
 conf.set_quoted('packagename', meson.project_name())
 conf.set_quoted('packagevers', meson.project_version())
@@ -29,6 +31,7 @@ base_inc = include_directories(['src'])
 subdir('src')
 subdir('tests')
 subdir('tools')
+subdir('man')
 
 sh = find_program('sh')
 run_command(sh, '-c', 'git config core.hooksPath tools/git-hooks')
