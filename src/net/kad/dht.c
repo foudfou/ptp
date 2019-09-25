@@ -311,40 +311,44 @@ dht_find(const struct kad_dht *dht, const kad_guid *node_id)
     return NULL;
 }
 
-struct kad_dht *dht_read(const char state_path[]) {
+int dht_read(struct kad_dht **dht, const char state_path[]) {
     char buf[DHT_STATE_LEN_IN_BYTES];
     size_t buf_len = 0;
     if (!file_read(buf, &buf_len, state_path)) {
         log_error("Failed to read DHT state file (%s).", state_path);
-        return false;
+        goto fail;
     }
 
     struct kad_dht_encoded encoded;
     if (!benc_decode_dht(&encoded, buf, buf_len)) {
         log_error("Decoding of DHT state file (%s) failed.", state_path);
-        return NULL;
+        goto fail;
     }
 
-    struct kad_dht *dht = malloc(sizeof(struct kad_dht));
-    if (!dht) {
+    *dht = malloc(sizeof(struct kad_dht));
+    if (!*dht) {
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-        return NULL;
+        goto fail;
     }
-    dht_init(dht);
+    dht_init(*dht);
 
-    dht->self_id = encoded.self_id;
-    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    (*dht)->self_id = encoded.self_id;
+    char *id = log_fmt_hex(LOG_DEBUG, (*dht)->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_debug("self_id=%s", id);
     free_safer(id);
 
     for (size_t i = 0; i < encoded.nodes_len; i++) {
-        if (!dht_insert(dht, &encoded.nodes[i])) {
+        if (!dht_insert(*dht, &encoded.nodes[i])) {
             log_error("DHT node insert from encoded [%d] failed.", i);
-            return NULL;
+            goto fail;
         }
     }
 
-    return dht;
+    return encoded.nodes_len;
+
+  fail:
+    *dht = NULL;
+    return -1;
 }
 
 static size_t

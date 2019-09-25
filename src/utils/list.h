@@ -89,7 +89,8 @@ static inline void list_delete_last(struct list_item* list)
 /**
  * Iterate forward over a list.
  *
- * CAUTION: Doesn't work if the list is modified inside the loop.
+ * CAUTION: You need to `it = it->prev` before `list_delete`ing inside
+ * `list_for`, otherwise the loop will loop endlessly.
  */
 #define list_for(it, list) \
     while ((it = it->next) != (list))

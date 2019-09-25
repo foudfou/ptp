@@ -25,12 +25,17 @@
 typedef bool (*timerHandlerFunc)(int hi);
 
 struct timer {
-    struct list_item item;
-    char             name[TIMER_NAME_MAX];
-    long long        ms;
-    long long        expire;
-    bool             catch_up;
-    timerHandlerFunc cb;
+    struct list_item   item;
+    char               name[TIMER_NAME_MAX];
+    long long          ms;
+    long long          expire;
+    bool               catch_up;
+    bool               once;
+    /* Address of the pointer to the allocated struct. `once` timers are
+       expected to be allocated. Used in timers_apply to free and null the
+       pointer. */
+    struct timer     **selfp;
+    timerHandlerFunc   cb;
 };
 
 bool timers_clock_res_is_millis();

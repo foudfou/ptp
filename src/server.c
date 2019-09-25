@@ -461,7 +461,12 @@ static int pollfds_update(struct pollfd fds[], const int nlisten,
 }
 
 static bool kad_refresh_cb(int hi) {
-    log_info("FIXME some action %d", hi);
+    log_info("FIXME refresh %d", hi);
+    return true;
+}
+
+static bool kad_boostrap_cb(int hi) {
+    log_info("FIXME bootstrap %d", hi);
     return true;
 }
 
@@ -499,8 +504,41 @@ void server_run(const struct config *conf)
     log_info("Server started. Listening on [%s]:%s tcp and udp.",
              conf->bind_addr, conf->bind_port);
 
+    struct list_item timer_list = LIST_ITEM_INIT(timer_list);
+    struct timer timer_kad_refresh = {
+        .name = "kad-refresh",
+        .ms = 300000,
+        .cb = kad_refresh_cb,
+        .item = LIST_ITEM_INIT(timer_kad_refresh.item)
+    };
+    list_append(&timer_list, &timer_kad_refresh.item);
+    struct timer *timer_kad_bootstrap = NULL;
+
     struct kad_ctx kctx = {0};
-    kad_rpc_init(&kctx, conf->conf_dir);
+    int nodes_len = kad_rpc_init(&kctx, conf->conf_dir);
+    if (nodes_len == -1) {
+        log_fatal("Failed to initialize DHT. Aborting.");
+        return;
+    }
+    else if (nodes_len == 0) {
+        // TODO turn timer into scheduled event once we have an event queue
+        timer_kad_bootstrap = malloc(sizeof(struct timer));
+        if (!timer_kad_bootstrap) {
+            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+            return;
+        }
+        *timer_kad_bootstrap = (struct timer){
+            .name = "kad-bootstrap",
+            .ms = 0,
+            .cb = kad_boostrap_cb,
+            .once = true,
+            .selfp = &timer_kad_bootstrap
+        };
+        list_append(&timer_list, &timer_kad_bootstrap->item);
+    }
+    else {
+        log_debug("Loaded %d nodes from config.");
+    }
 
     int nlisten = 2;
     struct pollfd fds[nlisten+conf->max_peers];
@@ -512,14 +550,6 @@ void server_run(const struct config *conf)
     int nfds = nlisten;
     struct list_item peer_list = LIST_ITEM_INIT(peer_list);
 
-    struct list_item timer_list = LIST_ITEM_INIT(timer_list);
-    struct timer timer_kad_refresh = {
-        .name="kad-refresh",
-        .ms = 300000,
-        .cb=kad_refresh_cb,
-        .item=LIST_ITEM_INIT(timer_kad_refresh.item)
-    };
-    list_append(&timer_list, &timer_kad_refresh.item);
     if (!timers_init(&timer_list)) {
         log_fatal("Timers' initialization failed. Aborting.");
         return;

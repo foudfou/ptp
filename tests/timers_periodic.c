@@ -33,6 +33,7 @@ int main ()
     }
     assert(t1_cb_triggered == 1);
 
+
     log_shutdown(LOG_TYPE_STDOUT);
 
     return 0;

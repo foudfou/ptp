@@ -9,14 +9,24 @@
 
 #define DHT_STATE_FILENAME "dht.dat"
 
-bool kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
+/**
+ * Creates a DHT.
+ *
+ * If @conf_dir is provied, then read dht from state file. Otherwise create new
+ * dht.
+ *
+ * Returns the number of known nodes or -1 in case of failure.
+ */
+int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
 {
+    int nodes_len = 0;
+
     if (conf_dir) {
         char dht_state_path[PATH_MAX];
         snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
         dht_state_path[PATH_MAX-1] = '\0';
         if (access(dht_state_path, R_OK|W_OK) != -1 ) {
-            ctx->dht = dht_read(dht_state_path);
+            nodes_len = dht_read(&ctx->dht, dht_state_path);
         } else {
             log_info("DHT state file not readable and writable. Generating new DHT.");
             ctx->dht = dht_create();
@@ -28,11 +38,12 @@ bool kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
 
     if (!ctx->dht) {
         log_error("Could not initialize dht.");
-        return false;
+        return -1;
     }
     list_init(&ctx->queries);
+
     log_debug("DHT initialized.");
-    return true;
+    return nodes_len;
 }
 
 void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])

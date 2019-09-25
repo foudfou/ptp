@@ -98,7 +98,10 @@ int main(int argc, char *argv[])
     snprintf(path, 256, "%s/%s", source_dir, "tests/kad/data/dht.dat");
     path[255] = '\0';
     assert(access(path, R_OK) != -1 );
-    dht = dht_read(path);
+
+    int nread = dht_read(&dht, path);
+    assert(nread == ARRAY_LEN(kad_test_nodes));
+    assert(dht);
     assert(memcmp(dht->self_id.bytes, "0123456789abcdefghij5", KAD_GUID_SPACE_IN_BYTES) == 0);
     for (size_t i=0; i<ARRAY_LEN(kad_test_nodes); i++) {
         const struct kad_node *knode = dht_find(dht, &kad_test_nodes[i].id);

@@ -2,6 +2,7 @@
 #include <limits.h>
 #include <time.h>
 #include "utils/cont.h"
+#include "utils/safer.h"
 #include "timers.h"
 
 static clockid_t clockid = CLOCK_MONOTONIC;
@@ -92,23 +93,32 @@ bool timers_apply(struct list_item *timers)
             return false;
         }
 
-        if (tack >= t->expire) {
-            int missed = 0;
-            while (t->expire <= tack) {
-                log_debug("timer '%s' (missed=%ux)", t->name, missed);
-                if (!t->cb(missed)) {
-                    log_error("Timer '%s' callback failed.", t->name);
-                    // FIXME ignoring for now
+        int missed = 0;
+        while (t->expire <= tack) {
+            log_debug("timer '%s' (missed=%ux)", t->name, missed);
+            if (!t->cb(missed)) {
+                log_error("Timer '%s' callback failed.", t->name);
+                // FIXME ignoring for now
+            }
+            /* FIXME handle `catch_up` flag: defaults to false, tells if we
+               need to fire the timer handler as many times as we missed,
+               in case the event loop lasted more than a timer period. */
+            if (t->once) {
+                it = it->prev; // deleting inside for_list
+                list_delete(&t->item);
+                if (t->selfp) {
+                    struct timer **self = t->selfp;
+                    free_safer(*self);
                 }
-                /* FIXME handle `catch_up` flag: defaults to false, tells if we
-                   need to fire the timer handler as many times as we missed,
-                   in case the event loop lasted more than a timer period. */
+                break;
+            }
+            else {
                 t->expire += t->ms;
                 missed++;
             }
         }
-        log_debug("timer '%s' expire=%lld", t->name, t->expire);
-    }
+
+    } // End for_list
 
     return true;
 }

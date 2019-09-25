@@ -93,7 +93,7 @@ struct kad_ctx {
     struct list_item  queries; // kad_rcp_msg list
 };
 
-bool kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[]);
+int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[]);
 void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[]);
 
 bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,

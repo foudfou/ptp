@@ -31,7 +31,8 @@ tests_sources = [
   'kad/bencode/rpc_msg.c',
   'kad/dht.c',
   'kad/rpc.c',
-  'timers.c',
+  'timers_periodic.c',
+  'timers_once.c',
 ]
 
 foreach fname : tests_sources

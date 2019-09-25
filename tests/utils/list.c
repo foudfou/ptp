@@ -77,5 +77,12 @@ int main ()
     assert(first == first->prev && first->prev == first->next);
     assert(list.next == second);
 
+    list_delete(&one.item);
+    assert(list.next == &three.item);
+    list_delete(&three.item);
+    list_delete(&four.item);
+    assert(list_is_empty(&list));
+
+
     return 0;
 }
