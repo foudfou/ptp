@@ -18,11 +18,12 @@
  */
 #include <stdbool.h>
 #include "log.h"
+#include "options.h"
 #include "utils/list.h"
 
 #define TIMER_NAME_MAX 64
 
-typedef bool (*timerHandlerFunc)(int hi);
+typedef bool (*timerHandlerFunc)(void *data);
 
 struct timer {
     struct list_item   item;
@@ -44,6 +45,6 @@ bool timers_init(struct list_item *timers);
 /** Right before poll() to calculate its `timeout` parameter. */
 int timers_get_soonest(struct list_item *timers);
 /** After poll() has returned. */
-bool timers_apply(struct list_item *timers);
+bool timers_apply(struct list_item *timers, void *data);
 
 #endif /* TIMERS_H */

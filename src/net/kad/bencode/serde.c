@@ -63,53 +63,117 @@ benc_node_navigate_to_key(const struct benc_node *dict,
     return n;
 }
 
-bool benc_read_nodes_from_key(struct kad_node_info nodes[], size_t *nodes_len,
-                              const struct benc_node *dict,
-                              const lookup_entry k_names[],
-                              const int k1, const int k2)
+bool benc_read_single_addr(struct sockaddr_storage *addr, char *p, size_t len)
+{
+    switch (len) {
+    case BENC_IP4_ADDR_LEN_IN_BYTES + 2: {
+        struct sockaddr_in *sa = (struct sockaddr_in*)addr;
+        sa->sin_family = AF_INET;
+        memcpy(&sa->sin_addr, (unsigned char*)p, BENC_IP4_ADDR_LEN_IN_BYTES);
+        p += BENC_IP4_ADDR_LEN_IN_BYTES;
+        memcpy(&sa->sin_port, (unsigned char*)p, 2);
+        break;
+    }
+
+    case BENC_IP6_ADDR_LEN_IN_BYTES + 2: {
+        struct sockaddr_in6 *sa6 = (struct sockaddr_in6*)addr;
+        sa6->sin6_family = AF_INET6;
+        memcpy(&sa6->sin6_addr, (unsigned char*)p, BENC_IP6_ADDR_LEN_IN_BYTES);
+        p += BENC_IP6_ADDR_LEN_IN_BYTES;
+        memcpy(&sa6->sin6_port, (unsigned char*)p, 2);
+        break;
+    }
+
+    default:
+        log_error("Failed to read single addr.");
+        return false;
+    }
+
+    return true;
+}
+
+static int benc_read_nodes(struct kad_node_info nodes[], const size_t nodes_len,
+                           const struct benc_node *list)
+{
+    int nnodes = list->chd_off;
+    if ((size_t)nnodes > nodes_len) {
+        log_error("Insufficent array size for read nodes.");
+        return -1;
+    }
+
+    for (int i = 0; i < nnodes; i++) {
+        const struct benc_node *node = list->chd[i];
+        if (node->typ != BENC_NODE_TYPE_LITERAL ||
+            node->lit->t != BENC_LITERAL_TYPE_STR) {
+            log_error("Invalid node entry #%d.", i);
+            return -1;
+        }
+
+        if (node->lit->s.len < KAD_GUID_SPACE_IN_BYTES ||
+            !benc_read_single_addr(&nodes[i].addr,
+                                   node->lit->s.p + KAD_GUID_SPACE_IN_BYTES,
+                                   node->lit->s.len - KAD_GUID_SPACE_IN_BYTES)) {
+            log_error("Invalid node info in position #%d.", i);
+            return -1;
+        }
+        // only set guid when necessary
+        kad_guid_set(&nodes[i].id, (unsigned char*)node->lit->s.p);
+
+        sockaddr_storage_fmt(nodes[i].addr_str, &nodes[i].addr);
+    }
+
+    return nnodes;
+}
+
+int benc_read_addrs(struct sockaddr_storage addr[], const size_t addr_len,
+                    const struct benc_node *list)
+{
+    const int naddr = list->chd_off;
+    if ((size_t)naddr > addr_len) {
+        log_error("Insufficent array size for reading ip addrs.");
+        return -1;
+    }
+
+    for (int i = 0; i < naddr; i++) {
+        const struct benc_node *node = list->chd[i];
+        if (node->typ != BENC_NODE_TYPE_LITERAL ||
+            node->lit->t != BENC_LITERAL_TYPE_STR) {
+            log_error("Invalid node entry #%d.", i);
+            return -1;
+        }
+
+        if (!benc_read_single_addr(&addr[i], node->lit->s.p, node->lit->s.len)) {
+            log_error("Invalid ip addr in position #%d.", i);
+            return -1;
+        }
+    }
+
+    return naddr;
+}
+
+int benc_read_nodes_from_key(struct kad_node_info nodes[], const size_t nodes_len,
+                             const struct benc_node *dict,
+                             const lookup_entry k_names[],
+                             const int k1, const int k2)
 {
     const struct benc_node *n = benc_node_navigate_to_key(dict, k_names, k1, k2);
     if (!n) {
-        return false;
+        return -1;
     }
 
     const char *key = lookup_by_id(k_names, k2 == 0 ? k1 : k2);
     if (n->chd[0]->typ != BENC_NODE_TYPE_LIST) {
         log_error("Invalid entry %s.", key);
-        return false;
+        return -1;
     }
 
-    *nodes_len = n->chd[0]->chd_off;
-    for (size_t i = 0; i < *nodes_len; i++) {
-        const struct benc_node *node = n->chd[0]->chd[i];
-        if (node->typ != BENC_NODE_TYPE_LITERAL ||
-            node->lit->t != BENC_LITERAL_TYPE_STR) {
-            log_error("Invalid node entry #%d.", i);
-            return false;
-        }
-
-        if (node->lit->s.len == BENC_KAD_NODE_INFO_IP4_LEN_IN_BYTES) {
-            kad_guid_set(&nodes[i].id, (unsigned char*)node->lit->s.p);
-            struct sockaddr_in *sa = (struct sockaddr_in*)&nodes[i].addr;
-            sa->sin_family = AF_INET;
-            memcpy(&sa->sin_addr, (unsigned char*)node->lit->s.p + 20, 4);
-            memcpy(&sa->sin_port, (unsigned char*)node->lit->s.p + 24, 2);
-        }
-        else if (node->lit->s.len == BENC_KAD_NODE_INFO_IP6_LEN_IN_BYTES) {
-            kad_guid_set(&nodes[i].id, (unsigned char*)node->lit->s.p);
-            struct sockaddr_in6 *sa6 = (struct sockaddr_in6*)&nodes[i].addr;
-            sa6->sin6_family = AF_INET6;
-            memcpy(&sa6->sin6_addr, (unsigned char*)node->lit->s.p + 20, 16);
-            memcpy(&sa6->sin6_port, (unsigned char*)node->lit->s.p + 36, 2);
-        }
-        else {
-            log_error("Invalid node info in position #%d.", i);
-            return false;
-        }
-        sockaddr_storage_fmt(nodes[i].addr_str, &nodes[i].addr);
+    int nnodes = benc_read_nodes(nodes, nodes_len, n->chd[0]);
+    if (nnodes < 0) {
+        log_error("Failed to read nodes from bencode object.");
+        return nnodes;
     }
 
-    return true;
+    return nnodes;
 }
 
 bool benc_write_nodes(struct iobuf *buf, const struct kad_node_info nodes[], size_t nodes_len)

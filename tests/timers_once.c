@@ -5,8 +5,8 @@
 
 static int t1_cb_triggered = 0;
 
-static bool t1_cb(int hi) {
-    (void)hi;
+static bool t1_cb(void *data) {
+    (void)data;
     t1_cb_triggered++;
     return true;
 }
@@ -17,6 +17,8 @@ int main ()
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
 
     assert(timers_clock_res_is_millis());
+
+    const struct config conf = {0};
 
     struct list_item timer_list = LIST_ITEM_INIT(timer_list);
 
@@ -36,7 +38,7 @@ int main ()
         int timeout = timers_get_soonest(&timer_list);
         assert(timeout >= -1);
         assert(msleep(100) == 0); // say poll(.., timeout) got trigged by fd events
-        assert(timers_apply(&timer_list));
+        assert(timers_apply(&timer_list, (void*)&conf));
     }
     assert(t1_cb_triggered == 1);
     assert(list_is_empty(&timer_list));

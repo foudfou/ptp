@@ -1,6 +1,7 @@
 #include "log.h"
 #include "net/kad/bencode/parser.h"
 #include "net/kad/bencode/serde.h"
+#include "utils/array.h"
 #include "net/kad/bencode/rpc_msg.h"
 
 #define KAD_RPC_MSG_LITERAL_MAX 10 + KAD_K_CONST
@@ -197,9 +198,12 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
         // attempt to get nodes in case we're in a find_node response
         /* NOTE the protocol says « a string containing the compact node info
            for the target node or the K (8) closest good nodes ». For now
-           we're alwyas expecting/giving a list.  */
-        benc_read_nodes_from_key(msg->nodes, &msg->nodes_len, &repr.n[0],
-                                    kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_RES, KAD_RPC_MSG_KEY_NODES);
+           we're always expecting/giving a list.  */
+        int nnodes = benc_read_nodes_from_key(msg->nodes, ARRAY_LEN(msg->nodes), &repr.n[0],
+                                              kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_RES, KAD_RPC_MSG_KEY_NODES);
+        if (nnodes > 0) {
+            msg->nodes_len = nnodes;
+        }
 
         break;
     }

@@ -19,6 +19,7 @@
 #include "net/kad/dht.h"
 
 #define DHT_STATE_LEN_IN_BYTES 4096
+#define NODES_FILE_LEN_IN_BYTES 512
 
 static void kad_generate_id(kad_guid *uid)
 {
@@ -311,7 +312,8 @@ dht_find(const struct kad_dht *dht, const kad_guid *node_id)
     return NULL;
 }
 
-int dht_read(struct kad_dht **dht, const char state_path[]) {
+int dht_read(struct kad_dht **dht, const char state_path[])
+{
     char buf[DHT_STATE_LEN_IN_BYTES];
     size_t buf_len = 0;
     if (!file_read(buf, &buf_len, state_path)) {
@@ -349,6 +351,26 @@ int dht_read(struct kad_dht **dht, const char state_path[]) {
   fail:
     *dht = NULL;
     return -1;
+}
+
+int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len,
+                             const char state_path[])
+{
+    char buf[NODES_FILE_LEN_IN_BYTES];
+    size_t buf_len = 0;
+    if (!file_read(buf, &buf_len, state_path)) {
+        log_error("Failed to read bootsrap nodes file (%s).", state_path);
+        return -1;
+    }
+
+    // FIXME would it not be easier to have a simple text file ?
+    int nnodes = benc_decode_bootstrap_nodes(nodes, nodes_len, buf, buf_len);
+    if (nnodes < 0) {
+        log_error("Decoding of bootsrap nodes file (%s) failed.", state_path);
+        return -1;
+    }
+
+    return nnodes;
 }
 
 static size_t

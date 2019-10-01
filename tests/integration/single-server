@@ -74,7 +74,6 @@ if config_idx > 0:
     conf_orig = command[config_idx+1]
     conf_tmp = tempfile.TemporaryDirectory()
     if os.path.isdir(conf_orig):
-        print("YEAH")
         from distutils.dir_util import copy_tree
         copy_tree(conf_orig, conf_tmp.name)
     command[config_idx+1] = conf_tmp.name

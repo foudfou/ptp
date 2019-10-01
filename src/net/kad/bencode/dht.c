@@ -2,6 +2,7 @@
 #include "log.h"
 #include "net/kad/bencode/parser.h"
 #include "net/kad/bencode/serde.h"
+#include "utils/array.h"
 #include "net/kad/bencode/dht.h"
 
 #define KAD_DHT_ENCODED_LITERAL_MAX KAD_GUID_SPACE_IN_BITS * KAD_K_CONST + 10
@@ -52,11 +53,13 @@ bool benc_decode_dht(struct kad_dht_encoded *dht, const char buf[], const size_t
         log_error("Node_id copy failed.");
         return false;
     }
-    if (!benc_read_nodes_from_key(dht->nodes, &dht->nodes_len, &repr.n[0],
-                                  kad_dht_encoded_key_names,
-                                  KAD_DHT_ENCODED_KEY_NODES, KAD_DHT_ENCODED_KEY_NONE)) {
+    int nnodes = benc_read_nodes_from_key(dht->nodes, ARRAY_LEN(dht->nodes), &repr.n[0],
+                                          kad_dht_encoded_key_names,
+                                          KAD_DHT_ENCODED_KEY_NODES, KAD_DHT_ENCODED_KEY_NONE);
+    if (nnodes < 0) {
         return false;
     }
+    dht->nodes_len = nnodes;
 
     return true;
 }
@@ -96,4 +99,29 @@ bool benc_encode_dht(struct iobuf *buf, const struct kad_dht_encoded *dht)
     iobuf_append(buf, "ee", 2);
 
     return true;
+}
+
+int benc_decode_bootstrap_nodes(struct sockaddr_storage nodes[],
+                                const size_t nodes_len,
+                                const char buf[], const size_t slen)
+{
+    BENC_REPR_DECL_INIT(repr, KAD_DHT_ENCODED_LITERAL_MAX, KAD_DHT_ENCODED_NODES_MAX);
+
+    if (!benc_parse(&repr, buf, slen)) {
+        return -1;
+    }
+
+    const struct benc_node *n = &repr.n[0];
+    if (n->typ != BENC_NODE_TYPE_LIST) {
+        log_error("Object is not a list.");
+        return -1;
+    }
+
+    int nnodes = benc_read_addrs(nodes, nodes_len, n);
+    if (nnodes < 0) {
+        log_error("Reading bencoded nodes addresses failed.");
+        return -1;
+    }
+
+    return nnodes;
 }

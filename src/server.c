@@ -8,6 +8,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "net/util.h"
+#include "utils/array.h"
 #include "utils/bits.h"
 #include "utils/cont.h"
 #include "utils/list.h"
@@ -24,6 +25,8 @@
 #define SERVER_TCP_BUFLEN 10
 #define SERVER_UDP_BUFLEN 1400
 #define POLL_EVENTS POLLIN|POLLPRI
+
+#define BOOSTRAP_NODES_LEN 64
 
 enum conn_ret {CONN_OK, CONN_CLOSED};
 
@@ -460,13 +463,51 @@ static int pollfds_update(struct pollfd fds[], const int nlisten,
     return npeer;
 }
 
-static bool kad_refresh_cb(int hi) {
-    log_info("FIXME refresh %d", hi);
+static bool kad_refresh_cb(void *data) {
+    (void)data;
+    log_info("FIXME refresh cb");
     return true;
 }
 
-static bool kad_boostrap_cb(int hi) {
-    log_info("FIXME bootstrap %d", hi);
+// Attempt to read bootstrap nodes. Only warn if we find none.
+static bool kad_boostrap_cb(void *data) {
+    char bootstrap_nodes_path[PATH_MAX];
+    bool found = false;
+    const char *elts[] = {((struct config*)data)->conf_dir, DATADIR, NULL};
+    const char **it = elts;
+    while (*it) {
+        snprintf(bootstrap_nodes_path, PATH_MAX-1, "%s/nodes.dat", *it);
+        bootstrap_nodes_path[PATH_MAX-1] = '\0';
+        if (access(bootstrap_nodes_path, R_OK|W_OK) != -1) {
+            found = true;
+            break;
+        }
+        it++;
+    }
+
+    if (!found) {
+        log_warning("Bootstrap node file not readable and writable.");
+        return true;
+    }
+
+    struct sockaddr_storage nodes[BOOSTRAP_NODES_LEN];
+    int nnodes = kad_read_bootstrap_nodes(nodes, ARRAY_LEN(nodes), bootstrap_nodes_path);
+    if (nnodes < 0) {
+        log_error("Failed to read bootstrap nodes.");
+        return false;
+    }
+    log_info("%d bootstrap nodes read.", nnodes);
+    if (nnodes == 0) {
+        log_warning("No bootstrap nodes read.");
+    }
+
+    /* TODO NEXT ping nodes read from nodes.dat. See node_handle_data,
+       kad_rpc_handle_query. Need to:
+       - create ping msg
+       - sendto()
+       - register query into kctx
+    */
+
     return true;
 }
 
@@ -484,22 +525,24 @@ static bool kad_boostrap_cb(int hi) {
  * http://stackoverflow.com/a/6954584/421846
  * https://github.com/Pithikos/C-Thread-Pool/blob/master/thpool.c
  */
-void server_run(const struct config *conf)
+bool server_run(const struct config *conf)
 {
+    bool ret = true;
+
     if (!timers_clock_res_is_millis()) {
         log_fatal("Time resolution is greater than millisecond. Aborting.");
-        return;
+        return false;
     }
 
     int sock_tcp = socket_init(SOCK_STREAM, conf->bind_addr, conf->bind_port);
     if (sock_tcp < 0) {
         log_fatal("Failed to start tcp socket. Aborting.");
-        return;
+        return false;
     }
     int sock_udp = socket_init(SOCK_DGRAM, conf->bind_addr, conf->bind_port);
     if (sock_udp < 0) {
         log_fatal("Failed to start udp socket. Aborting.");
-        return;
+        return false;
     }
     log_info("Server started. Listening on [%s]:%s tcp and udp.",
              conf->bind_addr, conf->bind_port);
@@ -518,14 +561,14 @@ void server_run(const struct config *conf)
     int nodes_len = kad_rpc_init(&kctx, conf->conf_dir);
     if (nodes_len == -1) {
         log_fatal("Failed to initialize DHT. Aborting.");
-        return;
+        return false;
     }
     else if (nodes_len == 0) {
         // TODO turn timer into scheduled event once we have an event queue
         timer_kad_bootstrap = malloc(sizeof(struct timer));
         if (!timer_kad_bootstrap) {
             log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-            return;
+            return false;
         }
         *timer_kad_bootstrap = (struct timer){
             .name = "kad-bootstrap",
@@ -552,7 +595,7 @@ void server_run(const struct config *conf)
 
     if (!timers_init(&timer_list)) {
         log_fatal("Timers' initialization failed. Aborting.");
-        return;
+        return false;
     }
 
     /* TODO use proper event queue: enqueue network and timer events
@@ -567,6 +610,7 @@ void server_run(const struct config *conf)
         int timeout = timers_get_soonest(&timer_list);
         if (timeout < -1) {
             log_fatal("Timeout calculation failed. Aborting.");
+            ret = false;
             break;
         }
         log_debug("Waiting to poll (timeout=%li)...", timeout);
@@ -575,6 +619,7 @@ void server_run(const struct config *conf)
                 continue;
             else {
                 log_perror(LOG_ERR, "Failed poll: %s", errno);
+                ret = false;
                 break;
             }
         }
@@ -586,6 +631,7 @@ void server_run(const struct config *conf)
 
             if (!BITS_CHK(fds[i].revents, POLL_EVENTS)) {
                 log_error("Unexpected revents: %#x", fds[i].revents);
+                ret = false;
                 goto server_end;
             }
 
@@ -598,6 +644,8 @@ void server_run(const struct config *conf)
                 if (peer_conn_accept_all(sock_tcp, &peer_list, nfds, conf) >= 0)
                     continue;
                 else {
+                    log_error("Could not accept tcp connection.");
+                    ret = false;
                     goto server_end;
                 }
             }
@@ -608,12 +656,14 @@ void server_run(const struct config *conf)
             struct peer *p = peer_find_by_fd(&peer_list, fds[i].fd);
             if (!p) {
                 log_fatal("Unregistered peer fd=%d.", fds[i].fd);
+                ret = false;
                 goto server_end;
             }
 
             if (peer_conn_handle_data(p, &kctx) == CONN_CLOSED &&
                 !peer_conn_close(p)) {
                 log_fatal("Could not close connection of peer fd=%d.", fds[i].fd);
+                ret = false;
                 goto server_end;
             }
 
@@ -621,8 +671,9 @@ void server_run(const struct config *conf)
 
         nfds = pollfds_update(fds, nlisten, &peer_list);
 
-        if (!timers_apply(&timer_list)) {
-            log_error("Timers' application failed.");
+        if (!timers_apply(&timer_list, (void*)conf)) {
+            log_error("Failed to apply all timers.");
+            ret = false;
             break;
         }
 
@@ -636,4 +687,5 @@ void server_run(const struct config *conf)
     socket_shutdown(sock_tcp);
     socket_shutdown(sock_udp);
     log_info("Server stopped.");
+    return ret;
 }

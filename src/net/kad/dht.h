@@ -94,6 +94,8 @@ bool dht_write(const struct kad_dht *dht, const char state_path[]);
 struct kad_dht *dht_create();
 void dht_destroy(struct kad_dht * dht);
 
+int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len, const char state_path[]);
+
 /**
  * « When a Kademlia node receives any message (re- quest or reply) from
  * another node, it updates the appropriate k-bucket for the sender’s node ID.

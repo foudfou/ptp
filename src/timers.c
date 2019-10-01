@@ -75,7 +75,7 @@ int timers_get_soonest(struct list_item *timers)
     return soonest == LLONG_MAX ? -1 : soonest;
 }
 
-bool timers_apply(struct list_item *timers)
+bool timers_apply(struct list_item *timers, void *data)
 {
     struct timespec tspec = {0};
     if (clock_gettime(clockid, &tspec) < 0) {
@@ -85,6 +85,7 @@ bool timers_apply(struct list_item *timers)
     long long tack = millis_from_timespec(tspec);
     log_debug("tack=%lld", tack);
 
+    unsigned int errors = 0;
     struct list_item * it = timers;
     list_for(it, timers) {
         struct timer *t = cont(it, struct timer, item);
@@ -96,9 +97,9 @@ bool timers_apply(struct list_item *timers)
         int missed = 0;
         while (t->expire <= tack) {
             log_debug("timer '%s' (missed=%ux)", t->name, missed);
-            if (!t->cb(missed)) {
+            if (!t->cb(data)) {
                 log_error("Timer '%s' callback failed.", t->name);
-                // FIXME ignoring for now
+                errors++;
             }
             /* FIXME handle `catch_up` flag: defaults to false, tells if we
                need to fire the timer handler as many times as we missed,
@@ -120,5 +121,5 @@ bool timers_apply(struct list_item *timers)
 
     } // End for_list
 
-    return true;
+    return !errors;
 }

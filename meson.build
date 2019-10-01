@@ -16,6 +16,7 @@ conf.set_quoted('packagename', meson.project_name())
 conf.set_quoted('packagevers', meson.project_version())
 conf.set_quoted('packagecopy',
                 'Copyright (c) 2017-2019 Foudil Brétel. All rights reserved.')
+conf.set_quoted('datadir', get_option('prefix') / get_option('datadir') / proj_name)
 
 compiler_id = meson.get_compiler('c').get_id()
 if compiler_id == 'clang'
@@ -35,3 +36,5 @@ subdir('man')
 
 sh = find_program('sh')
 run_command(sh, '-c', 'git config core.hooksPath tools/git-hooks')
+
+install_data('data/nodes.dat', rename : 'nodes.dat')

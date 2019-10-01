@@ -3,3 +3,4 @@
 #define PACKAGE_NAME      @packagename@
 #define PACKAGE_VERSION   @packagevers@
 #define PACKAGE_COPYRIGHT @packagecopy@
+#define DATADIR @datadir@

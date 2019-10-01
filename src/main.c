@@ -24,9 +24,9 @@ int main(int argc, char *argv[])
 
     log_info("Using config directory: %s", conf.conf_dir);
 
-    server_run(&conf);
+    bool ret = server_run(&conf);
 
     log_shutdown(conf.log_type);
 
-    return EXIT_SUCCESS;
+    return ret ? EXIT_SUCCESS : EXIT_FAILURE;
 }

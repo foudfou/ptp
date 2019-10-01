@@ -4,6 +4,6 @@
 
 #include "options.h"
 
-void server_run(const struct config *conf);
+bool server_run(const struct config *conf);
 
 #endif /* SERVER_H */

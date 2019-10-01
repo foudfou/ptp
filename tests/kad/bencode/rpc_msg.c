@@ -126,7 +126,7 @@ int main ()
     strcpy(buf, KAD_TEST_FIND_NODE_RESPONSE_BOGUS);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode_rpc_msg(&msg, buf, strlen(buf)));
-    assert(msg.nodes_len == 1);
+    assert(msg.nodes_len == 0);
     assert(kad_guid_eq(&msg.nodes[0].id, &(kad_guid){0}));
 
 
