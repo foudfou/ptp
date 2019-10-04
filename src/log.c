@@ -122,6 +122,7 @@ void *log_queue_consumer(void *data)
         ssize_t bytes_read = mq_receive(log_ctx.mqr, buf, LOG_MSG_LEN, NULL);
         if (bytes_read < 0) {
             perror("mq_receive");
+            continue;
         }
 
         buf[bytes_read] = '\0';
