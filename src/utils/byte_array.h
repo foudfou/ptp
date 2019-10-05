@@ -50,8 +50,9 @@ static inline void type##_set(type *ary, const unsigned char val[]) \
  */                                                                     \
 static inline bool type##_eq(const type *ary1, const type *ary2)        \
 {                                                                       \
-    return (ary1->is_set == ary2->is_set)                               \
-        && (memcmp(&ary1->bytes, &ary2->bytes, len) == 0);              \
+    return (ary1 && ary2) &&                                            \
+        (ary1->is_set == ary2->is_set) &&                               \
+        (memcmp(&ary1->bytes, &ary2->bytes, len) == 0);                 \
 }
 
 #define BYTE_ARRAY_GENERATE_RESET(type, len)   \

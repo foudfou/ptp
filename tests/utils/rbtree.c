@@ -118,6 +118,7 @@ int main ()
 
     /* Btree declaration */
     RBTREE_DECL(tree);
+    // cppcheck-suppress constArgument
     assert(!tree);
     assert(rbtree_is_empty(tree));
 

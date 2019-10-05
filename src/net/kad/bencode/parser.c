@@ -88,7 +88,6 @@ static bool benc_extract_str(struct benc_parser *p, struct benc_literal *lit)
 static void benc_parser_init(struct benc_parser *parser,
                              const char *buf, const size_t slen)
 {
-    memset(parser, 0, sizeof(*parser));
     parser->err = false;
     parser->cur = parser->beg = buf;
     parser->end = buf + slen;
@@ -365,7 +364,7 @@ bool benc_parse(struct benc_repr *repr, const char buf[], const size_t slen)
 
     bool ret = true;
 
-    struct benc_parser parser;
+    struct benc_parser parser = {0};
     benc_parser_init(&parser, buf, slen);
 
     struct benc_literal lit;

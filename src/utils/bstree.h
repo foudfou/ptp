@@ -39,17 +39,29 @@ struct bstree_node {
     BSTREE_GENERATE_INSERT(name, type, field, key,) \
     BSTREE_GENERATE_SEARCH(name, type, field, key)
 
+#define BSTREE_GENERATE_BASE(type)                          \
+    BSTREE_GENERATE_IS_EMPTY(type)                          \
+    BSTREE_GENERATE_LINK_NODE(type)                         \
+    BSTREE_GENERATE__END(type)                               \
+    BSTREE_GENERATE_FIRST(type)                             \
+    BSTREE_GENERATE_LAST(type)                              \
+    BSTREE_GENERATE__ITERATE(type)                           \
+    BSTREE_GENERATE_NEXT(type)                              \
+    BSTREE_GENERATE_PREV(type)                              \
+    BSTREE_GENERATE_PARENT_LINK(type)
+
 #define BSTREE_NODE(type) struct type##_node
 
-#define BSTREE_GENERATE_BASE(type)              \
+#define BSTREE_GENERATE_IS_EMPTY(type)          \
 /**
  * Test wether a tree is empty.
  */                                                                 \
 static inline bool type##_is_empty(BSTREE_NODE(type) *tree)         \
 {                                                                   \
     return !tree;                                                   \
-}                                                                   \
-                                                                    \
+}
+
+#define BSTREE_GENERATE_LINK_NODE(type)         \
 /**
  * Link a node to a parent node.
  *
@@ -63,8 +75,9 @@ static inline void type##_link_node(BSTREE_NODE(type) *node,            \
     if (node)                                                           \
         node->parent = parent;                                          \
     *target = node;                                                     \
-}                                                                       \
-                                                                        \
+}
+
+#define BSTREE_GENERATE__END(type)                                      \
 static inline BSTREE_NODE(type)*                                        \
 __##type##_end(BSTREE_NODE(type) *tree, int dir)                        \
 {                                                                       \
@@ -77,24 +90,27 @@ __##type##_end(BSTREE_NODE(type) *tree, int dir)                        \
     while (tree->link[dir])                                             \
         tree = tree->link[dir];                                         \
     return tree;                                                        \
-}                                                                       \
-                                                                        \
+}
+
+#define BSTREE_GENERATE_FIRST(type)             \
 /**
  * Find the first, lowest node.
  */                                                                     \
 static inline BSTREE_NODE(type) *type##_first(BSTREE_NODE(type) *tree)  \
 {                                                                       \
     return __##type##_end(tree, LEFT);                                  \
-}                                                                       \
-                                                                        \
+}
+
+#define BSTREE_GENERATE_LAST(type)              \
 /**
  * Find the last, highest node.
  */                                                                     \
 static inline BSTREE_NODE(type) *type##_last(BSTREE_NODE(type) *tree)   \
 {                                                                       \
     return __##type##_end(tree, RIGHT);                                 \
-}                                                                       \
-                                                                        \
+}
+
+#define BSTREE_GENERATE__ITERATE(type)          \
 /**
  * Find the next/previous inorder node.
  */                                                                     \
@@ -115,23 +131,27 @@ __##type##_iterate(const BSTREE_NODE(type) *node, int dir)              \
             node = it;                                                  \
     }                                                                   \
     return it;                                                          \
-}                                                                       \
-                                                                        \
+}
+
+#define BSTREE_GENERATE_NEXT(type)              \
 /**
  * Find the next inorder node.
  */                                                                     \
 static inline BSTREE_NODE(type)* type##_next(const BSTREE_NODE(type) *node) \
 {                                                                       \
     return __##type##_iterate(node, RIGHT);                             \
-}                                                                       \
-                                                                        \
+}
+
+#define BSTREE_GENERATE_PREV(type)              \
 /**
  * Find the previous inorder node.
  */                                                                     \
 static inline BSTREE_NODE(type)* type##_prev(const BSTREE_NODE(type) *node) \
 {                                                                       \
     return __##type##_iterate(node, LEFT);                              \
-}                                                                       \
+}
+
+#define BSTREE_GENERATE_PARENT_LINK(type)       \
 /**
  * Get the parent link to a given node, which may be the tree itself.
  */                                                                     \
@@ -142,7 +162,10 @@ type##_parent_link(BSTREE_NODE(type) **tree, BSTREE_NODE(type) *node)   \
         &(node->parent->link[RIGHT_IF(node->parent->link[RIGHT] == node)]) : \
         tree;                                                           \
 }
+
+// cppcheck-suppress ctunullpointer
 BSTREE_GENERATE_BASE(bstree)
+
 
 #define BSTREE_GENERATE_DELETE(name, type, opt)   \
 /**
@@ -256,7 +279,7 @@ name##_search(BSTREE_NODE(type) *tree, BSTREE_KEY_TYPE val)  \
     while (it) {                                             \
         struct name *this = cont(it, struct name, field);    \
         if (!this)                                           \
-            return false;                                    \
+            return NULL;                                     \
         int result = name##_compare(val, this->key);         \
                                                              \
         if (result == 0)                                     \

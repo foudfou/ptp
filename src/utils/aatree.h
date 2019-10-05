@@ -53,6 +53,7 @@ struct aatree_node {
     AATREE_GENERATE_INSERT(name, field, opt)                    \
     AATREE_GENERATE_DELETE(name, opt)
 
+// cppcheck-suppress ctunullpointer
 BSTREE_GENERATE_BASE(aatree)
 
 

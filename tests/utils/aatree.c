@@ -63,6 +63,7 @@ int main ()
 
     /* Btree declaration */
     AATREE_DECL(aa1);
+    // cppcheck-suppress constArgument
     assert(!aa1);
     assert(aatree_is_empty(aa1));
 

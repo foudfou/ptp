@@ -27,6 +27,7 @@ int main ()
 {
     /* Btree declaration */
     BSTREE_DECL(tree);
+    // cppcheck-suppress constArgument
     assert(!tree);
     assert(bstree_is_empty(tree));
     assert(!foo_search(tree, "hello"));

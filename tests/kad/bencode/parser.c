@@ -9,7 +9,7 @@
 int main ()
 {
     char buf[BENC_PARSER_BUF_MAX] = "i-300e";
-    struct benc_parser parser;
+    struct benc_parser parser = {0};
     benc_parser_init(&parser, buf, strlen(buf));
 
     struct benc_literal lit;

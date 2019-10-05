@@ -56,6 +56,7 @@ struct rbtree_node {
     RBTREE_GENERATE_INSERT(name, field, opt)                           \
     RBTREE_GENERATE_DELETE(name, opt)
 
+// cppcheck-suppress ctunullpointer
 BSTREE_GENERATE_BASE(rbtree)
 
 /**
