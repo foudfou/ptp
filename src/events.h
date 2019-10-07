@@ -57,9 +57,10 @@ struct event {
 
 struct event event_node_data;
 struct event event_peer_conn;
-bool event_peer_data_cb(struct event_args args); // event to be malloc'd
 struct event event_kad_refresh;
-struct event event_kad_bootstrap;
+// event to be malloc'd
+bool event_peer_data_cb(struct event_args args);
+bool event_kad_bootstrap_cb(struct event_args args);
 
 #define EVENT_QUEUE_BIT_LEN 8
 QUEUE_GENERATE(event_queue, struct event, EVENT_QUEUE_BIT_LEN)

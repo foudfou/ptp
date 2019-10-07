@@ -70,6 +70,8 @@ bool server_run(const struct config *conf)
     log_info("Server started. Listening on [%s]:%s tcp and udp.",
              conf->bind_addr, conf->bind_port);
 
+    event_queue evq = {0};
+
     struct list_item timer_list = LIST_ITEM_INIT(timer_list);
     struct timer timer_kad_refresh = {
         .name="kad-refresh", .ms=300000, .event=&event_kad_refresh,
@@ -84,23 +86,33 @@ bool server_run(const struct config *conf)
         return false;
     }
     else if (nodes_len == 0) {
-        struct timer *timer_kad_bootstrap = malloc(sizeof(struct timer));
-        if (!timer_kad_bootstrap) {
+        struct event *event_kad_bootstrap = malloc(sizeof(struct event));
+        if (!event_kad_bootstrap) {
             log_perror(LOG_ERR, "Failed malloc: %s.", errno);
             return false;
         }
+        *event_kad_bootstrap = (struct event){
+            "kad-bootstrap", .cb=event_kad_bootstrap_cb,
+            .args.kad_bootstrap={.conf=conf}, .fatal=false,
+            .self=event_kad_bootstrap
+        };
+
+        // Need to schedule event otherwise applied after poll returns.
+        struct timer *timer_kad_bootstrap = malloc(sizeof(struct timer));
+        if (!timer_kad_bootstrap) {
+            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+            free(event_kad_bootstrap);
+            return false;
+        }
         *timer_kad_bootstrap = (struct timer){
-            .name="kad-bootstrap", .ms=0, .event=&event_kad_bootstrap,
+            .name="kad-bootstrap", .ms=0, .event=event_kad_bootstrap,
             .once=true, .self=timer_kad_bootstrap
         };
-        event_kad_bootstrap.args.kad_bootstrap.conf = conf;
         list_append(&timer_list, &timer_kad_bootstrap->item);
     }
     else {
         log_debug("Loaded %d nodes from config.");
     }
-
-    event_queue evq = {0};
 
     int nlisten = 2;
     int nfds = nlisten + conf->max_peers;

@@ -42,8 +42,7 @@ static bool event_kad_refresh_cb(struct event_args args)
 }
 struct event event_kad_refresh = {"kad-refresh", .cb=event_kad_refresh_cb, .args={{{0}}}, .fatal=false,};
 
-static bool event_kad_bootstrap_cb(struct event_args args)
+bool event_kad_bootstrap_cb(struct event_args args)
 {
     return kad_bootstrap(args.kad_bootstrap.conf);
 }
-struct event event_kad_bootstrap = {"kad-bootstrap", .cb=event_kad_bootstrap_cb, .args={{{0}}}, .fatal=false,};
