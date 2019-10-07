@@ -1,6 +1,6 @@
 #include <errno.h>
 #include <time.h>
-#include "net/util.h"
+#include "net/socket.h"
 #include "kad/test_util.h"
 
 void kad_node_info_set(struct kad_node_info *dst,

@@ -14,16 +14,15 @@
  * Also timerfd_*() would be a nice option but are linux-specific
  * unfortunately.
  *
- * See also https://nodejs.org/fa/docs/guides/event-loop-timers-and-nexttick/
+ * See also https://nodejs.org/en/docs/guides/event-loop-timers-and-nexttick/
  */
 #include <stdbool.h>
+#include "events.h"
 #include "log.h"
 #include "options.h"
 #include "utils/list.h"
 
 #define TIMER_NAME_MAX 64
-
-typedef bool (*timerHandlerFunc)(void *data);
 
 struct timer {
     struct list_item   item;
@@ -32,11 +31,14 @@ struct timer {
     long long          expire;
     bool               catch_up;
     bool               once;
-    /* Address of the pointer to the allocated struct. `once` timers are
-       expected to be allocated. Used in timers_apply to free and null the
-       pointer. */
-    struct timer     **selfp;
-    timerHandlerFunc   cb;
+    /* Address to self when allocated. `once` timers are expected to be
+       allocated. Used in timers_apply to free. The variable holding the
+       pointer to the allocated memory might be gone out of scope when we free,
+       so we have no reliable way to null it ourselves. It's thus best to stick
+       to the convention not to hold any pointer to the allocated memory
+       outside this struct. */
+    struct timer      *self;
+    struct event      *event;
 };
 
 bool timers_clock_res_is_millis();
@@ -45,6 +47,6 @@ bool timers_init(struct list_item *timers);
 /** Right before poll() to calculate its `timeout` parameter. */
 int timers_get_soonest(struct list_item *timers);
 /** After poll() has returned. */
-bool timers_apply(struct list_item *timers, void *data);
+bool timers_apply(struct list_item *timers, event_queue *evq);
 
 #endif /* TIMERS_H */

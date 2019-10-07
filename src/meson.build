@@ -8,11 +8,13 @@ configure_file(input : 'config.h.in',
 # A dyn lib is a simple solution to let our test executables build against most
 # of the code, that is except main.o.
 libmain_sources = [
+  'events.c',
   'file.c',
   'log.c',
   'net/iobuf.c',
+  'net/actions.c',
   'net/msg.c',
-  'net/util.c',
+  'net/socket.c',
   'options.c',
   'server.c',
   'signals.c',

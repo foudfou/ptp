@@ -1,7 +1,7 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include "log.h"
-#include "net/util.h"
+#include "net/socket.h"
 #include "net/kad/rpc.h"
 #include "net/kad/bencode/rpc_msg.h"
 #include "data_rpc_msg.h"

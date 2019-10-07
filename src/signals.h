@@ -3,6 +3,7 @@
 #define SIGNALS_H
 
 #include <signal.h>
+#include <stdbool.h>
 
 #define EV_SIGINT   1 << 0
 #define EV_SIGHUP   1 << 1

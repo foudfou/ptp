@@ -4,7 +4,7 @@
 #include "log.h"
 #include "utils/safer.h"
 #include "net/kad/bencode/rpc_msg.h"
-#include "net/util.h"
+#include "net/socket.h"
 #include "net/kad/rpc.h"
 
 #define DHT_STATE_FILENAME "dht.dat"

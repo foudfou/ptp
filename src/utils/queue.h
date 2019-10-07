@@ -5,8 +5,8 @@
 /**
  * A ring buffer FIFO queue.
  *
- * Inspired from https://stackoverflow.com/a/13888143/421846. Another cool
- * implementation: http://www.martinbroadhurst.com/cirque-in-c.html.
+ * Inspired from https://stackoverflow.com/a/13888143/421846.
+ * Another cool implementation: http://www.martinbroadhurst.com/cirque-in-c.html.
  */
 #include <stdbool.h>
 #include <stdint.h>
@@ -22,7 +22,7 @@ enum queue_state {
 
 #define QUEUE_GENERATE(name, type, len)                   \
     typedef struct {                                      \
-        type      *entries[QUEUE_BIT_LEN(len)];           \
+        type     *entries[QUEUE_BIT_LEN(len)];            \
         uint32_t  head    : len;                          \
         uint32_t  tail    : len;                          \
         uint32_t  is_full : 1;                            \

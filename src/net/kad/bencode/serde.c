@@ -1,6 +1,6 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include "log.h"
-#include "net/util.h"
+#include "net/socket.h"
 #include "net/kad/bencode/parser.h"
 #include "net/kad/bencode/serde.h"
 

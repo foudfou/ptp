@@ -1,9 +1,9 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include "log.h"
-#include "net/util.h"
 #include "net/kad/dht.h"
 #include "net/kad/bencode/dht.h"
+#include "net/socket.h"
 #include "utils/array.h"
 #include "kad/test_util.h"
 #include "data_dht.h"

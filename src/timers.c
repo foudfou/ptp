@@ -2,7 +2,6 @@
 #include <limits.h>
 #include <time.h>
 #include "utils/cont.h"
-#include "utils/safer.h"
 #include "timers.h"
 
 static clockid_t clockid = CLOCK_MONOTONIC;
@@ -42,7 +41,7 @@ bool timers_init(struct list_item *timers)
             return false;
         }
         t->expire = tick_init + t->ms;
-        log_debug("timer '%s' expire=%lld", t->name, t->expire);
+        log_debug("timer '%s' inited, expire=%lld", t->name, t->expire);
     }
 
     return true;
@@ -75,7 +74,7 @@ int timers_get_soonest(struct list_item *timers)
     return soonest == LLONG_MAX ? -1 : soonest;
 }
 
-bool timers_apply(struct list_item *timers, void *data)
+bool timers_apply(struct list_item *timers, event_queue *evq)
 {
     struct timespec tspec = {0};
     if (clock_gettime(clockid, &tspec) < 0) {
@@ -97,8 +96,8 @@ bool timers_apply(struct list_item *timers, void *data)
         int missed = 0;
         while (t->expire <= tack) {
             log_debug("timer '%s' (missed=%ux)", t->name, missed);
-            if (!t->cb(data)) {
-                log_error("Timer '%s' callback failed.", t->name);
+            if (!event_queue_put(evq, t->event)) {
+                log_error("Enqueue event '%s' failed.", t->event->name);
                 errors++;
             }
             /* FIXME handle `catch_up` flag: defaults to false, tells if we
@@ -107,9 +106,8 @@ bool timers_apply(struct list_item *timers, void *data)
             if (t->once) {
                 it = it->prev; // deleting inside for_list
                 list_delete(&t->item);
-                if (t->selfp) {
-                    struct timer **self = t->selfp;
-                    free_safer(*self);
+                if (t->self) {
+                    free(t->self);
                 }
                 break;
             }

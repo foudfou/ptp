@@ -1,7 +1,7 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include "file.h"
-#include "net/util.h"
+#include "net/socket.h"
 #include "utils/array.h"
 #include "utils/safer.h"
 #include "kad/test_util.h"

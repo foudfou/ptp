@@ -1,6 +1,6 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
-#include "net/util.h"
+#include "net/socket.h"
 #include "net/kad/dht.c"      // testing static functions
 
 /* _alt tests get a tiny guid space (4 bits) for easier reasoning.
