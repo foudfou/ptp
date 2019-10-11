@@ -1,6 +1,7 @@
 /* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
 #include "log.h"
 #include "net/actions.h"
+#include "net/socket.h"
 #include "events.h"
 
 static bool event_node_data_cb(struct event_args args)
@@ -44,5 +45,10 @@ struct event event_kad_refresh = {"kad-refresh", .cb=event_kad_refresh_cb, .args
 
 bool event_kad_bootstrap_cb(struct event_args args)
 {
-    return kad_bootstrap(args.kad_bootstrap.conf);
+    return kad_bootstrap(args.kad_bootstrap.timer_list, args.kad_bootstrap.conf);
+}
+
+bool event_node_ping_cb(struct event_args args)
+{
+    return node_ping(args.node_ping.addr);
 }

@@ -6,6 +6,7 @@
  * Server actions. Usually embedded in events.
  */
 #include <netinet/in.h>
+#include "events.h"
 #include "net/kad/rpc.h"
 #include "net/msg.h"
 #include "options.h"
@@ -36,6 +37,7 @@ bool peer_conn_close(struct peer *peer);
 int peer_conn_close_all(struct list_item *peers);
 
 bool kad_refresh(void *data);
-bool kad_bootstrap(const struct config *conf);
+bool kad_bootstrap(struct list_item *timer_list, const struct config *conf);
+bool node_ping(const struct sockaddr_storage addr);
 
 #endif /* ACTIONS_H */

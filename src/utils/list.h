@@ -87,6 +87,20 @@ static inline void list_delete_last(struct list_item* list)
 }
 
 /**
+ * Concatenate two lists. The second list is truncated.
+ */
+static inline void list_concat(struct list_item* l1, struct list_item* l2)
+{
+    l2->next->prev = l1->prev;
+    if (l2->next->next == l2) // l2->next is last
+        l2->next->next = l1;
+    l1->prev->next = l2->next;
+    l2->prev->next = l1;
+    l1->prev = l2->prev;
+    list_init(l2);
+}
+
+/**
  * Iterate forward over a list.
  *
  * CAUTION: You need to `it = it->prev` before `list_delete`ing inside

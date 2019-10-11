@@ -23,14 +23,22 @@ bool timers_clock_res_is_millis()
     return true;
 }
 
-bool timers_init(struct list_item *timers)
+/** Also used to initialize `timer.expire`. */
+long long now_millis()
 {
     struct timespec tspec = {0};
     if (clock_gettime(clockid, &tspec) < 0) {
         log_perror(LOG_ERR, "Failed clock_gettime: %s", errno);
-        return false;
+        return -1;
     }
-    long long tick_init = millis_from_timespec(tspec);
+    return millis_from_timespec(tspec);
+}
+
+bool timers_init(struct list_item *timers)
+{
+    long long tick_init = now_millis();
+    if (tick_init < 0)
+        return false;
     log_debug("tick_init=%lld", tick_init);
 
     struct list_item * it = timers;
@@ -49,12 +57,9 @@ bool timers_init(struct list_item *timers)
 
 int timers_get_soonest(struct list_item *timers)
 {
-    struct timespec tspec = {0};
-    if (clock_gettime(clockid, &tspec) < 0) {
-        log_perror(LOG_ERR, "Failed clock_gettime: %s", errno);
+    long long tick = now_millis();
+    if (tick < 0)
         return -1;
-    }
-    long long tick = millis_from_timespec(tspec);
     log_debug("tick=%lld", tick);
 
     long long soonest = LLONG_MAX;
@@ -76,12 +81,9 @@ int timers_get_soonest(struct list_item *timers)
 
 bool timers_apply(struct list_item *timers, event_queue *evq)
 {
-    struct timespec tspec = {0};
-    if (clock_gettime(clockid, &tspec) < 0) {
-        log_perror(LOG_ERR, "Failed clock_gettime: %s", errno);
+    long long tack = now_millis();
+    if (tack < 0)
         return false;
-    }
-    long long tack = millis_from_timespec(tspec);
     log_debug("tack=%lld", tack);
 
     unsigned int errors = 0;
@@ -95,7 +97,7 @@ bool timers_apply(struct list_item *timers, event_queue *evq)
 
         int missed = 0;
         while (t->expire <= tack) {
-            log_debug("timer '%s' (missed=%ux)", t->name, missed);
+            log_debug("timer '%s' triggered (missed=%ux)", t->name, missed);
             if (!event_queue_put(evq, t->event)) {
                 log_error("Enqueue event '%s' failed.", t->event->name);
                 errors++;

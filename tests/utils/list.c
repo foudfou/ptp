@@ -83,6 +83,71 @@ int main ()
     list_delete(&four.item);
     assert(list_is_empty(&list));
 
+    /* List concat */
+    struct list_item l1 = LIST_ITEM_INIT(l1);
+    list_append(&l1, &one.item);
+    list_append(&l1, &two.item);
+    struct list_item l2 = LIST_ITEM_INIT(l2);
+    list_append(&l2, &three.item);
+    list_append(&l2, &four.item);
+    list_concat(&l1, &l2);
+
+    assert(list_is_empty(&l2));
+    assert(l1.prev == &four.item);
+    it = &l1;
+    rule[0] = 1; rule[1] = 2; rule[2] = 3; rule[3] = 4;
+    i = 0;
+    list_for(it, &l1) {
+        struct something* tmp = cont(it, struct something, item);
+        assert(tmp);
+        assert(rule[i] == tmp->val);
+        i++;
+    }
+    assert(i == 4);
+
+    assert(list_is_empty(&list));
+    list_concat(&list, &l1);
+    assert(list_is_empty(&l1));
+    i = 0;
+    it = &list;
+    list_for(it, &list) {
+        struct something* tmp = cont(it, struct something, item);
+        assert(tmp);
+        assert(rule[i] == tmp->val);
+        i++;
+    }
+    assert(i == 4);
+
+    list_concat(&l1, &list);
+    assert(list_is_empty(&list));
+    i = 0;
+    it = &l1;
+    list_for(it, &l1) {
+        struct something* tmp = cont(it, struct something, item);
+        assert(tmp);
+        assert(rule[i] == tmp->val);
+        i++;
+    }
+    assert(i == 4);
+
+    list_concat(&list, &l2);
+    assert(list_is_empty(&list));
+    assert(list_is_empty(&l2));
+
+    list_delete(&four.item);
+    list_append(&l2, &four.item);
+    list_concat(&l1, &l2);
+    assert(list_is_empty(&l2));
+    i = 0;
+    it = &l1;
+    list_for(it, &l1) {
+        struct something* tmp = cont(it, struct something, item);
+        assert(tmp);
+        assert(rule[i] == tmp->val);
+        i++;
+    }
+    assert(i == 4);
+
 
     return 0;
 }

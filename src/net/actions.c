@@ -6,6 +6,7 @@
 #include "net/kad/rpc.h"
 #include "net/socket.h"
 #include "net/socket.h"
+#include "timers.h"
 #include "net/actions.h"
 
 #define BOOTSTRAP_NODES_LEN 64
@@ -286,7 +287,7 @@ bool kad_refresh(void *data)
 }
 
 // Attempt to read bootstrap nodes. Only warn if we find none.
-bool kad_bootstrap(const struct config *conf)
+bool kad_bootstrap(struct list_item *timer_list, const struct config *conf)
 {
     char bootstrap_nodes_path[PATH_MAX];
     bool found = false;
@@ -318,9 +319,60 @@ bool kad_bootstrap(const struct config *conf)
         log_warning("No bootstrap nodes read.");
     }
 
+
+    struct list_item timer_list_tmp;
+    list_init(&timer_list_tmp);
+    struct event *event_node_ping[nnodes];
+    int i=0;
+    for (; i<nnodes; i++) {
+        event_node_ping[i] = malloc(sizeof(struct event));
+        if (!event_node_ping[i]) {
+            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+            goto cleanup;
+        }
+        *event_node_ping[i] = (struct event){
+            "node-ping", .cb=event_node_ping_cb,
+            .args.node_ping={.addr=nodes[i]}, .fatal=false,
+            .self=event_node_ping[i]
+        };
+
+        struct timer *timer_node_ping = malloc(sizeof(struct timer));
+        if (!timer_node_ping) {
+            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+            goto cleanup;
+        }
+        *timer_node_ping = (struct timer){
+            .name="node-ping", .ms=0, .expire=now_millis(),
+            .event=event_node_ping[i], .once=true, .self=timer_node_ping
+        };
+        list_append(&timer_list_tmp, &timer_node_ping->item);
+    }
+
+    list_concat(timer_list, &timer_list_tmp);
+    return true;
+
+  cleanup:
+    for (int j=0; j<i; j++) {
+        free(event_node_ping[j]);
+    }
+    struct list_item *timer_it = &timer_list_tmp;
+    list_for(timer_it, &timer_list_tmp) {
+        struct timer *p = cont(timer_it, struct timer, item);
+        if (p)
+            free(p->self);
+    }
+    return false;
+}
+
+bool node_ping(const struct sockaddr_storage addr)
+{
+    char addr_str[ADDR_STR_MAX] = {0};
+    sockaddr_storage_fmt(addr_str, &addr);
+    log_info("Kad pinging %s", addr_str);
+
     /* TODO NEXT ping nodes read from nodes.dat. See node_handle_data,
        kad_rpc_handle_query. Need to:
-       - create ping msg
+       - create ping msg: kad_rpc_ping
        - sendto()
        - register query into kctx
     */

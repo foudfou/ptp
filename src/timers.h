@@ -42,6 +42,7 @@ struct timer {
 };
 
 bool timers_clock_res_is_millis();
+long long now_millis();
 /** Before the event loop. */
 bool timers_init(struct list_item *timers);
 /** Right before poll() to calculate its `timeout` parameter. */

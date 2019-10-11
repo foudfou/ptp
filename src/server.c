@@ -93,11 +93,12 @@ bool server_run(const struct config *conf)
         }
         *event_kad_bootstrap = (struct event){
             "kad-bootstrap", .cb=event_kad_bootstrap_cb,
-            .args.kad_bootstrap={.conf=conf}, .fatal=false,
-            .self=event_kad_bootstrap
+            .args.kad_bootstrap={.timer_list=&timer_list, .conf=conf},
+            .fatal=false, .self=event_kad_bootstrap
         };
 
-        // Need to schedule event otherwise applied after poll returns.
+        // Need to schedule event instead of adding to event queue, otherwise
+        // applied after poll returns.
         struct timer *timer_kad_bootstrap = malloc(sizeof(struct timer));
         if (!timer_kad_bootstrap) {
             log_perror(LOG_ERR, "Failed malloc: %s.", errno);
@@ -220,7 +221,7 @@ bool server_run(const struct config *conf)
                 log_error("Failed to get event from queue.");
                 continue;
             }
-            log_debug("event '%s'.", ev->name);
+            log_debug("Triggering event '%s'.", ev->name);
             if (!ev->cb(ev->args) && ev->fatal) {
                 ret = false;
             };

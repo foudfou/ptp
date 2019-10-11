@@ -18,6 +18,8 @@
 #include "utils/list.h"
 #include "utils/safer.h"
 
+#define ADDR_STR_MAX 32+1+4+1
+
 #define list_free_all(itemp, type, field)                               \
     while (!list_is_empty(itemp)) {                                     \
         type *node =                                                    \
@@ -34,7 +36,7 @@ struct kad_node_info {
     kad_guid                id;
     struct sockaddr_storage addr;
     // hex reprensatation of IP:PORT for logging/debugging
-    char                    addr_str[32+1+4+1];
+    char                    addr_str[ADDR_STR_MAX];
 };
 
 /* Nodes (DHT) are not peers (network). */

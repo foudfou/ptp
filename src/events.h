@@ -8,6 +8,7 @@
  * Some events are static as they will be unique during a loop iteration. The
  * callbacks' arguments must be set at runtime.
  */
+#include "netinet/in.h"
 #include "utils/queue.h"
 
 #define EVENT_NAME_MAX 32
@@ -38,8 +39,13 @@ struct event_args {
         } kad_refresh;
 
         struct kad_bootstrap {
+            struct list_item    *timer_list;
             const struct config *conf;
         } kad_bootstrap;
+
+        struct node_ping {
+            struct sockaddr_storage addr;
+        } node_ping;
     };
 };
 
@@ -61,6 +67,7 @@ struct event event_kad_refresh;
 // event to be malloc'd
 bool event_peer_data_cb(struct event_args args);
 bool event_kad_bootstrap_cb(struct event_args args);
+bool event_node_ping_cb(struct event_args args);
 
 #define EVENT_QUEUE_BIT_LEN 8
 QUEUE_GENERATE(event_queue, struct event, EVENT_QUEUE_BIT_LEN)
