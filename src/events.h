@@ -8,7 +8,8 @@
  * Some events are static as they will be unique during a loop iteration. The
  * callbacks' arguments must be set at runtime.
  */
-#include "netinet/in.h"
+#include <netinet/in.h>
+#include "net/kad/dht.h"
 #include "utils/queue.h"
 
 #define EVENT_NAME_MAX 32
@@ -41,10 +42,15 @@ struct event_args {
         struct kad_bootstrap {
             struct list_item    *timer_list;
             const struct config *conf;
+            // for subsequent node_ping
+            struct kad_ctx      *kctx;
+            int                  sock;
         } kad_bootstrap;
 
         struct node_ping {
-            struct sockaddr_storage addr;
+            struct kad_ctx          *kctx;
+            int                      sock;
+            struct kad_node_info     node;
         } node_ping;
     };
 };

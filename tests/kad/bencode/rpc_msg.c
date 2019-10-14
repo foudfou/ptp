@@ -38,8 +38,7 @@ int main ()
 
     char buf[BENC_PARSER_BUF_MAX] = "\0";
 
-    struct kad_rpc_msg msg;
-    KAD_RPC_MSG_INIT(msg);
+    struct kad_rpc_msg msg = {0};
 
     strcpy(buf, KAD_TEST_ERROR);
     memset(&msg, 0, sizeof(msg));
@@ -135,7 +134,7 @@ int main ()
     struct iobuf msgbuf = {0};
 
     // KAD_TEST_ERROR
-    KAD_RPC_MSG_INIT(msg);
+    memset(&msg, 0, sizeof(msg));
     /* set_expected_tx_id(&msg.tx_id); */
     msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_ERROR;
@@ -147,7 +146,7 @@ int main ()
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
     // KAD_TEST_PING_QUERY
-    KAD_RPC_MSG_INIT(msg);
+    memset(&msg, 0, sizeof(msg));
     msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_QUERY;
     msg.meth = KAD_RPC_METH_PING;
@@ -158,7 +157,7 @@ int main ()
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
     // KAD_TEST_PING_RESPONSE
-    KAD_RPC_MSG_INIT(msg);
+    memset(&msg, 0, sizeof(msg));
     msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_RESPONSE;
     msg.meth = KAD_RPC_METH_PING;
@@ -169,7 +168,7 @@ int main ()
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
     // KAD_TEST_FIND_NODE_QUERY
-    KAD_RPC_MSG_INIT(msg);
+    memset(&msg, 0, sizeof(msg));
     msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_QUERY;
     msg.meth = KAD_RPC_METH_FIND_NODE;
@@ -182,7 +181,7 @@ int main ()
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
     // KAD_TEST_FIND_NODE_RESPONSE
-    KAD_RPC_MSG_INIT(msg);
+    memset(&msg, 0, sizeof(msg));
     msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_RESPONSE;
     msg.meth = KAD_RPC_METH_FIND_NODE;

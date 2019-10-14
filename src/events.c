@@ -45,10 +45,11 @@ struct event event_kad_refresh = {"kad-refresh", .cb=event_kad_refresh_cb, .args
 
 bool event_kad_bootstrap_cb(struct event_args args)
 {
-    return kad_bootstrap(args.kad_bootstrap.timer_list, args.kad_bootstrap.conf);
+    return kad_bootstrap(args.kad_bootstrap.timer_list, args.kad_bootstrap.conf,
+                         args.kad_bootstrap.kctx, args.kad_bootstrap.sock);
 }
 
 bool event_node_ping_cb(struct event_args args)
 {
-    return node_ping(args.node_ping.addr);
+    return node_ping(args.node_ping.kctx, args.node_ping.sock, args.node_ping.node);
 }

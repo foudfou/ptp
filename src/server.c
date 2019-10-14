@@ -93,7 +93,7 @@ bool server_run(const struct config *conf)
         }
         *event_kad_bootstrap = (struct event){
             "kad-bootstrap", .cb=event_kad_bootstrap_cb,
-            .args.kad_bootstrap={.timer_list=&timer_list, .conf=conf},
+            .args.kad_bootstrap={.timer_list=&timer_list, .conf=conf, .kctx=&kctx, .sock=sock_udp},
             .fatal=false, .self=event_kad_bootstrap
         };
 

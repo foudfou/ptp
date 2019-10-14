@@ -148,6 +148,8 @@ int main ()
     }
     assert(i == 4);
 
+    assert(list_count(&l1) == 4);
+
 
     return 0;
 }

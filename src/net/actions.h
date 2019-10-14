@@ -37,7 +37,7 @@ bool peer_conn_close(struct peer *peer);
 int peer_conn_close_all(struct list_item *peers);
 
 bool kad_refresh(void *data);
-bool kad_bootstrap(struct list_item *timer_list, const struct config *conf);
-bool node_ping(const struct sockaddr_storage addr);
+bool kad_bootstrap(struct list_item *timer_list, const struct config *conf, struct kad_ctx *kctx, const int sock);
+bool node_ping(struct kad_ctx *kctx, const int sock, const struct kad_node_info node);
 
 #endif /* ACTIONS_H */

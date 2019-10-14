@@ -359,9 +359,10 @@ int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len,
     char buf[NODES_FILE_LEN_IN_BYTES];
     size_t buf_len = 0;
     if (!file_read(buf, &buf_len, state_path)) {
-        log_error("Failed to read bootsrap nodes file (%s).", state_path);
+        log_error("Failed to read bootsrap nodes file '%s'.", state_path);
         return -1;
     }
+    log_debug("Reading bootstrap nodes from file '%s'.", state_path);
 
     // FIXME would it not be easier to have a simple text file ?
     int nnodes = benc_decode_bootstrap_nodes(nodes, nodes_len, buf, buf_len);

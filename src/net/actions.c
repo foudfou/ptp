@@ -5,7 +5,6 @@
 #include "log.h"
 #include "net/kad/rpc.h"
 #include "net/socket.h"
-#include "net/socket.h"
 #include "timers.h"
 #include "net/actions.h"
 
@@ -36,7 +35,7 @@ bool node_handle_data(int sock, struct kad_ctx *kctx)
     struct iobuf rsp = {0};
     bool resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, &rsp);
     if (rsp.pos == 0) {
-        log_info("Empty response. Not responding.");
+        log_info("Handling incoming message did not produce response. Not responding.");
         ret = resp; goto cleanup;
     }
     if (rsp.pos > SERVER_UDP_BUFLEN) {
@@ -287,7 +286,8 @@ bool kad_refresh(void *data)
 }
 
 // Attempt to read bootstrap nodes. Only warn if we find none.
-bool kad_bootstrap(struct list_item *timer_list, const struct config *conf)
+bool kad_bootstrap(struct list_item *timer_list, const struct config *conf,
+                   struct kad_ctx *kctx, const int sock)
 {
     char bootstrap_nodes_path[PATH_MAX];
     bool found = false;
@@ -332,9 +332,14 @@ bool kad_bootstrap(struct list_item *timer_list, const struct config *conf)
         }
         *event_node_ping[i] = (struct event){
             "node-ping", .cb=event_node_ping_cb,
-            .args.node_ping={.addr=nodes[i]}, .fatal=false,
-            .self=event_node_ping[i]
+            .args.node_ping={
+                .kctx=kctx, .sock=sock,
+                .node={.id={{0},0}, .addr=nodes[i], .addr_str={0}}
+            },
+            .fatal=false, .self=event_node_ping[i]
         };
+        sockaddr_storage_fmt(event_node_ping[i]->args.node_ping.node.addr_str,
+                             &event_node_ping[i]->args.node_ping.node.addr);
 
         struct timer *timer_node_ping = malloc(sizeof(struct timer));
         if (!timer_node_ping) {
@@ -364,18 +369,42 @@ bool kad_bootstrap(struct list_item *timer_list, const struct config *conf)
     return false;
 }
 
-bool node_ping(const struct sockaddr_storage addr)
+bool node_ping(struct kad_ctx *kctx, const int sock, const struct kad_node_info node)
 {
-    char addr_str[ADDR_STR_MAX] = {0};
-    sockaddr_storage_fmt(addr_str, &addr);
-    log_info("Kad pinging %s", addr_str);
+    log_info("Kad pinging %s", node.addr_str);
 
-    /* TODO NEXT ping nodes read from nodes.dat. See node_handle_data,
-       kad_rpc_handle_query. Need to:
-       - create ping msg: kad_rpc_ping
-       - sendto()
-       - register query into kctx
-    */
+    struct kad_rpc_query *query = calloc(1, sizeof(struct kad_rpc_query));
+    if (!query) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        return false;
+    }
+    query->node = node;
+
+    struct iobuf qbuf = {0};
+    if (!kad_rpc_query_ping(kctx, &qbuf, query)) {
+        goto failed;
+    }
+
+    socklen_t addr_len = sizeof(struct sockaddr_storage);
+    ssize_t slen = sendto(sock, qbuf.buf, qbuf.pos, 0, (struct sockaddr *)&node.addr, addr_len);
+    if (slen < 0) {
+        if (errno != EWOULDBLOCK) {
+            log_perror(LOG_ERR, "Failed sendto: %s", errno);
+        }
+        goto failed;
+    }
+    log_debug("Sent %d bytes.", slen);
+    iobuf_reset(&qbuf);
+
+    list_append(&kctx->queries, &query->item);
+    char *id = log_fmt_hex(LOG_DEBUG, query->msg.tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
+    log_debug("Query (tx_id=%s) saved.", id);
+    free_safer(id);
 
     return true;
+
+  failed:
+    iobuf_reset(&qbuf);
+    free_safer(query);
+    return false;
 }

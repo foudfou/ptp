@@ -43,16 +43,16 @@ void iobuf_reset(struct iobuf *buf)
 
 bool iobuf_append(struct iobuf *buf, const char *data, const size_t len)
 {
-    log_debug("  buf_pos=%zu, len=%zu, capa=%zu", buf->pos, len, buf->capa);
+    // log_debug("  buf_pos=%zu, len=%zu, capa=%zu", buf->pos, len, buf->capa);
     if ((buf->pos + len > buf->capa) && !iobuf_grow(buf, len))
         return false;
-    log_debug("  buf_pos=%zu, len=%zu, capa=%zu", buf->pos, len, buf->capa);
+    // log_debug("  buf_pos=%zu, len=%zu, capa=%zu", buf->pos, len, buf->capa);
 
     memcpy(buf->buf + buf->pos, data, len);
     buf->pos += len;
 
     char *bufx = log_fmt_hex(LOG_DEBUG, (unsigned char*)buf->buf, buf->pos);
-    log_debug("iobuf=%s", bufx);
+    // log_debug("iobuf=%s", bufx);
     free_safer(bufx);
 
     return true;

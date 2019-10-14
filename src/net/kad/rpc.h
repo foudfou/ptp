@@ -16,9 +16,6 @@
 
 #define KAD_RPC_MSG_TX_ID_LEN 2
 
-#define KAD_RPC_MSG_INIT(msg) msg = (struct kad_rpc_msg){0};    \
-    list_init(&(msg.item))
-
 enum kad_rpc_type {
     KAD_RPC_TYPE_NONE,
     KAD_RPC_TYPE_ERROR,
@@ -70,16 +67,22 @@ BYTE_ARRAY_GENERATE(kad_rpc_msg_tx_id, KAD_RPC_MSG_TX_ID_LEN)
  * Initialize KAD_RPC_MSG_INIT().
  */
 struct kad_rpc_msg {
-    struct list_item     item;
-    kad_rpc_msg_tx_id    tx_id; /* t */
-    kad_guid             node_id; /* from {a,r} dict: id_str */
-    enum kad_rpc_type    type;  /* y {q,r,e} */
-    enum kad_rpc_meth    meth;  /* q {"ping","find_node"} */
+    kad_rpc_msg_tx_id    tx_id;   // t
+    kad_guid             node_id; // from {a,r} dict: id_str
+    enum kad_rpc_type    type;    // y {q,r,e}
+    enum kad_rpc_meth    meth;    // q {"ping","find_node"}
     unsigned long long   err_code;
     char                 err_msg[BENC_PARSER_STR_LEN_MAX];
-    kad_guid             target; /* from {a,r} dict: target, nodes */
-    struct kad_node_info nodes[KAD_K_CONST]; /* from {a,r} dict: target, nodes */
+    kad_guid             target;             // from {a,r} dict: target, nodes
+    struct kad_node_info nodes[KAD_K_CONST]; // from {a,r} dict: target, nodes
     size_t               nodes_len;
+};
+
+struct kad_rpc_query {
+    struct list_item     item;
+    long long            ts_ms; // for expiring of queries
+    struct kad_rpc_msg   msg;
+    struct kad_node_info node;
 };
 
 struct kad_rpc_node_pair {
@@ -90,7 +93,7 @@ struct kad_rpc_node_pair {
 
 struct kad_ctx {
     struct kad_dht   *dht;
-    struct list_item  queries; // kad_rcp_msg list
+    struct list_item  queries; // kad_rcp_query list
 };
 
 int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[]);
@@ -99,5 +102,7 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[]);
 bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
                     const char buf[], const size_t slen, struct iobuf *rsp);
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg);
+
+bool kad_rpc_query_ping(const struct kad_ctx *ctx, struct iobuf *buf, struct kad_rpc_query *query);
 
 #endif /* KAD_RPC_H */

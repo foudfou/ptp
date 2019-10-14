@@ -109,4 +109,16 @@ static inline void list_concat(struct list_item* l1, struct list_item* l2)
 #define list_for(it, list) \
     while ((it = it->next) != (list))
 
+/**
+ * Count number of elements.
+ */
+static inline int list_count(struct list_item* list)
+{
+    int len = 0;
+    struct list_item *it = list;
+    list_for(it, list)
+        len++;
+    return len;
+}
+
 #endif /* LIST_H */
