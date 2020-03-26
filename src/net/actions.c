@@ -285,7 +285,7 @@ bool kad_refresh(void *data)
     return true;
 }
 
-// Attempt to read bootstrap nodes. Only warn if we find none.
+// Attempt to read bootstrap nodes. Warn if none found.
 bool kad_bootstrap(struct list_item *timer_list, const struct config *conf,
                    struct kad_ctx *kctx, const int sock)
 {

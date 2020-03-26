@@ -97,7 +97,7 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
         };
 
         int c = getopt_long(argc, argv, "a:c:l:m:o:p:shv",
-                        long_options, &option_index);
+                            long_options, &option_index);
         if (c == -1)
             break;
 
@@ -170,16 +170,14 @@ int options_parse(struct config *conf, const int argc, char *const argv[])
         case 'h':
             usage();
             return 0;
-            break;
 
         case 'v':
             printf("%s\n", PACKAGE_VERSION);
             return 0;
-            break;
 
-        case '?':
-            fprintf(stderr, "???\n");
-            break;
+        case '?': /* unknown option */
+        case ':': /* missing argument */
+            return 1;
 
         default:
             usage();
