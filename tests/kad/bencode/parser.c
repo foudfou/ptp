@@ -87,6 +87,7 @@ int main ()
             }
         }
     }
+    assert(d);
     assert(d->typ == BENC_NODE_TYPE_DICT_ENTRY);
     assert(d->chd_off == 1);
     assert(d->chd[0]->typ == BENC_NODE_TYPE_LITERAL);

@@ -16,7 +16,7 @@ int main(void)
     int x = 2;            // the least significant bit is 0
     BITFIELD_SET(arr, 6, x);    // sets bit 6 to 0 because 2&1 is 0
     assert(BITFIELD_GET(arr, 6) == 0);
-    BITFIELD_SET(arr, 6, !!x);  // sets bit 6 to 1 because !!2 is 1
+    BITFIELD_SET(arr, 6, ~x);  // sets bit 6 to 1 because ~2 is 1
     assert(BITFIELD_GET(arr, 6) == 1);
 
 
