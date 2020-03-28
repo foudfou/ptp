@@ -13,6 +13,8 @@
 
 #define POLL_EVENTS POLLIN|POLLPRI
 
+#define TIMER_KAD_REFRESH_MILLIS 300000
+
 static int pollfds_update(struct pollfd fds[], const int nlisten,
                           struct list_item *peer_list)
 {
@@ -67,14 +69,13 @@ bool server_run(const struct config *conf)
         log_fatal("Failed to start udp socket. Aborting.");
         return false;
     }
-    log_info("Server started. Listening on [%s]:%s tcp and udp.",
-             conf->bind_addr, conf->bind_port);
+    log_info("Server started.");
 
     event_queue evq = {0};
 
     struct list_item timer_list = LIST_ITEM_INIT(timer_list);
     struct timer timer_kad_refresh = {
-        .name="kad-refresh", .ms=300000, .event=&event_kad_refresh,
+        .name="kad-refresh", .ms=TIMER_KAD_REFRESH_MILLIS, .event=&event_kad_refresh,
         .item=LIST_ITEM_INIT(timer_kad_refresh.item)
     };
     list_append(&timer_list, &timer_kad_refresh.item);

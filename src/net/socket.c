@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "log.h"
+#include "net/socket.h"
 
 static int sock_geterr(int fd) {
    int err = 1;
@@ -105,11 +106,11 @@ int socket_init(const int socktype, const char bind_addr[], const char bind_port
         if (sockfd == -1)
             continue;
 
-        if (sock_setopts(sockfd, it->ai_family, it->ai_socktype))
-            return -1;
-
-        if (sock_setnonblock(sockfd))
-            return -1;
+        if (sock_setopts(sockfd, it->ai_family, it->ai_socktype) ||
+            sock_setnonblock(sockfd)) {
+            sockfd = -1;
+            goto cleanup;
+        }
 
         if (bind(sockfd, it->ai_addr, it->ai_addrlen) == 0)
             break;
@@ -117,18 +118,36 @@ int socket_init(const int socktype, const char bind_addr[], const char bind_port
         sock_close(sockfd);
     }
 
-    freeaddrinfo(addrs);
-
     if (!it) {
         log_perror(LOG_ERR, "Failed connect: %s.", errno);
-        return -1;
+        goto cleanup;
     }
 
     if (socktype == SOCK_STREAM && listen(sockfd, 32)) {
         log_perror(LOG_ERR, "Failed listen: %s.", errno);
-        return -1;
+        goto cleanup;
     }
 
+    struct sockaddr_storage sa = {0};
+    socklen_t sa_len = sizeof(sa);
+    if (getsockname(sockfd, (struct sockaddr *)&sa, &sa_len) < 0) {
+        log_perror(LOG_ERR, "Failed getsockname: %s.", errno);
+        goto cleanup;
+    }
+
+    char host[NI_MAXHOST];
+    char port[NI_MAXSERV];
+    if (getnameinfo((struct sockaddr *)&sa, sa_len,
+                    host, sizeof(host), port, sizeof(port),
+                    NI_NUMERICHOST | NI_NUMERICSERV)) {
+        log_perror(LOG_ERR, "Failed getnameinfo: %s.", errno);
+        goto cleanup;
+    }
+    log_info("Socket (%s) bound to [%s]:%s",
+             (socktype == SOCK_STREAM) ? "tcp" : "udp", host, port);
+
+  cleanup:
+    freeaddrinfo(addrs);
     return sockfd;
 }
 
