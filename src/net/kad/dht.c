@@ -397,6 +397,7 @@ bool dht_write(const struct kad_dht *dht, const char state_path[]) {
         res = false; goto cleanup;
     }
 
+    log_debug("Writing DHT state file (%s)", state_path);
     if (!file_write(state_path, buf.buf, buf.pos)) {
         log_error("Failed to write DHT state file (%s).", state_path);
         res = false; goto cleanup;

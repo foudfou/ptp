@@ -2,10 +2,11 @@
 # Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
 
 integration_tests = [
-  ['single-server defaults', 'single-server',
+  ['send-to-server defaults', 'send-to-server',
    ['defaults', main_exe, '-c', '/NONEXISTENT_FOR_DEFAULTS']],
-  ['single-server dht state', 'single-server',
+  ['send-to-server dht state', 'send-to-server',
    ['dht_state', main_exe, '-c', join_paths(meson.current_source_dir(), '../kad/data')]],
+  ['listen-to-client boostrap', 'listen-to-client', [main_exe]],
 ]
 
 foreach t : integration_tests
