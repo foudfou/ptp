@@ -6,6 +6,8 @@
 #include <mqueue.h>
 #include <pthread.h>
 #include <string.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include <time.h>
 #include <unistd.h>
 #include "config.h"
@@ -14,7 +16,8 @@
 #define LOG_MSG_STOP       "##exit"
 #define LOG_MSG_PREFIX_LEN 56
 
-static char log_queue_name[NAME_MAX];
+static char log_queue_name[NAME_MAX] = {0};
+static char log_pid[16] = {0};
 
 static struct log_ctx_t {
     int       fmask;
@@ -77,8 +80,8 @@ void log_stream_msg(int prio, const char *fmt, ...)
   char buf[LOG_MSG_LEN] = {0};
   va_list arglist;
   va_start(arglist, fmt);
-  int written = snprintf(buf, LOG_MSG_LEN, "%s [%s] ", time,
-                         log_level_prefix(prio));
+  int written = snprintf(buf, LOG_MSG_LEN, "%s (%s) [%s] ",
+                         time, log_pid, log_level_prefix(prio));
   /* From vsnprintf(3): a return value of size or more means that the output
      was truncated. */
   written += vsnprintf(buf + written, LOG_MSG_LEN - written, fmt, arglist);
@@ -229,6 +232,8 @@ bool log_init(log_type_t log_type, int log_mask)
         fprintf(stderr, "Failed to init message queue.\n");
         return false;
     }
+
+    sprintf(log_pid, "%" PRIdMAX "", (intmax_t)getpid());
 
     // FIXME: catch sigterm to cleanup
     if (pthread_create(&log_ctx.th_cons, NULL, log_queue_consumer, NULL) == -1) {
