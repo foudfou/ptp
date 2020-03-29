@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
+/* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 /**
  * In Kademelia, peers are virtually structured as leaves of a binary tree,
  * which can also be vizualized as a ring. Peers are placed in the tree by

@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
+/* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #ifndef KAD_TEST_RPC_MSG_H
 #define KAD_TEST_RPC_MSG_H
 

@@ -1,5 +1,5 @@
 # -*- mode: meson -*-
-# Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
+# Copyright (c) 2019 Foudil Brétel.  All rights reserved.
 
 cdata = configuration_data()
 cdata.set('PROJ_NAME', proj_name)

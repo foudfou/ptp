@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
+/* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include "net/socket.h"
 #include "net/kad/dht.c"      // testing static functions

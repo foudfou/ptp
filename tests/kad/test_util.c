@@ -1,3 +1,4 @@
+/* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <errno.h>
 #include <time.h>
 #include "net/socket.h"

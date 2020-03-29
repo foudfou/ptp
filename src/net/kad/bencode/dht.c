@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
+/* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include "log.h"
 #include "net/kad/bencode/parser.h"
 #include "net/kad/bencode/serde.h"

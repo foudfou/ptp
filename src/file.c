@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved. */
+/* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <errno.h>
 #include <limits.h>
 #include <pwd.h>

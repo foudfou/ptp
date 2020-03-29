@@ -1,5 +1,5 @@
 # -*- mode: meson -*-
-# Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
+# Copyright (c) 2016 Foudil Brétel.  All rights reserved.
 
 configure_file(input : 'config.h.in',
                output : 'config.h',
