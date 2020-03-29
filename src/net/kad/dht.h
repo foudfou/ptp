@@ -13,12 +13,11 @@
 #include <sys/socket.h>
 #include <time.h>
 #include "kad_defs.h"
+#include "net/socket.h"
 #include "utils/cont.h"
 #include "utils/byte_array.h"
 #include "utils/list.h"
 #include "utils/safer.h"
-
-#define ADDR_STR_MAX 32+1+4+1
 
 #define list_free_all(itemp, type, field)                               \
     while (!list_is_empty(itemp)) {                                     \
@@ -34,8 +33,8 @@ BYTE_ARRAY_GENERATE(kad_guid, KAD_GUID_SPACE_IN_BYTES)
 struct kad_node_info {
     kad_guid                id;
     struct sockaddr_storage addr;
-    // hex reprensatation of IP:PORT for logging/debugging
-    char                    addr_str[ADDR_STR_MAX];
+    // Textual representation of addr for logging/debugging
+    char                    addr_str[INET6_ADDRSTRLEN+INET_PORTSTRLEN];
 };
 
 /* Nodes (DHT) are not peers (network). */

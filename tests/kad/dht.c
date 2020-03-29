@@ -62,8 +62,8 @@ int main(int argc, char *argv[])
     struct kad_node_info info = { .id = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}}, {0} };
     struct sockaddr_in *sa = (struct sockaddr_in*)&info.addr;
     sa->sin_family=AF_INET; sa->sin_port=htons(0x0016); sa->sin_addr.s_addr=htonl(0x01020304);
-    sockaddr_storage_fmt(info.addr_str, &info.addr);
-    assert(strcmp(info.addr_str, "01020304:0016") == 0);
+    assert(sockaddr_storage_fmt(info.addr_str, &info.addr));
+    assert(strcmp(info.addr_str, "1.2.3.4,22") == 0);
     assert(dht_update(dht, &info) == 1);
     assert(dht_insert(dht, &info));
     /* dht_get...() is not exposed. So we're not supposed to do bad things like

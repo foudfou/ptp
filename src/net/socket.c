@@ -135,16 +135,11 @@ int socket_init(const int socktype, const char bind_addr[], const char bind_port
         goto cleanup;
     }
 
-    char host[NI_MAXHOST];
-    char port[NI_MAXSERV];
-    if (getnameinfo((struct sockaddr *)&sa, sa_len,
-                    host, sizeof(host), port, sizeof(port),
-                    NI_NUMERICHOST | NI_NUMERICSERV)) {
-        log_perror(LOG_ERR, "Failed getnameinfo: %s.", errno);
+    char addr_str[INET6_ADDRSTRLEN+INET_PORTSTRLEN] = {0};
+    if (!sockaddr_storage_fmt(addr_str, &sa))
         goto cleanup;
-    }
-    log_info("Socket (%s) bound to [%s]:%s",
-             (socktype == SOCK_STREAM) ? "tcp" : "udp", host, port);
+    log_info("Socket (%s) bound to %s.",
+             (socktype == SOCK_STREAM) ? "tcp" : "udp", addr_str);
 
   cleanup:
     freeaddrinfo(addrs);
@@ -159,33 +154,19 @@ bool socket_shutdown(int sock)
     return true;
 }
 
-// https://beej.us/guide/bgnet/html/multi/sockaddr_inman.html
 bool sockaddr_storage_fmt(char str[], const struct sockaddr_storage *ss)
 {
-    char *p = str;
-    if (ss->ss_family == AF_INET) {
-        const struct sockaddr_in *sa = (struct sockaddr_in *)ss;
-        for (int i=0; i<4; i++) {
-            snprintf(p, 3, "%02x",((unsigned char*)(&sa->sin_addr))[i]);
-            p += 2;
-        }
-        snprintf(p, 6, ":%02x%02x",
-                 ((unsigned char*)(&sa->sin_port))[0],
-                 ((unsigned char*)(&sa->sin_port))[1]);
-    }
-    else if (ss->ss_family == AF_INET6) {
-        const struct sockaddr_in6 *sa = (struct sockaddr_in6 *)ss;
-        for (int i=0; i<16; i++) {
-            snprintf(p, 3, "%02x",((unsigned char*)(&sa->sin6_addr))[i]);
-            p += 2;
-        }
-        snprintf(p, 6, ":%02x%02x",
-                 ((unsigned char*)(&sa->sin6_port))[0],
-                 ((unsigned char*)(&sa->sin6_port))[1]);
-    }
-    else {
+    // FIXME check str size < INET6_ADDRSTRLEN + INET_PORTSTRLEN
+    char hbuf[INET6_ADDRSTRLEN] = {0};
+    char pbuf[INET_PORTSTRLEN] = {0};
+    int rv = getnameinfo((struct sockaddr *)ss, sizeof(*ss),
+                         hbuf, sizeof(hbuf), pbuf, sizeof(pbuf),
+                         NI_NUMERICHOST | NI_NUMERICSERV);
+    if (rv != 0) {
+        log_error("Failed getnameinfo: %s.", gai_strerror(rv));
         return false;
     }
+    sprintf(str, "%s,%s", hbuf, pbuf);
     return true;
 }
 

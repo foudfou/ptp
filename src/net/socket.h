@@ -5,6 +5,8 @@
 #include <netinet/in.h>
 #include <stdbool.h>
 
+#define INET_PORTSTRLEN 6 /* Including terminating null */
+
 bool sock_close(int fd);
 int socket_init(const int socktype, const char bind_addr[], const char bind_port[]);
 bool socket_shutdown(int sock);
