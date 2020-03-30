@@ -20,8 +20,9 @@
  */
 int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
 {
-    int nodes_len = 0;
+    rand_init();
 
+    int nodes_len = 0;
     if (conf_dir) {
         char dht_state_path[PATH_MAX];
         snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
@@ -166,22 +167,25 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
 static bool
 kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 {
+    bool ret = false;
+
+    char *id = log_fmt_hex(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
+
     struct kad_rpc_query *query = kad_rpc_query_find(ctx, &msg->tx_id);
     if (!query) {
-        char *id = log_fmt_hex(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
-        log_error("Query for response id(%s) not found.", id);
-        free_safer(id);
-        return false;
+        log_error("Query for response (id=%s) not found.", id);
+        goto cleanup;
     }
+    list_delete(&query->item);
 
     switch (query->msg.meth) {
     case KAD_RPC_METH_NONE: {
         log_error("Got query for method none.");
-        return false;
+        goto cleanup;
     }
 
     case KAD_RPC_METH_PING: {
-        log_debug("Handling ping response.");
+        log_debug("Handling ping response (id=%s).", id);
         // Nothing left to do as dht already updated in kad_rpc_handle
         break;
     }
@@ -197,7 +201,11 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 
     list_delete(&query->item);
     free_safer(query);
-    return true;
+    ret = true;
+
+  cleanup:
+    free_safer(id);
+    return ret;
 }
 
 static void kad_rpc_generate_tx_id(kad_rpc_msg_tx_id *tx_id)

@@ -58,36 +58,35 @@ if config_idx > 0:
     sys.exit(1)
 
 
-with tempfile.TemporaryDirectory() as tmp_dir:
+with tempfile.TemporaryDirectory() as tmp_dir, \
+     socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as s:
     # print(tmp_dir)
     try:
-        with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as s:
-            s.settimeout(SOCKET_TIMEOUT_SECONDS)
-            s.bind((SERVER_HOST, 0))
-            port = s.getsockname()[1]
-            # print(port)
-            port_bytes = port_to_bigendian_bytes(port)
+        s.settimeout(SOCKET_TIMEOUT_SECONDS)
+        s.bind((SERVER_HOST, 0))
+        port = s.getsockname()[1]
+        # print(port)
+        port_bytes = port_to_bigendian_bytes(port)
 
-            bootstrap_bin = b"l18:\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
-            bootstrap_path = os.path.join(tmp_dir, "nodes.dat")
-            with open(bootstrap_path, 'wb') as f:
-                f.write(bootstrap_bin)
+        bootstrap_bin = b"l18:\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
+        bootstrap_path = os.path.join(tmp_dir, "nodes.dat")
+        with open(bootstrap_path, 'wb') as f:
+            f.write(bootstrap_bin)
 
-            server_cmd.extend(["-c", tmp_dir])
-            # print(server_cmd)
-            server = sub.Popen(server_cmd, stderr=sub.STDOUT, close_fds=True)
+        server_cmd.extend(["-c", tmp_dir])
+        # print(server_cmd)
+        server = sub.Popen(server_cmd, stderr=sub.STDOUT, close_fds=True)
 
-            expected_msg_count = 1
-            msg_count = 0
-            failures = 0
-            BUFFER_SIZE = 1024
-            messages_len = len(EXPECTED_MESSAGES)
-            while msg_count < messages_len:
-                data, addr = s.recvfrom(BUFFER_SIZE)
-                # print("received message: ", data)
-                ctx = {"line": msg_count, "len": messages_len, "name": EXPECTED_MESSAGES[msg_count][0]}
-                failures += check_data(EXPECTED_MESSAGES[msg_count][1], data, ctx)
-                msg_count += 1
+        BUFFER_SIZE = 1024
+        messages_len = len(EXPECTED_MESSAGES)
+        msg_count = 0
+        failures = 0
+        while msg_count < messages_len:
+            data, addr = s.recvfrom(BUFFER_SIZE)
+            # print("received message: ", data)
+            ctx = {"line": msg_count, "len": messages_len, "name": EXPECTED_MESSAGES[msg_count][0]}
+            failures += check_data(EXPECTED_MESSAGES[msg_count][1], data, ctx)
+            msg_count += 1
 
     finally:
         server.terminate()

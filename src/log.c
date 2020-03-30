@@ -67,7 +67,7 @@ int log_stream_setlogmask(int mask)
 }
 
 /**
- * Messages over LOG_MSG_LEN are truncated.
+ * Messages larger than LOG_MSG_LEN are truncated.
  */
 void log_stream_msg(int prio, const char *fmt, ...)
 {

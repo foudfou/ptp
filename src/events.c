@@ -53,3 +53,8 @@ bool event_node_ping_cb(struct event_args args)
 {
     return node_ping(args.node_ping.kctx, args.node_ping.sock, args.node_ping.node);
 }
+
+bool event_kad_join_cb(struct event_args args)
+{
+    return kad_join(args.kad_join.kctx, args.kad_join.sock, args.kad_join.nodes, args.kad_join.nodes_len);
+}

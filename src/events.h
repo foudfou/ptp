@@ -48,10 +48,17 @@ struct event_args {
         } kad_bootstrap;
 
         struct node_ping {
+            struct kad_ctx       *kctx;
+            int                   sock;
+            struct kad_node_info  node;
+        } node_ping;
+
+        struct kad_join {
             struct kad_ctx          *kctx;
             int                      sock;
-            struct kad_node_info     node;
-        } node_ping;
+            struct sockaddr_storage *nodes;
+            size_t                   nodes_len;
+        } kad_join;
     };
 };
 
@@ -74,6 +81,7 @@ struct event event_kad_refresh;
 bool event_peer_data_cb(struct event_args args);
 bool event_kad_bootstrap_cb(struct event_args args);
 bool event_node_ping_cb(struct event_args args);
+bool event_kad_join_cb(struct event_args args);
 
 #define EVENT_QUEUE_BIT_LEN 8
 QUEUE_GENERATE(event_queue, struct event, EVENT_QUEUE_BIT_LEN)

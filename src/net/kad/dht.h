@@ -89,6 +89,8 @@ static inline void kad_node_info_copy(struct kad_node_info *dst,
     strcpy(dst->addr_str, src->addr_str);
 }
 
+void rand_init();
+
 int dht_read(struct kad_dht **dht, const char state_path[]);
 bool dht_write(const struct kad_dht *dht, const char state_path[]);
 struct kad_dht *dht_create();

@@ -21,6 +21,15 @@
 #define DHT_STATE_LEN_IN_BYTES 4096
 #define NODES_FILE_LEN_IN_BYTES 512
 
+
+void rand_init()
+{
+    struct timespec time;
+    if (clock_gettime(CLOCK_REALTIME, &time) < 0)
+        log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
+    srandom(time.tv_sec * time.tv_nsec * getpid());
+}
+
 static void kad_generate_id(kad_guid *uid)
 {
     unsigned char rand[KAD_GUID_SPACE_IN_BYTES];
@@ -39,11 +48,6 @@ static void dht_init(struct kad_dht *dht)
 
 struct kad_dht *dht_create()
 {
-    struct timespec time;
-    if (clock_gettime(CLOCK_REALTIME, &time) < 0)
-        log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
-    srandom(time.tv_sec * time.tv_nsec * getpid());
-
     struct kad_dht *dht = malloc(sizeof(struct kad_dht));
     if (!dht) {
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);

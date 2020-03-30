@@ -285,7 +285,21 @@ bool kad_refresh(void *data)
     return true;
 }
 
-// Attempt to read bootstrap nodes. Warn if none found.
+/* Bootstrapping consists in:
+   - read bootstrap nodes from file. File only contains ip/port's, this
+     similar to bittorrent.
+   - ping each bootstrap node.
+   - start a recursive timer to launch lookup requests for its own node ID,
+     until one of them is fullfilled.
+
+   « To join the network, a node u must have a contact to an already
+   participating node w. u inserts w into the appropriate k-bucket. u then
+   performs a node lookup for its own node ID. Finally, u refreshes all
+   k-buckets further away than its closest neighbor. During the refreshes, u
+   both populates its own k-buckets and inserts »
+ */
+static bool kad_bootstrap_schedule_pings(struct sockaddr_storage nodes[], int nodes_len, struct list_item *timer_list, struct kad_ctx *kctx, const int sock);
+static bool kad_bootstrap_schedule_lookup(struct sockaddr_storage nodes[], int nodes_len, struct list_item *timer_list, struct kad_ctx *kctx, const int sock);
 bool kad_bootstrap(struct list_item *timer_list, const struct config *conf,
                    struct kad_ctx *kctx, const int sock)
 {
@@ -309,22 +323,29 @@ bool kad_bootstrap(struct list_item *timer_list, const struct config *conf,
     }
 
     struct sockaddr_storage nodes[BOOTSTRAP_NODES_LEN];
-    int nnodes = kad_read_bootstrap_nodes(nodes, ARRAY_LEN(nodes), bootstrap_nodes_path);
-    if (nnodes < 0) {
+    int nodes_len = kad_read_bootstrap_nodes(nodes, ARRAY_LEN(nodes), bootstrap_nodes_path);
+    if (nodes_len < 0) {
         log_error("Failed to read bootstrap nodes.");
         return false;
     }
-    log_info("%d bootstrap nodes read.", nnodes);
-    if (nnodes == 0) {
+    log_info("%d bootstrap nodes read.", nodes_len);
+    if (nodes_len == 0) {
         log_warning("No bootstrap nodes read.");
     }
 
+    return kad_bootstrap_schedule_pings(nodes, nodes_len, timer_list, kctx, sock);
+}
 
+static bool kad_bootstrap_schedule_pings(
+    struct sockaddr_storage nodes[], int nodes_len,
+    struct list_item *timer_list, struct kad_ctx *kctx,
+    const int sock)
+{
     struct list_item timer_list_tmp;
     list_init(&timer_list_tmp);
-    struct event *event_node_ping[nnodes];
+    struct event *event_node_ping[nodes_len];
     int i=0;
-    for (; i<nnodes; i++) {
+    for (; i<nodes_len; i++) {
         event_node_ping[i] = malloc(sizeof(struct event));
         if (!event_node_ping[i]) {
             log_perror(LOG_ERR, "Failed malloc: %s.", errno);
@@ -354,7 +375,8 @@ bool kad_bootstrap(struct list_item *timer_list, const struct config *conf,
     }
 
     list_concat(timer_list, &timer_list_tmp);
-    return true;
+
+    return kad_bootstrap_schedule_lookup(nodes, nodes_len, timer_list, kctx, sock);
 
   cleanup:
     for (int j=0; j<i; j++) {
@@ -364,15 +386,50 @@ bool kad_bootstrap(struct list_item *timer_list, const struct config *conf,
     list_for(timer_it, &timer_list_tmp) {
         struct timer *p = cont(timer_it, struct timer, item);
         if (p)
-            free(p->self);
+            free_safer(p->self);
     }
     return false;
 }
 
-bool node_ping(struct kad_ctx *kctx, const int sock, const struct kad_node_info node)
+static bool kad_bootstrap_schedule_lookup(
+    struct sockaddr_storage nodes[], int nodes_len,
+    struct list_item *timer_list, struct kad_ctx *kctx,
+    const int sock)
 {
-    log_info("Kad pinging %s", node.addr_str);
+    struct event *event_kad_join = malloc(sizeof(struct event));
+    if (!event_kad_join) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        goto cleanup;
+    }
 
+    *event_kad_join = (struct event){
+        "kad-join", .cb=event_kad_join_cb,
+        .args.kad_join={.kctx=kctx, .sock=sock, .nodes=nodes, .nodes_len=nodes_len},
+        .fatal=false, .self=event_kad_join
+    };
+
+    struct timer *timer_kad_join = malloc(sizeof(struct timer));
+    if (!timer_kad_join) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        goto cleanup;
+    }
+    *timer_kad_join = (struct timer){
+        .name="kad-join", .ms=0, .expire=now_millis(),
+        .event=event_kad_join, .once=true, .self=timer_kad_join
+    };
+    list_append(timer_list, &timer_kad_join->item);
+
+    return true;
+
+  cleanup:
+    free_safer(event_kad_join);
+    free_safer(timer_kad_join);
+    return false;
+}
+
+bool node_ping(struct kad_ctx *kctx, const int sock,
+               const struct kad_node_info node)
+{
     struct kad_rpc_query *query = calloc(1, sizeof(struct kad_rpc_query));
     if (!query) {
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
@@ -382,8 +439,11 @@ bool node_ping(struct kad_ctx *kctx, const int sock, const struct kad_node_info 
 
     struct iobuf qbuf = {0};
     if (!kad_rpc_query_ping(kctx, &qbuf, query)) {
-        goto failed;
+        goto failed1;
     }
+
+    char *id = log_fmt_hex(LOG_DEBUG, query->msg.tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
+    log_info("Kad pinging %s (id=%s)", node.addr_str, id);
 
     socklen_t addr_len = sizeof(struct sockaddr_storage);
     ssize_t slen = sendto(sock, qbuf.buf, qbuf.pos, 0, (struct sockaddr *)&node.addr, addr_len);
@@ -391,20 +451,31 @@ bool node_ping(struct kad_ctx *kctx, const int sock, const struct kad_node_info 
         if (errno != EWOULDBLOCK) {
             log_perror(LOG_ERR, "Failed sendto: %s", errno);
         }
-        goto failed;
+        goto failed2;
     }
     log_debug("Sent %d bytes.", slen);
     iobuf_reset(&qbuf);
 
     list_append(&kctx->queries, &query->item);
-    char *id = log_fmt_hex(LOG_DEBUG, query->msg.tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
-    log_debug("Query (tx_id=%s) saved.", id);
-    free_safer(id);
 
+    free_safer(id);
+    iobuf_reset(&qbuf);
     return true;
 
-  failed:
+  failed2:
+    free_safer(id);
+  failed1:
     iobuf_reset(&qbuf);
     free_safer(query);
     return false;
+}
+
+bool kad_join(struct kad_ctx *kctx, const int sock,
+              struct sockaddr_storage *nodes, int nodes_len)
+{
+    (void)kctx;
+    (void)sock;
+    (void)nodes;
+    (void)nodes_len;
+    return true;
 }
