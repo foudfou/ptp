@@ -13,6 +13,7 @@
 
 #define POLL_EVENTS POLLIN|POLLPRI
 
+// TODO we need a test build with 200ms. See defs.h.in
 #define TIMER_KAD_REFRESH_MILLIS 300000
 
 static int pollfds_update(struct pollfd fds[], const int nlisten,
@@ -34,6 +35,29 @@ static int pollfds_update(struct pollfd fds[], const int nlisten,
         npeer++;
     }
     return npeer;
+}
+
+static bool timer_list_free_all(struct list_item *timers)
+{
+    log_debug("Freeing remaining timers and events.");
+    struct list_item * it = timers;
+    list_for(it, timers) {
+        struct timer *t = cont(it, struct timer, item);
+        if (!t) {
+            log_error("Undefined container in list.");
+            return false;
+        }
+
+        it = it->prev; // deleting inside for_list
+        list_delete(&t->item);
+        if (t->event && t->event->self) {
+            free(t->event->self);
+        }
+        if (t->self) {
+            free(t->self);
+        }
+    }
+    return true;
 }
 
 /**
@@ -103,7 +127,7 @@ bool server_run(const struct config *conf)
         struct timer *timer_kad_bootstrap = malloc(sizeof(struct timer));
         if (!timer_kad_bootstrap) {
             log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-            free(event_kad_bootstrap);
+            free_safer(event_kad_bootstrap);
             return false;
         }
         *timer_kad_bootstrap = (struct timer){
@@ -239,6 +263,8 @@ bool server_run(const struct config *conf)
     } /* End event loop */
 
   server_end:
+    timer_list_free_all(&timer_list);
+
     peer_conn_close_all(&peer_list);
 
     kad_rpc_terminate(&kctx, conf->conf_dir);
