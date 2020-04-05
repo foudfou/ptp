@@ -92,20 +92,31 @@ kad_rpc_query_find_by_id(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
 
 typedef bool (*queryPredicateFunc)(struct kad_ctx *ctx, struct kad_rpc_query *q);
 
+/* kad_rpc_query_expire_find_any(&query, ctx, is_join_query) */
+// cppcheck-suppress unusedFunction
+bool is_join_query(struct kad_ctx *ctx, struct kad_rpc_query *q)
+{
+    return
+        q->msg.type == KAD_RPC_TYPE_QUERY &&
+        q->msg.meth == KAD_RPC_METH_FIND_NODE &&
+        kad_guid_eq(&q->msg.target, &ctx->dht->self_id);
+}
+
 /**
  * Find any query with predicate, expiring old queries.
  *
  * @return bool: success
  */
+// cppcheck-suppress unusedFunction
 bool kad_rpc_query_expire_find_any(struct kad_rpc_query **found,
-                                   struct kad_ctx *kctx,
+                                   struct kad_ctx *ctx,
                                    queryPredicateFunc predicate)
 {
     long long now = now_millis();
     if (now == -1)
         return false;
 
-    struct list_item * queries = &kctx->queries;
+    struct list_item * queries = &ctx->queries;
     struct list_item * it = queries;
     list_for(it, queries) {
         struct kad_rpc_query *q = cont(it, struct kad_rpc_query, item);
@@ -121,7 +132,7 @@ bool kad_rpc_query_expire_find_any(struct kad_rpc_query **found,
             continue;
         }
 
-        if (predicate(kctx, q))
+        if (predicate(ctx, q))
             *found = q;
     }
 

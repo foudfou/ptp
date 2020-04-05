@@ -15,6 +15,7 @@
 #include "file.h"
 #include "utils/bitfield.h"
 #include "utils/bits.h"
+#include "utils/safer.h"
 #include "net/kad/bencode/dht.h"
 #include "net/kad/dht.h"
 

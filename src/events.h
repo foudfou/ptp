@@ -58,19 +58,17 @@ struct event_args {
             int                  sock;
         } kad_bootstrap;
 
-        struct node_ping {
+        struct kad_ping {
             struct kad_ctx       *kctx;
             int                   sock;
             struct kad_node_info  node;
-        } node_ping;
+        } kad_ping;
 
-        struct kad_join {
-            struct sockaddr_storage *nodes;
-            size_t                   nodes_len;
-            struct list_item        *timers;
-            struct kad_ctx          *kctx;
-            int                      sock;
-        } kad_join;
+        struct kad_find_node {
+            struct kad_ctx       *kctx;
+            int                   sock;
+            struct kad_node_info  node;
+        } kad_find_node;
     };
 };
 
@@ -92,7 +90,7 @@ struct event event_kad_refresh;
 // event to be malloc'd
 bool event_peer_data_cb(struct event_args args);
 bool event_kad_bootstrap_cb(struct event_args args);
-bool event_node_ping_cb(struct event_args args);
-bool event_kad_join_cb(struct event_args args);
+bool event_kad_ping_cb(struct event_args args);
+bool event_kad_find_node_cb(struct event_args args);
 
 #endif /* EVENTS_H */

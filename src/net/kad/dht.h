@@ -17,14 +17,7 @@
 #include "utils/cont.h"
 #include "utils/byte_array.h"
 #include "utils/list.h"
-#include "utils/safer.h"
-
-#define list_free_all(itemp, type, field)                               \
-    while (!list_is_empty(itemp)) {                                     \
-        type *node = cont(itemp->prev, type, field);                    \
-        list_delete(itemp->prev);                                       \
-        free_safer(node);                                               \
-    }
+#include "utils/helpers.h"
 
 /* Byte arrays are not affected by endian issues.
    http://stackoverflow.com/a/4523537/421846 */

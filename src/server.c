@@ -9,6 +9,7 @@
 #include "timers.h"
 #include "utils/bits.h"
 #include "utils/cont.h"
+#include "utils/safer.h"
 #include "server.h"
 
 #define POLL_EVENTS POLLIN|POLLPRI

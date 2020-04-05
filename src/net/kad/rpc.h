@@ -111,6 +111,6 @@ bool kad_rpc_query_ping(const struct kad_ctx *ctx, struct iobuf *buf, struct kad
 
 typedef bool (*queryPredicateFunc)(struct kad_ctx *ctx, struct kad_rpc_query *q);
 
-bool kad_rpc_query_expire_find_any(struct kad_rpc_query **found, struct kad_ctx *kctx, queryPredicateFunc predicate);
+bool kad_rpc_query_expire_find_any(struct kad_rpc_query **found, struct kad_ctx *ctx, queryPredicateFunc predicate);
 
 #endif /* KAD_RPC_H */

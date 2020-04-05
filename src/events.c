@@ -49,14 +49,7 @@ bool event_kad_bootstrap_cb(struct event_args args)
                          args.kad_bootstrap.kctx, args.kad_bootstrap.sock);
 }
 
-bool event_node_ping_cb(struct event_args args)
+bool event_kad_ping_cb(struct event_args args)
 {
-    return node_ping(args.node_ping.kctx, args.node_ping.sock, args.node_ping.node);
-}
-
-bool event_kad_join_cb(struct event_args args)
-{
-    return kad_join(args.kad_join.nodes, args.kad_join.nodes_len,
-                    args.kad_join.timers,
-                    args.kad_join.kctx, args.kad_join.sock);
+    return kad_ping(args.kad_ping.kctx, args.kad_ping.sock, args.kad_ping.node);
 }

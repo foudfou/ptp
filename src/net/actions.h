@@ -14,6 +14,11 @@
 
 enum conn_ret {CONN_OK, CONN_CLOSED};
 
+struct addr_list {
+    struct sockaddr_storage addr;
+    struct list_item item;
+};
+
 /**
  * A "peer" is a client/server listening on a TCP port that implements some
  * specific protocol (msg). A "node" is a client/server listening on a UDP port
@@ -38,7 +43,6 @@ int peer_conn_close_all(struct list_item *peers);
 
 bool kad_refresh(void *data);
 bool kad_bootstrap(struct list_item *timers, const struct config *conf, struct kad_ctx *kctx, const int sock);
-bool node_ping(struct kad_ctx *kctx, const int sock, const struct kad_node_info node);
-bool kad_join(struct sockaddr_storage nodes[], size_t nodes_len, struct list_item *timers, struct kad_ctx *kctx, const int sock);
+bool kad_ping(struct kad_ctx *kctx, const int sock, const struct kad_node_info node);
 
 #endif /* ACTIONS_H */
