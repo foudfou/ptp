@@ -12,7 +12,7 @@ struct event event_node_data = {"node-data", .cb=event_node_data_cb, .args={{{0}
 
 static bool event_peer_conn_cb(struct event_args args)
 {
-    if (peer_conn_accept_all(args.peer_conn.sock, args.peer_conn.peer_list,
+    if (peer_conn_accept_all(args.peer_conn.sock, args.peer_conn.peers,
                              args.peer_conn.nfds, args.peer_conn.conf) < 0) {
         log_error("Could not accept tcp connection.");
         return false;
@@ -23,7 +23,7 @@ struct event event_peer_conn = {"peer-conn", .cb=event_peer_conn_cb, .args={{{0}
 
 bool event_peer_data_cb(struct event_args args)
 {
-    struct peer *p = peer_find_by_fd(args.peer_data.peer_list, args.peer_data.fd);
+    struct peer *p = peer_find_by_fd(args.peer_data.peers, args.peer_data.fd);
     if (!p) {
         log_fatal("Unregistered peer fd=%d.", args.peer_data.fd);
         return false;
@@ -45,7 +45,7 @@ struct event event_kad_refresh = {"kad-refresh", .cb=event_kad_refresh_cb, .args
 
 bool event_kad_bootstrap_cb(struct event_args args)
 {
-    return kad_bootstrap(args.kad_bootstrap.timer_list, args.kad_bootstrap.conf,
+    return kad_bootstrap(args.kad_bootstrap.timers, args.kad_bootstrap.conf,
                          args.kad_bootstrap.kctx, args.kad_bootstrap.sock);
 }
 
@@ -56,5 +56,7 @@ bool event_node_ping_cb(struct event_args args)
 
 bool event_kad_join_cb(struct event_args args)
 {
-    return kad_join(args.kad_join.kctx, args.kad_join.sock, args.kad_join.nodes, args.kad_join.nodes_len);
+    return kad_join(args.kad_join.nodes, args.kad_join.nodes_len,
+                    args.kad_join.timers,
+                    args.kad_join.kctx, args.kad_join.sock);
 }

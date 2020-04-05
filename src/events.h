@@ -5,6 +5,14 @@
 /**
  * Events for the event-loop.
  *
+ * Events are created as sort of closures: a callback and its arguments. They
+ * are embedded into a timer, which in turn is appended to the main timer
+ * list. The event loop consumes timers, effectively removing them from the
+ * list and destroying them and their associated event.
+ *
+ * Events are usually inserted into to the event queue by scheduling them via
+ * timers, may it be with zero delay.
+ *
  * Some events are static as they will be unique during a loop iteration. The
  * callbacks' arguments must be set at runtime.
  */
@@ -13,6 +21,9 @@
 #include "utils/queue.h"
 
 #define EVENT_NAME_MAX 32
+
+#define EVENT_QUEUE_BIT_LEN 8
+QUEUE_GENERATE(event_queue, struct event, EVENT_QUEUE_BIT_LEN)
 
 struct event_args {
     union {
@@ -24,13 +35,13 @@ struct event_args {
 
         struct peer_conn {
             int                  sock;
-            struct list_item    *peer_list;
+            struct list_item    *peers;
             int                  nfds;
             const struct config *conf;
         } peer_conn;
 
         struct peer_data {
-            struct list_item *peer_list;
+            struct list_item *peers;
             struct kad_ctx   *kctx;
             int               fd;
         } peer_data;
@@ -40,7 +51,7 @@ struct event_args {
         } kad_refresh;
 
         struct kad_bootstrap {
-            struct list_item    *timer_list;
+            struct list_item    *timers;
             const struct config *conf;
             // for subsequent node_ping
             struct kad_ctx      *kctx;
@@ -54,10 +65,11 @@ struct event_args {
         } node_ping;
 
         struct kad_join {
-            struct kad_ctx          *kctx;
-            int                      sock;
             struct sockaddr_storage *nodes;
             size_t                   nodes_len;
+            struct list_item        *timers;
+            struct kad_ctx          *kctx;
+            int                      sock;
         } kad_join;
     };
 };
@@ -82,8 +94,5 @@ bool event_peer_data_cb(struct event_args args);
 bool event_kad_bootstrap_cb(struct event_args args);
 bool event_node_ping_cb(struct event_args args);
 bool event_kad_join_cb(struct event_args args);
-
-#define EVENT_QUEUE_BIT_LEN 8
-QUEUE_GENERATE(event_queue, struct event, EVENT_QUEUE_BIT_LEN)
 
 #endif /* EVENTS_H */

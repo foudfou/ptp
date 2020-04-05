@@ -60,13 +60,13 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
     }
 
     dht_destroy(ctx->dht);
-    struct list_item *query = &ctx->queries;
-    list_free_all(query, struct kad_rpc_query, item);
+    struct list_item *queries = &ctx->queries;
+    list_free_all(queries, struct kad_rpc_query, item);
     log_debug("DHT terminated.");
 }
 
 static struct kad_rpc_query *
-kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
+kad_rpc_query_find_by_id(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
 {
     struct kad_rpc_query *query;
     struct list_item * it = &ctx->queries;
@@ -76,7 +76,7 @@ kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
             log_error("Undefined container in list.");
             return NULL;
         }
-        if (memcmp(query->msg.tx_id.bytes, tx_id->bytes, KAD_RPC_MSG_TX_ID_LEN) == 0)
+        if (kad_rpc_msg_tx_id_eq(&query->msg.tx_id, tx_id))
             break;
     }
 
@@ -88,6 +88,44 @@ kad_rpc_query_find(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
     }
 
     return query;
+}
+
+typedef bool (*queryPredicateFunc)(struct kad_ctx *ctx, struct kad_rpc_query *q);
+
+/**
+ * Find any query with predicate, expiring old queries.
+ *
+ * @return bool: success
+ */
+bool kad_rpc_query_expire_find_any(struct kad_rpc_query **found,
+                                   struct kad_ctx *kctx,
+                                   queryPredicateFunc predicate)
+{
+    long long now = now_millis();
+    if (now == -1)
+        return false;
+
+    struct list_item * queries = &kctx->queries;
+    struct list_item * it = queries;
+    list_for(it, queries) {
+        struct kad_rpc_query *q = cont(it, struct kad_rpc_query, item);
+        if (!q) {
+            log_error("Undefined container in list.");
+            return false;
+        }
+
+        if (q->ts_ms + KAD_RPC_QUERY_EXPIRE_MILLIS < now) {
+            it = it->prev; // deleting inside for_list
+            list_delete(&q->item);
+            free_safer(q);
+            continue;
+        }
+
+        if (predicate(kctx, q))
+            *found = q;
+    }
+
+    return true;
 }
 
 static void
@@ -171,9 +209,9 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 
     char *id = log_fmt_hex(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
 
-    struct kad_rpc_query *query = kad_rpc_query_find(ctx, &msg->tx_id);
+    struct kad_rpc_query *query = kad_rpc_query_find_by_id(ctx, &msg->tx_id);
     if (!query) {
-        log_error("Query for response (id=%s) not found.", id);
+        log_warning("Query for response (id=%s) not found.", id);
         goto cleanup;
     }
     list_delete(&query->item);
@@ -311,7 +349,9 @@ void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
 bool kad_rpc_query_ping(const struct kad_ctx *ctx, struct iobuf *buf, struct kad_rpc_query *query)
 {
     list_init(&query->item);
-    query->ts_ms = now_millis();
+    if ((query->ts_ms = now_millis()) == -1) {
+        return false;
+    }
     kad_rpc_generate_tx_id(&query->msg.tx_id);
     query->msg.node_id = ctx->dht->self_id;
     query->msg.type = KAD_RPC_TYPE_QUERY;

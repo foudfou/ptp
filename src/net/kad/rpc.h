@@ -16,6 +16,9 @@
 
 #define KAD_RPC_MSG_TX_ID_LEN 2
 
+// FIXME move to defs.h
+#define KAD_RPC_QUERY_EXPIRE_MILLIS (1000*60)
+
 enum kad_rpc_type {
     KAD_RPC_TYPE_NONE,
     KAD_RPC_TYPE_ERROR,
@@ -93,7 +96,8 @@ struct kad_rpc_node_pair {
 
 struct kad_ctx {
     struct kad_dht   *dht;
-    struct list_item  queries; // kad_rcp_query list
+    // List of kad_rcp_query that we send
+    struct list_item  queries;
 };
 
 int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[]);
@@ -104,5 +108,9 @@ bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg);
 
 bool kad_rpc_query_ping(const struct kad_ctx *ctx, struct iobuf *buf, struct kad_rpc_query *query);
+
+typedef bool (*queryPredicateFunc)(struct kad_ctx *ctx, struct kad_rpc_query *q);
+
+bool kad_rpc_query_expire_find_any(struct kad_rpc_query **found, struct kad_ctx *kctx, queryPredicateFunc predicate);
 
 #endif /* KAD_RPC_H */

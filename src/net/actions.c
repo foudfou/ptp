@@ -13,6 +13,9 @@
 #define SERVER_TCP_BUFLEN 10
 #define SERVER_UDP_BUFLEN 1400
 
+// FIXME move to defs.h
+#define TIMER_KAD_JOIN_MILLIS 2000
+
 bool node_handle_data(int sock, struct kad_ctx *kctx)
 {
     bool ret = true;
@@ -286,7 +289,7 @@ bool kad_refresh(void *data)
 }
 
 /* Bootstrapping consists in:
-   - read bootstrap nodes from file. File only contains ip/port's, this
+   - read bootstrap nodes from file. File only contains ip/port's, this is
      similar to bittorrent.
    - ping each bootstrap node.
    - start a recursive timer to launch lookup requests for its own node ID,
@@ -298,9 +301,9 @@ bool kad_refresh(void *data)
    k-buckets further away than its closest neighbor. During the refreshes, u
    both populates its own k-buckets and inserts »
  */
-static bool kad_bootstrap_schedule_pings(struct sockaddr_storage nodes[], int nodes_len, struct list_item *timer_list, struct kad_ctx *kctx, const int sock);
-static bool kad_bootstrap_schedule_lookup(struct sockaddr_storage nodes[], int nodes_len, struct list_item *timer_list, struct kad_ctx *kctx, const int sock);
-bool kad_bootstrap(struct list_item *timer_list, const struct config *conf,
+static bool kad_bootstrap_schedule_pings(struct sockaddr_storage nodes[], size_t nodes_len, struct list_item *timers, struct kad_ctx *kctx, const int sock);
+static bool kad_bootstrap_schedule_join(long long delay, struct sockaddr_storage nodes[], size_t nodes_len, struct list_item *timers, struct kad_ctx *kctx, const int sock);
+bool kad_bootstrap(struct list_item *timers, const struct config *conf,
                    struct kad_ctx *kctx, const int sock)
 {
     char bootstrap_nodes_path[PATH_MAX];
@@ -333,18 +336,18 @@ bool kad_bootstrap(struct list_item *timer_list, const struct config *conf,
         log_warning("No bootstrap nodes read.");
     }
 
-    return kad_bootstrap_schedule_pings(nodes, nodes_len, timer_list, kctx, sock);
+    return kad_bootstrap_schedule_pings(nodes, nodes_len, timers, kctx, sock);
 }
 
 static bool kad_bootstrap_schedule_pings(
-    struct sockaddr_storage nodes[], int nodes_len,
-    struct list_item *timer_list, struct kad_ctx *kctx,
+    struct sockaddr_storage nodes[], size_t nodes_len,
+    struct list_item *timers, struct kad_ctx *kctx,
     const int sock)
 {
-    struct list_item timer_list_tmp;
-    list_init(&timer_list_tmp);
+    struct list_item timers_tmp;
+    list_init(&timers_tmp);
     struct event *event_node_ping[nodes_len];
-    int i=0;
+    size_t i=0;
     for (; i<nodes_len; i++) {
         event_node_ping[i] = malloc(sizeof(struct event));
         if (!event_node_ping[i]) {
@@ -371,19 +374,19 @@ static bool kad_bootstrap_schedule_pings(
             .name="node-ping", .ms=0, .expire=now_millis(),
             .event=event_node_ping[i], .once=true, .self=timer_node_ping
         };
-        list_append(&timer_list_tmp, &timer_node_ping->item);
+        list_append(&timers_tmp, &timer_node_ping->item);
     }
 
-    list_concat(timer_list, &timer_list_tmp);
+    list_concat(timers, &timers_tmp);
 
-    return kad_bootstrap_schedule_lookup(nodes, nodes_len, timer_list, kctx, sock);
+    return kad_bootstrap_schedule_join(0, nodes, nodes_len, timers, kctx, sock);
 
   cleanup:
-    for (int j=0; j<i; j++) {
+    for (size_t j=0; j<i; j++) {
         free(event_node_ping[j]);
     }
-    struct list_item *timer_it = &timer_list_tmp;
-    list_for(timer_it, &timer_list_tmp) {
+    struct list_item *timer_it = &timers_tmp;
+    list_for(timer_it, &timers_tmp) {
         struct timer *p = cont(timer_it, struct timer, item);
         if (p)
             free_safer(p->self);
@@ -391,9 +394,10 @@ static bool kad_bootstrap_schedule_pings(
     return false;
 }
 
-static bool kad_bootstrap_schedule_lookup(
-    struct sockaddr_storage nodes[], int nodes_len,
-    struct list_item *timer_list, struct kad_ctx *kctx,
+static bool kad_bootstrap_schedule_join(
+    long long delay,
+    struct sockaddr_storage nodes[], size_t nodes_len,
+    struct list_item *timers, struct kad_ctx *kctx,
     const int sock)
 {
     struct event *event_kad_join = malloc(sizeof(struct event));
@@ -404,7 +408,7 @@ static bool kad_bootstrap_schedule_lookup(
 
     *event_kad_join = (struct event){
         "kad-join", .cb=event_kad_join_cb,
-        .args.kad_join={.kctx=kctx, .sock=sock, .nodes=nodes, .nodes_len=nodes_len},
+        .args.kad_join={.nodes=nodes, .nodes_len=nodes_len, .timers=timers, .kctx=kctx, .sock=sock},
         .fatal=false, .self=event_kad_join
     };
 
@@ -414,10 +418,10 @@ static bool kad_bootstrap_schedule_lookup(
         goto cleanup;
     }
     *timer_kad_join = (struct timer){
-        .name="kad-join", .ms=0, .expire=now_millis(),
+        .name="kad-join", .ms=delay, .expire=now_millis()+delay,
         .event=event_kad_join, .once=true, .self=timer_kad_join
     };
-    list_append(timer_list, &timer_kad_join->item);
+    list_append(timers, &timer_kad_join->item);
 
     return true;
 
@@ -470,12 +474,35 @@ bool node_ping(struct kad_ctx *kctx, const int sock,
     return false;
 }
 
-bool kad_join(struct kad_ctx *kctx, const int sock,
-              struct sockaddr_storage *nodes, int nodes_len)
+static bool is_join_query(struct kad_ctx *ctx, struct kad_rpc_query *q)
 {
-    (void)kctx;
-    (void)sock;
+    return
+        q->msg.type == KAD_RPC_TYPE_QUERY &&
+        q->msg.meth == KAD_RPC_METH_FIND_NODE &&
+        kad_guid_eq(&q->msg.target, &ctx->dht->self_id);
+}
+
+
+bool kad_join(
+    struct sockaddr_storage nodes[], size_t nodes_len,
+    struct list_item *timers,
+    struct kad_ctx *kctx, const int sock)
+{
     (void)nodes;
     (void)nodes_len;
+    (void)timers;
+    (void)sock;
+    struct kad_rpc_query *query = NULL;
+    if (kad_rpc_query_expire_find_any(&query, kctx, is_join_query)) {
+        // TODO maybe remove query bootstrap node from nodes
+        /* query->node.addr */
+        /* return kad_bootstrap_schedule_join(TIMER_KAD_JOIN_MILLIS, next_nodes, next_nodes_len, timers, kctx, sock); */
+        return kad_bootstrap_schedule_join(TIMER_KAD_JOIN_MILLIS, nodes, nodes_len, timers, kctx, sock);
+    }
+    else {
+        // TODO remove first bootstrap node from nodes
+        /* return kad_bootstrap_schedule_lookup(next_nodes, next_nodes_len, timers, kctx, sock); */
+    }
+
     return true;
 }

@@ -13,15 +13,15 @@
 
 #define POLL_EVENTS POLLIN|POLLPRI
 
-// TODO we need a test build with 200ms. See defs.h.in
+// FIXME move to defs.h
 #define TIMER_KAD_REFRESH_MILLIS 300000
 
 static int pollfds_update(struct pollfd fds[], const int nlisten,
-                          struct list_item *peer_list)
+                          struct list_item *peers)
 {
-    struct list_item * it = peer_list;
+    struct list_item * it = peers;
     int npeer = nlisten;
-    list_for(it, peer_list) {
+    list_for(it, peers) {
         struct peer *p = cont(it, struct peer, item);
         if (!p) {
             log_error("Undefined container in list.");
@@ -37,19 +37,12 @@ static int pollfds_update(struct pollfd fds[], const int nlisten,
     return npeer;
 }
 
-static bool timer_list_free_all(struct list_item *timers)
+static bool timers_free_all(struct list_item *timers)
 {
     log_debug("Freeing remaining timers and events.");
-    struct list_item * it = timers;
-    list_for(it, timers) {
-        struct timer *t = cont(it, struct timer, item);
-        if (!t) {
-            log_error("Undefined container in list.");
-            return false;
-        }
-
-        it = it->prev; // deleting inside for_list
-        list_delete(&t->item);
+    while (!list_is_empty(timers)) {
+        struct timer *t = cont(timers->prev, struct timer, item);
+        list_delete(timers->prev);
         if (t->event && t->event->self) {
             free(t->event->self);
         }
@@ -97,12 +90,12 @@ bool server_run(const struct config *conf)
 
     event_queue evq = {0};
 
-    struct list_item timer_list = LIST_ITEM_INIT(timer_list);
+    struct list_item timers = LIST_ITEM_INIT(timers);
     struct timer timer_kad_refresh = {
         .name="kad-refresh", .ms=TIMER_KAD_REFRESH_MILLIS, .event=&event_kad_refresh,
         .item=LIST_ITEM_INIT(timer_kad_refresh.item)
     };
-    list_append(&timer_list, &timer_kad_refresh.item);
+    list_append(&timers, &timer_kad_refresh.item);
 
     struct kad_ctx kctx = {0};
     int nodes_len = kad_rpc_init(&kctx, conf->conf_dir);
@@ -118,7 +111,7 @@ bool server_run(const struct config *conf)
         }
         *event_kad_bootstrap = (struct event){
             "kad-bootstrap", .cb=event_kad_bootstrap_cb,
-            .args.kad_bootstrap={.timer_list=&timer_list, .conf=conf, .kctx=&kctx, .sock=sock_udp},
+            .args.kad_bootstrap={.timers=&timers, .conf=conf, .kctx=&kctx, .sock=sock_udp},
             .fatal=false, .self=event_kad_bootstrap
         };
 
@@ -134,7 +127,7 @@ bool server_run(const struct config *conf)
             .name="kad-bootstrap", .ms=0, .event=event_kad_bootstrap,
             .once=true, .self=timer_kad_bootstrap
         };
-        list_append(&timer_list, &timer_kad_bootstrap->item);
+        list_append(&timers, &timer_kad_bootstrap->item);
     }
     else {
         log_debug("Loaded %d nodes from config.");
@@ -148,9 +141,9 @@ bool server_run(const struct config *conf)
     fds[0].events = POLL_EVENTS;
     fds[1].fd = sock_tcp;
     fds[1].events = POLL_EVENTS;
-    struct list_item peer_list = LIST_ITEM_INIT(peer_list);
+    struct list_item peers = LIST_ITEM_INIT(peers);
 
-    if (!timers_init(&timer_list)) {
+    if (!timers_init(&timers)) {
         log_fatal("Timers' initialization failed. Aborting.");
         return false;
     }
@@ -163,7 +156,7 @@ bool server_run(const struct config *conf)
             break;
         }
 
-        int timeout = timers_get_soonest(&timer_list);
+        int timeout = timers_get_soonest(&timers);
         if (timeout < -1) {
             log_fatal("Timeout calculation failed. Aborting.");
             ret = false;
@@ -202,7 +195,7 @@ bool server_run(const struct config *conf)
 
             if (fds[i].fd == sock_tcp) {
                 event_peer_conn.args.peer_conn.sock = sock_tcp;
-                event_peer_conn.args.peer_conn.peer_list = &peer_list;
+                event_peer_conn.args.peer_conn.peers = &peers;
                 event_peer_conn.args.peer_conn.nfds = nfds;
                 event_peer_conn.args.peer_conn.conf = conf;
                 if (!event_queue_put(&evq, &event_peer_conn)) {
@@ -223,7 +216,7 @@ bool server_run(const struct config *conf)
                     "peer-data", .cb=event_peer_data_cb, .args={{{0}}}, .fatal=true,
                     .self=event_peer_data
                 };
-                event_peer_data->args.peer_data.peer_list = &peer_list;
+                event_peer_data->args.peer_data.peers = &peers;
                 event_peer_data->args.peer_data.kctx = &kctx;
                 event_peer_data->args.peer_data.fd = fds[i].fd;
                 if (!event_queue_put(&evq, event_peer_data)) {
@@ -233,7 +226,7 @@ bool server_run(const struct config *conf)
 
         } /* End loop poll fds */
 
-        if (!timers_apply(&timer_list, &evq)) {
+        if (!timers_apply(&timers, &evq)) {
             log_error("Failed to apply all timers.");
             ret = false;
             break;
@@ -258,14 +251,14 @@ bool server_run(const struct config *conf)
             }
         }
 
-        nfds = pollfds_update(fds, nlisten, &peer_list);
+        nfds = pollfds_update(fds, nlisten, &peers);
 
     } /* End event loop */
 
   server_end:
-    timer_list_free_all(&timer_list);
+    timers_free_all(&timers);
 
-    peer_conn_close_all(&peer_list);
+    peer_conn_close_all(&peers);
 
     kad_rpc_terminate(&kctx, conf->conf_dir);
 

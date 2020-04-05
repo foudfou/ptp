@@ -5,6 +5,9 @@
 /**
  * A ring buffer FIFO queue.
  *
+ * Since `head` and `tail` are a (portion of an) unsigned int, they wrap when
+ * reaching the limit. This saves us the modulo arithmetic.
+ *
  * Inspired from https://stackoverflow.com/a/13888143/421846.
  * Another cool implementation: http://www.martinbroadhurst.com/cirque-in-c.html.
  */
@@ -23,8 +26,8 @@ enum queue_state {
 #define QUEUE_GENERATE(name, type, len)                   \
     typedef struct {                                      \
         type     *entries[QUEUE_BIT_LEN(len)];            \
-        uint32_t  head    : len;                          \
-        uint32_t  tail    : len;                          \
+        uint32_t  head    : len; /* get */                \
+        uint32_t  tail    : len; /* put */                \
         uint32_t  is_full : 1;                            \
     } name;                                               \
     QUEUE_GENERATE_INIT(name)                             \
@@ -43,8 +46,7 @@ static inline bool name##_put(name *q, void *elt)                   \
 {                                                                   \
     if (q->is_full)                                                 \
         return false;                                               \
-    q->entries[q->tail] = elt;                                      \
-    q->tail++;                                                      \
+    q->entries[q->tail++] = elt;                                    \
     if (q->tail == q->head)                                         \
         q->is_full = true;                                          \
     return true;                                                    \
