@@ -344,6 +344,10 @@ static bool kad_bootstrap_schedule_pings(
     struct list_item *timers, struct kad_ctx *kctx,
     const int sock)
 {
+    long long now = now_millis();
+    if (now < 0)
+        return false;
+
     struct list_item timers_tmp;
     list_init(&timers_tmp);
     struct event *event_node_ping[nodes_len];
@@ -371,10 +375,10 @@ static bool kad_bootstrap_schedule_pings(
             goto cleanup;
         }
         *timer_node_ping = (struct timer){
-            .name="node-ping", .ms=0, .expire=now_millis(),
-            .event=event_node_ping[i], .once=true, .self=timer_node_ping
+            .name="node-ping", .delay=0, .once=true,
+            .event=event_node_ping[i], .self=timer_node_ping
         };
-        list_append(&timers_tmp, &timer_node_ping->item);
+        timer_init(&timers_tmp, timer_node_ping, now);
     }
 
     list_concat(timers, &timers_tmp);
@@ -418,12 +422,10 @@ static bool kad_bootstrap_schedule_join(
         goto cleanup;
     }
     *timer_kad_join = (struct timer){
-        .name="kad-join", .ms=delay, .expire=now_millis()+delay,
-        .event=event_kad_join, .once=true, .self=timer_kad_join
+        .name="kad-join", .delay=delay, .once=true,
+        .event=event_kad_join, .self=timer_kad_join
     };
-    list_append(timers, &timer_kad_join->item);
-
-    return true;
+    return timer_init(timers, timer_kad_join, 0);
 
   cleanup:
     free_safer(event_kad_join);

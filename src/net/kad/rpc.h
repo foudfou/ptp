@@ -83,7 +83,7 @@ struct kad_rpc_msg {
 
 struct kad_rpc_query {
     struct list_item     item;
-    long long            ts_ms; // for expiring of queries
+    long long            created; // for expiring queries
     struct kad_rpc_msg   msg;
     struct kad_node_info node;
 };

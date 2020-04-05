@@ -20,13 +20,12 @@ int main ()
     assert(t1);
     *t1 = (struct timer){
         .name = "t1",
-        .ms = 150,
+        .delay = 150,
         .once = true,
         .self = t1,
         .event = &ev1,
     };
-    list_append(&timer_list, &t1->item);
-    assert(timers_init(&timer_list));
+    assert(timer_init(&timer_list, t1, 0));
 
     assert(event_queue_status(&evq) == QUEUE_STATE_EMPTY);
     for (int i=0; i<4; ++i) {

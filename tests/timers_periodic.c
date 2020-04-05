@@ -14,9 +14,8 @@ int main ()
     event_queue evq = {0};
 
     struct list_item timer_list = LIST_ITEM_INIT(timer_list);
-    struct timer t1 = { .name="t1", .ms=250, .event=&ev1, .item=LIST_ITEM_INIT(t1.item) };
-    list_append(&timer_list, &t1.item);
-    assert(timers_init(&timer_list));
+    struct timer t1 = { .name="t1", .delay=250, .event=&ev1, .item=LIST_ITEM_INIT(t1.item) };
+    assert(timer_init(&timer_list, &t1, 0));
 
     assert(event_queue_status(&evq) == QUEUE_STATE_EMPTY);
     int timeout_prev = 30000;

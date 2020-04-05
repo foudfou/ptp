@@ -23,7 +23,6 @@ bool timers_clock_res_is_millis()
     return true;
 }
 
-/** Also used to initialize `timer.expire`. */
 long long now_millis()
 {
     struct timespec tspec = {0};
@@ -34,23 +33,17 @@ long long now_millis()
     return millis_from_timespec(tspec);
 }
 
-bool timers_init(struct list_item *timers)
+/**
+ * `now` optional: will be set to current time if 0.
+ */
+bool timer_init(struct list_item *timers, struct timer *t, long long time)
 {
-    long long tick_init = now_millis();
-    if (tick_init < 0)
+    if (time == 0 && (time = now_millis()) < 0)
         return false;
-    log_debug("tick_init=%lld", tick_init);
 
-    struct list_item * it = timers;
-    list_for(it, timers) {
-        struct timer *t = cont(it, struct timer, item);
-        if (!t) {
-            log_error("Undefined container in list.");
-            return false;
-        }
-        t->expire = tick_init + t->ms;
-        log_debug("timer '%s' inited, expire=%lld", t->name, t->expire);
-    }
+    t->expire = time + t->delay;
+    list_append(timers, &t->item);
+    log_debug("timer '%s' inited, expire=%lld", t->name, t->expire);
 
     return true;
 }
@@ -72,11 +65,17 @@ int timers_get_soonest(struct list_item *timers)
             return -2;
         }
 
-        if (t->expire - tick < soonest)
+        if (t->expire - tick < soonest) {
             soonest = t->expire - tick;
+        }
     }
 
-    return soonest == LLONG_MAX ? -1 : soonest;
+    if (soonest < 0) // some timers already expired
+        soonest = 0;
+    else if (soonest == LLONG_MAX)
+        soonest = -1;
+
+    return soonest;
 }
 
 bool timers_apply(struct list_item *timers, event_queue *evq)
@@ -114,7 +113,7 @@ bool timers_apply(struct list_item *timers, event_queue *evq)
                 break;
             }
             else {
-                t->expire += t->ms;
+                t->expire += t->delay;
                 missed++;
             }
         }

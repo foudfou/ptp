@@ -24,11 +24,18 @@
 
 #define TIMER_NAME_MAX 64
 
+/**
+ * Timers may be periodic or once-only.
+ *
+ * Initialize with timer_init().
+ */
 struct timer {
     struct list_item   item;
     char               name[TIMER_NAME_MAX];
-    long long          ms;
-    long long          expire;
+    /* To compute `expire` for periodic timers. */
+    long long          delay;   // in ms,
+    /* To compute when to trigger event (timeout). */
+    long long          expire;  // timestamp for expiry
     bool               catch_up;
     bool               once;
     /* Address to self when allocated. `once` timers are expected to be
@@ -43,8 +50,7 @@ struct timer {
 
 bool timers_clock_res_is_millis();
 long long now_millis();
-/** Before the event loop. */
-bool timers_init(struct list_item *timers);
+bool timer_init(struct list_item *timers, struct timer *t, long long time);
 /** Right before poll() to calculate its `timeout` parameter. */
 int timers_get_soonest(struct list_item *timers);
 /** After poll() has returned. */

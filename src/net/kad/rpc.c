@@ -114,7 +114,7 @@ bool kad_rpc_query_expire_find_any(struct kad_rpc_query **found,
             return false;
         }
 
-        if (q->ts_ms + KAD_RPC_QUERY_EXPIRE_MILLIS < now) {
+        if (q->created + KAD_RPC_QUERY_EXPIRE_MILLIS < now) {
             it = it->prev; // deleting inside for_list
             list_delete(&q->item);
             free_safer(q);
@@ -349,7 +349,7 @@ void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
 bool kad_rpc_query_ping(const struct kad_ctx *ctx, struct iobuf *buf, struct kad_rpc_query *query)
 {
     list_init(&query->item);
-    if ((query->ts_ms = now_millis()) == -1) {
+    if ((query->created = now_millis()) == -1) {
         return false;
     }
     kad_rpc_generate_tx_id(&query->msg.tx_id);

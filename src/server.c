@@ -90,12 +90,17 @@ bool server_run(const struct config *conf)
 
     event_queue evq = {0};
 
+    long long tick_init = now_millis();
+    if (tick_init < 0)
+        return false;
+    log_debug("tick_init=%lld", tick_init);
     struct list_item timers = LIST_ITEM_INIT(timers);
+
     struct timer timer_kad_refresh = {
-        .name="kad-refresh", .ms=TIMER_KAD_REFRESH_MILLIS, .event=&event_kad_refresh,
-        .item=LIST_ITEM_INIT(timer_kad_refresh.item)
+        .name="kad-refresh", .delay=TIMER_KAD_REFRESH_MILLIS,
+        .event=&event_kad_refresh, .item=LIST_ITEM_INIT(timer_kad_refresh.item)
     };
-    list_append(&timers, &timer_kad_refresh.item);
+    timer_init(&timers, &timer_kad_refresh, tick_init);
 
     struct kad_ctx kctx = {0};
     int nodes_len = kad_rpc_init(&kctx, conf->conf_dir);
@@ -124,10 +129,10 @@ bool server_run(const struct config *conf)
             return false;
         }
         *timer_kad_bootstrap = (struct timer){
-            .name="kad-bootstrap", .ms=0, .event=event_kad_bootstrap,
-            .once=true, .self=timer_kad_bootstrap
+            .name="kad-bootstrap", .delay=0, .once=true,
+            .event=event_kad_bootstrap, .self=timer_kad_bootstrap
         };
-        list_append(&timers, &timer_kad_bootstrap->item);
+        timer_init(&timers, timer_kad_bootstrap, tick_init);
     }
     else {
         log_debug("Loaded %d nodes from config.");
@@ -143,11 +148,6 @@ bool server_run(const struct config *conf)
     fds[1].events = POLL_EVENTS;
     struct list_item peers = LIST_ITEM_INIT(peers);
 
-    if (!timers_init(&timers)) {
-        log_fatal("Timers' initialization failed. Aborting.");
-        return false;
-    }
-
     while (true) {
 
         if (BITS_CHK(sig_events, EV_SIGINT)) {
@@ -158,7 +158,7 @@ bool server_run(const struct config *conf)
 
         int timeout = timers_get_soonest(&timers);
         if (timeout < -1) {
-            log_fatal("Timeout calculation failed. Aborting.");
+            log_fatal("Timeout calculation failed (%d). Aborting.", timeout);
             ret = false;
             break;
         }
