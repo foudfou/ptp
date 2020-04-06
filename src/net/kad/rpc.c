@@ -240,7 +240,12 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
     }
 
     case KAD_RPC_METH_FIND_NODE: {
-        // TODO update dht
+        for (size_t i=0; i<msg->nodes_len; ++i) {
+            if (msg->nodes[i].id.is_set)
+                kad_rpc_update_dht(ctx, &msg->nodes[i].addr, &msg->nodes[i].id);
+            else
+                log_warning("Node id not set, DHT not updated.");
+        }
         break;
     }
 
@@ -357,7 +362,9 @@ void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
     log_debug("}");
 }
 
-bool kad_rpc_query_ping(const struct kad_ctx *ctx, struct iobuf *buf, struct kad_rpc_query *query)
+bool kad_rpc_query_create(struct iobuf *buf,
+                          struct kad_rpc_query *query,
+                          const struct kad_ctx *ctx)
 {
     list_init(&query->item);
     if ((query->created = now_millis()) == -1) {
@@ -366,7 +373,6 @@ bool kad_rpc_query_ping(const struct kad_ctx *ctx, struct iobuf *buf, struct kad
     kad_rpc_generate_tx_id(&query->msg.tx_id);
     query->msg.node_id = ctx->dht->self_id;
     query->msg.type = KAD_RPC_TYPE_QUERY;
-    query->msg.meth = KAD_RPC_METH_PING;
 
     if (!benc_encode_rpc_msg(buf, &query->msg)) {
         log_error("Error while encoding ping query.");

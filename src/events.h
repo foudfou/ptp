@@ -68,6 +68,7 @@ struct event_args {
             struct kad_ctx       *kctx;
             int                   sock;
             struct kad_node_info  node;
+            kad_guid              target;
         } kad_find_node;
     };
 };

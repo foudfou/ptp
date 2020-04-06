@@ -49,7 +49,14 @@ bool event_kad_bootstrap_cb(struct event_args args)
                          args.kad_bootstrap.kctx, args.kad_bootstrap.sock);
 }
 
+// cppcheck-suppress unusedFunction
 bool event_kad_ping_cb(struct event_args args)
 {
     return kad_ping(args.kad_ping.kctx, args.kad_ping.sock, args.kad_ping.node);
+}
+
+bool event_kad_find_node_cb(struct event_args args)
+{
+    return kad_find_node(args.kad_find_node.kctx, args.kad_find_node.sock,
+                         args.kad_find_node.node, args.kad_find_node.target);
 }

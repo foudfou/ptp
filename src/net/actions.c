@@ -14,9 +14,6 @@
 #define SERVER_TCP_BUFLEN 10
 #define SERVER_UDP_BUFLEN 1400
 
-// FIXME move to defs.h
-#define TIMER_KAD_JOIN_MILLIS 2000
-
 bool node_handle_data(int sock, struct kad_ctx *kctx)
 {
     bool ret = true;
@@ -39,11 +36,11 @@ bool node_handle_data(int sock, struct kad_ctx *kctx)
     struct iobuf rsp = {0};
     bool resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, &rsp);
     if (rsp.pos == 0) {
-        log_info("Handling incoming message did not produce response. Not responding.");
+        log_info("Handling incoming message doesn't need further response.");
         ret = resp; goto cleanup;
     }
     if (rsp.pos > SERVER_UDP_BUFLEN) {
-        log_error("Response too long.");
+        log_error("Response too large.");
         ret = false; goto cleanup;
     }
 
@@ -306,7 +303,7 @@ bool kad_refresh(void *data)
    performs a node lookup for its own node ID. Finally, u refreshes all
    k-buckets further away than its closest neighbor. »
  */
-static bool kad_bootstrap_schedule_pings(struct sockaddr_storage nodes[], size_t nodes_len, struct list_item *timers, struct kad_ctx *kctx, const int sock);
+static bool kad_bootstrap_schedule_lookups(struct sockaddr_storage nodes[], size_t nodes_len, struct list_item *timers, struct kad_ctx *kctx, const int sock);
 bool kad_bootstrap(struct list_item *timers, const struct config *conf,
                    struct kad_ctx *kctx, const int sock)
 {
@@ -341,80 +338,28 @@ bool kad_bootstrap(struct list_item *timers, const struct config *conf,
         return true;
     }
 
-    return kad_bootstrap_schedule_pings(nodes, nodes_len, timers, kctx, sock);
+    return kad_bootstrap_schedule_lookups(nodes, nodes_len, timers, kctx, sock);
 }
 
-static bool kad_bootstrap_schedule_pings(
-    struct sockaddr_storage nodes[], size_t nodes_len,
-    struct list_item *timers, struct kad_ctx *kctx,
-    const int sock)
-{
-    long long now = now_millis();
-    if (now < 0)
-        return false;
-
-    struct list_item timers_tmp;
-    list_init(&timers_tmp);
-
-    struct event *event_kad_ping[nodes_len];
-    size_t i=0;
-    for (; i<nodes_len; i++) {
-        event_kad_ping[i] = malloc(sizeof(struct event));
-        if (!event_kad_ping[i]) {
-            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-            goto cleanup;
-        }
-        *event_kad_ping[i] = (struct event){
-            "node-ping", .cb=event_kad_ping_cb,
-            .args.kad_ping={
-                .kctx=kctx, .sock=sock,
-                .node={.id={{0},0}, .addr=nodes[i], .addr_str={0}}
-            },
-            .fatal=false, .self=event_kad_ping[i]
-        };
-        sockaddr_storage_fmt(event_kad_ping[i]->args.kad_ping.node.addr_str,
-                             &event_kad_ping[i]->args.kad_ping.node.addr);
-
-        struct timer *timer_kad_ping = malloc(sizeof(struct timer));
-        if (!timer_kad_ping) {
-            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-            goto cleanup;
-        }
-        *timer_kad_ping = (struct timer){
-            .name="node-ping", .delay=0, .once=true,
-            .event=event_kad_ping[i], .self=timer_kad_ping
-        };
-        timer_init(&timers_tmp, timer_kad_ping, now);
-    }
-
-    list_concat(timers, &timers_tmp);
-    return true;
-
-  cleanup:
-    for (size_t j=0; j<i; j++) {
-        free(event_kad_ping[j]);
-    }
-    list_free_all((&timers_tmp), struct timer, item);
-    return false;
-}
-
-bool kad_ping(struct kad_ctx *kctx, const int sock,
-               const struct kad_node_info node)
+bool kad_query(struct kad_ctx *kctx, const int sock,
+               const struct kad_node_info node,
+               const struct kad_rpc_msg msg)
 {
     struct kad_rpc_query *query = calloc(1, sizeof(struct kad_rpc_query));
     if (!query) {
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return false;
     }
-    query->node = node;
+    memcpy(&query->node, &node, sizeof(struct kad_node_info));
+    memcpy(&query->msg, &msg, sizeof(struct kad_rpc_msg));
 
     struct iobuf qbuf = {0};
-    if (!kad_rpc_query_ping(kctx, &qbuf, query)) {
+    if (!kad_rpc_query_create(&qbuf, query, kctx)) {
         goto failed1;
     }
 
     char *id = log_fmt_hex(LOG_DEBUG, query->msg.tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
-    log_info("Kad pinging %s (id=%s)", node.addr_str, id);
+    log_info("Sending kad msg [%d] to %s (id=%s)", query->msg.meth, node.addr_str, id);
 
     socklen_t addr_len = sizeof(struct sockaddr_storage);
     ssize_t slen = sendto(sock, qbuf.buf, qbuf.pos, 0, (struct sockaddr *)&node.addr, addr_len);
@@ -438,5 +383,81 @@ bool kad_ping(struct kad_ctx *kctx, const int sock,
   failed1:
     iobuf_reset(&qbuf);
     free_safer(query);
+    return false;
+}
+
+bool kad_ping(struct kad_ctx *kctx, const int sock,
+             const struct kad_node_info node)
+{
+    struct kad_rpc_msg msg = {
+        .meth=KAD_RPC_METH_PING
+    };
+    return kad_query(kctx, sock, node, msg);
+}
+
+
+bool kad_find_node(struct kad_ctx *kctx, const int sock,
+                   const struct kad_node_info node, const kad_guid target)
+{
+    struct kad_rpc_msg msg = {
+        .meth=KAD_RPC_METH_FIND_NODE,
+        .target=target
+    };
+    return kad_query(kctx, sock, node, msg);
+}
+
+static bool kad_bootstrap_schedule_lookups(
+    struct sockaddr_storage nodes[], size_t nodes_len,
+    struct list_item *timers, struct kad_ctx *kctx,
+    const int sock)
+{
+    long long now = now_millis();
+    if (now < 0)
+        return false;
+
+    struct list_item timers_tmp;
+    list_init(&timers_tmp);
+
+    struct event *events[nodes_len];
+    size_t i=0;
+    for (; i<nodes_len; i++) {
+        events[i] = malloc(sizeof(struct event));
+        if (!events[i]) {
+            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+            goto cleanup;
+        }
+        *events[i] = (struct event){
+            "kad-find-node", .cb=event_kad_find_node_cb,
+            .args.kad_find_node={
+                .kctx=kctx, .sock=sock,
+                .node={.id={{0},0}, .addr=nodes[i], .addr_str={0}},
+                .target=kctx->dht->self_id
+            },
+            .fatal=false, .self=events[i]
+        };
+        sockaddr_storage_fmt(events[i]->args.kad_find_node.node.addr_str,
+                             &events[i]->args.kad_find_node.node.addr);
+
+        struct timer *timer = malloc(sizeof(struct timer));
+        if (!timer) {
+            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+            goto cleanup;
+        }
+        *timer = (struct timer){
+            .name="kad-find-node", .once=true,
+            .delay=0 /* not speading the queries for now */,
+            .event=events[i], .self=timer
+        };
+        timer_init(&timers_tmp, timer, now);
+    }
+
+    list_concat(timers, &timers_tmp);
+    return true;
+
+  cleanup:
+    for (size_t j=0; j<i; j++) {
+        free(events[j]);
+    }
+    list_free_all((&timers_tmp), struct timer, item);
     return false;
 }

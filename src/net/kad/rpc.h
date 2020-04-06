@@ -107,7 +107,7 @@ bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
                     const char buf[], const size_t slen, struct iobuf *rsp);
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg);
 
-bool kad_rpc_query_ping(const struct kad_ctx *ctx, struct iobuf *buf, struct kad_rpc_query *query);
+bool kad_rpc_query_create(struct iobuf *buf, struct kad_rpc_query *query, const struct kad_ctx *ctx);
 
 typedef bool (*queryPredicateFunc)(struct kad_ctx *ctx, struct kad_rpc_query *q);
 
