@@ -94,7 +94,7 @@ typedef bool (*queryPredicateFunc)(struct kad_ctx *ctx, struct kad_rpc_query *q)
 
 /* kad_rpc_query_expire_find_any(&query, ctx, is_join_query) */
 // cppcheck-suppress unusedFunction
-bool is_join_query(struct kad_ctx *ctx, struct kad_rpc_query *q)
+bool is_find_node_query(struct kad_ctx *ctx, struct kad_rpc_query *q)
 {
     return
         q->msg.type == KAD_RPC_TYPE_QUERY &&

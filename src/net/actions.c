@@ -306,7 +306,7 @@ bool kad_refresh(void *data)
    performs a node lookup for its own node ID. Finally, u refreshes all
    k-buckets further away than its closest neighbor. »
  */
-static bool kad_bootstrap_schedule_pings(struct list_item *addrs, size_t addrs_len, struct list_item *timers, struct kad_ctx *kctx, const int sock);
+static bool kad_bootstrap_schedule_pings(struct sockaddr_storage nodes[], size_t nodes_len, struct list_item *timers, struct kad_ctx *kctx, const int sock);
 bool kad_bootstrap(struct list_item *timers, const struct config *conf,
                    struct kad_ctx *kctx, const int sock)
 {
@@ -341,65 +341,34 @@ bool kad_bootstrap(struct list_item *timers, const struct config *conf,
         return true;
     }
 
-    // Need long-lived data for downstream functions.
-    struct list_item *addrs = malloc(sizeof(struct list_item));
-    if (!addrs) {
-        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-        return false;
-    }
-    list_init(addrs);
-    for (int i=0; i<nodes_len; ++i) {
-        struct addr_list *addr = malloc(sizeof(struct addr_list));
-        if (!addr) {
-            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-            goto cleanup;
-        }
-        *addr = (struct addr_list){nodes[i], LIST_ITEM_INIT(addr->item)};
-        log_error("____addr=%p, item=%p", addr, &addr->item);
-        list_append(addrs, &addr->item);
-    }
-
-    return kad_bootstrap_schedule_pings(addrs, nodes_len, timers, kctx, sock);
-
-  cleanup:
-    list_free_all(addrs, struct addr_list, item);
-    free_safer(addrs);
-    return false;
+    return kad_bootstrap_schedule_pings(nodes, nodes_len, timers, kctx, sock);
 }
 
 static bool kad_bootstrap_schedule_pings(
-    struct list_item *addrs, size_t addrs_len,
+    struct sockaddr_storage nodes[], size_t nodes_len,
     struct list_item *timers, struct kad_ctx *kctx,
     const int sock)
 {
-    bool ret = false;
-
     long long now = now_millis();
     if (now < 0)
         return false;
 
     struct list_item timers_tmp;
     list_init(&timers_tmp);
-    struct event *event_kad_ping[addrs_len];
-    size_t i=0;
-    struct list_item * it = addrs;
-    list_for(it, addrs) {
-        struct addr_list *a = cont(it, struct addr_list, item);
-        if (!a) {
-            log_error("Undefined container in list.");
-            return NULL;
-        }
 
+    struct event *event_kad_ping[nodes_len];
+    size_t i=0;
+    for (; i<nodes_len; i++) {
         event_kad_ping[i] = malloc(sizeof(struct event));
         if (!event_kad_ping[i]) {
             log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-            goto cleanup_fail;
+            goto cleanup;
         }
         *event_kad_ping[i] = (struct event){
             "node-ping", .cb=event_kad_ping_cb,
             .args.kad_ping={
                 .kctx=kctx, .sock=sock,
-                .node={.id={{0},0}, .addr=a->addr, .addr_str={0}}
+                .node={.id={{0},0}, .addr=nodes[i], .addr_str={0}}
             },
             .fatal=false, .self=event_kad_ping[i]
         };
@@ -409,33 +378,24 @@ static bool kad_bootstrap_schedule_pings(
         struct timer *timer_kad_ping = malloc(sizeof(struct timer));
         if (!timer_kad_ping) {
             log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-            goto cleanup_fail;
+            goto cleanup;
         }
         *timer_kad_ping = (struct timer){
             .name="node-ping", .delay=0, .once=true,
             .event=event_kad_ping[i], .self=timer_kad_ping
         };
         timer_init(&timers_tmp, timer_kad_ping, now);
-
-        i++;
     }
 
     list_concat(timers, &timers_tmp);
+    return true;
 
-    ret = true;
-    goto cleanup_ok;
-
-  cleanup_fail:
+  cleanup:
     for (size_t j=0; j<i; j++) {
         free(event_kad_ping[j]);
     }
     list_free_all((&timers_tmp), struct timer, item);
-
-  cleanup_ok:
-    list_free_all(addrs, struct addr_list, item);
-    free_safer(addrs);
-
-    return ret;
+    return false;
 }
 
 bool kad_ping(struct kad_ctx *kctx, const int sock,
