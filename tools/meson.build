@@ -8,6 +8,7 @@ cover = run_target('cover', command : cover_bin)
 # Use '--xml' to find error id to ignore.
 cppcheck = run_target('cppcheck', command : [
   'cppcheck', '--enable=all', '--std=c11', '--inconclusive',
+  '--template="{file}({line}): {severity} ({id}): {message}"',
   # '--project='+join_paths(meson.build_root(), 'compile_commands.json'),
   '--error-exitcode=1', '--inline-suppr',
   '--suppress=assertWithSideEffect',
@@ -20,6 +21,5 @@ cppcheck = run_target('cppcheck', command : [
   '-I'+join_paths(meson.build_root(), 'src/net/kad/.tiny'),
   join_paths(meson.source_root(), 'src'),
   join_paths(meson.source_root(), 'tests'),
-  '--xml',
   # '--check-config',
 ])

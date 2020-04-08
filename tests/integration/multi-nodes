@@ -115,8 +115,9 @@ with tempfile.TemporaryDirectory() as tmp_dir1, \
         shutil.copyfile(tmp_dir2 + "/dht.dat", "/tmp/dht2.dat")
         shutil.copyfile(tmp_dir3 + "/dht.dat", "/tmp/dht3.dat")
 
-        # TODO inspect dht contents. We expect node2 and node3 to know about
-        # each other.
+        # TODO inspect dht contents. After bootstrap we expect node2 *or* node3
+        # to know about the other one. After refresh we expect both nodes to
+        # know about each other.
 
         # shutil.rmtree(tmp_dir)
         print(os.listdir(tmp_dir1))

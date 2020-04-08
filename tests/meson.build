@@ -30,6 +30,7 @@ tests_sources = [
   'kad/bencode/parser.c',
   'kad/bencode/rpc_msg.c',
   'kad/dht.c',
+  'kad/queries.c',
   'kad/rpc.c',
   'timers_periodic.c',
   'timers_once.c',

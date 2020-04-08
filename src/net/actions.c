@@ -33,6 +33,8 @@ bool node_handle_data(int sock, struct kad_ctx *kctx)
     }
     log_debug("Received %d bytes.", slen);
 
+    // FIXME delay response
+
     struct iobuf rsp = {0};
     bool resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, &rsp);
     if (rsp.pos == 0) {
@@ -290,6 +292,7 @@ bool kad_refresh(void *data)
    - read bootstrap nodes from file. File only contains ip/port's, this is
      similar to bittorrent.
    - launch lookup request for its own node ID to each bootstrap node.
+   - refresh all k-buckets TODO
 
    Note ping request isn't useful since the find_node request will give us more
    information.
@@ -372,7 +375,8 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
     log_debug("Sent %d bytes.", slen);
     iobuf_reset(&qbuf);
 
-    list_append(&kctx->queries, &query->item);
+    // FIXME kad_rpc_add_query() to possibly control the list.
+    list_append(&kctx->queries, &query->litem);
 
     free_safer(id);
     iobuf_reset(&qbuf);

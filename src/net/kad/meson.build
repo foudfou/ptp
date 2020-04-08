@@ -2,12 +2,12 @@
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 libkad_sources = [
+  'bencode/dht.c',
+  'bencode/parser.c',
+  'bencode/rpc_msg.c',
+  'bencode/serde.c',
   'dht.c',
   'rpc.c',
-  'bencode/parser.c',
-  'bencode/serde.c',
-  'bencode/rpc_msg.c',
-  'bencode/dht.c',
 ]
 
 subdir('.full')

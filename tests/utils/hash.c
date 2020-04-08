@@ -25,12 +25,11 @@ static inline uint32_t stoi_hash(const char *str)
 }
 
 /* We MUST provide our own key comparison function. See hash.h. */
-static inline int stoi_compare(const char * keyA, const char * keyB)
+static inline int stoi_cmp(const char * keyA, const char * keyB)
 {
     return strncmp(keyA, keyB, KEY_MAX_LENGTH);
 }
-#define HASH_KEY_TYPE char *
-HASH_GENERATE(stoi, item, key)
+HASH_GENERATE(stoi, stoi, item, key, char *, 0xff)
 
 
 /* Here's how we create another hash type. */
@@ -41,18 +40,16 @@ struct person {
     struct {char* name; int age; char gender;} val;
 };
 
-static inline uint32_t person_hash(const uint64_t key)
+static inline uint32_t person_by_key_hash(const uint64_t key)
 {
     return (uint32_t)key;
 }
 
-static inline int person_compare(const uint64_t keyA, const uint64_t keyB)
+static inline int person_by_key_cmp(const uint64_t keyA, const uint64_t keyB)
 {
     return keyB - keyA;
 }
-#undef HASH_KEY_TYPE
-#define HASH_KEY_TYPE uint64_t
-HASH_GENERATE(person, item, key)
+HASH_GENERATE(person_by_key, person, item, key, uint64_t, HASH_SIZE)
 
 
 int main ()
@@ -65,33 +62,32 @@ int main ()
 
     /* Hash insertion */
     struct stoi one = {.key="one", .val=1, .item=LIST_ITEM_INIT(one.item)}; // static decl
-    stoi_insert(hash, HASH_SIZE, one.key, &(one.item));
+    stoi_insert(hash, one.key, &(one.item));
     struct stoi bogus_one = {.key="one", .val=10, .item=LIST_ITEM_INIT(one.item)};
     // duplicate key not checked !!
-    stoi_insert(hash, HASH_SIZE, bogus_one.key, &(bogus_one.item));
+    stoi_insert(hash, bogus_one.key, &(bogus_one.item));
     struct stoi two = {.key="two", .val=2, .item=LIST_ITEM_INIT(two.item)};
-    stoi_insert(hash, HASH_SIZE, two.key, &(two.item));
+    stoi_insert(hash, two.key, &(two.item));
 
     /* Hash getting item */
-    struct stoi * found = stoi_get(hash, HASH_SIZE, "two");
+    struct stoi * found = stoi_get(hash, "two");
     assert(!strncmp(found->key, "two", 3));
     assert(found->val == 2);
-    struct stoi * notfound = stoi_get(hash, HASH_SIZE, "three");
+    struct stoi * notfound = stoi_get(hash, "three");
     assert(!notfound);
 
     /* Hash deletion */
-    found = stoi_get(hash, HASH_SIZE, "one");
+    found = stoi_get(hash, "one");
     assert(found->val == 10);
     hash_delete(&found->item);
-    found = stoi_get(hash, HASH_SIZE, "one");
+    found = stoi_get(hash, "one");
     assert(found->val == 1);
 
     /* Hash traversal */
-    int i = 0;
     // cppcheck-suppress unreadVariable
     struct list_item* it = hash;
     int values[2] = {0}; int j = 0;
-    hash_for_all(hash, HASH_SIZE, i, it) {
+    hash_for(hash, HASH_SIZE, it) {
         struct stoi* tmp = cont(it, struct stoi, item);
         assert(tmp);
         values[j++] = tmp->val;
@@ -105,8 +101,8 @@ int main ()
     struct person bob = {LIST_ITEM_INIT(bob.item), 0xad00fe00, {"bob", 28, 'M'}};
     HASH_DECL(phone_book, HASH_SIZE);
     hash_init(phone_book, HASH_SIZE);
-    person_insert(phone_book, HASH_SIZE, bob.key, &(bob.item));
-    struct person * someone = person_get(phone_book, HASH_SIZE, 0xad00fe00);
+    person_by_key_insert(phone_book, bob.key, &(bob.item));
+    struct person * someone = person_by_key_get(phone_book, 0xad00fe00);
     assert(!strncmp(someone->val.name, "bob", 3));
 
 

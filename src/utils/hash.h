@@ -8,7 +8,7 @@
  * following signatures:
  *
  *   uint32_t name##_hash(const HASH_KEY_TYPE key);
- *   int name##_compare(const HASH_KEY_TYPE keyA, const HASH_KEY_TYPE keyB);
+ *   int name##_cmp(const HASH_KEY_TYPE keyA, const HASH_KEY_TYPE keyB);
  *
  * The reason is that we can hardly make a hash function for all types (struct,
  * char*, int). Neither can we compare keys of unknow formats.
@@ -25,9 +25,9 @@
 #define HASH_DECL(name, size)                   \
     struct list_item name[size]
 
-#define HASH_GENERATE(name, field_item, field_key)  \
-    HASH_GENERATE_INSERT(name)                      \
-    HASH_GENERATE_GET(name, field_item, field_key)
+#define HASH_GENERATE(name, struct_name, field_item, field_key, key_type, size) \
+    HASH_GENERATE_INSERT(name, key_type, size)                          \
+    HASH_GENERATE_GET(name, struct_name, field_item, field_key, key_type, size)
 
 /**
  * Initialize a hash.
@@ -50,43 +50,42 @@ static inline void hash_delete(struct list_item* item)
 /**
  * Traverse a hash.
  */
-#define hash_for_all(hash, size, i, it)                     \
-    for ((i) = 0; i < (size); (i++))                        \
+#define hash_for(hash, size, it)                            \
+    for (size_t i = 0; i < (size); (i++))                   \
         if (!list_is_empty(&hash[i]) && ((it) = &hash[i]))  \
             list_for(it, &hash[i])
 
-#define HASH_GENERATE_INSERT(name)              \
+#define HASH_GENERATE_INSERT(name, key_type, size)  \
 /**
  * Insert a list item into a hash.
  *
  * @warning we don't check if an item with key @key has already been inserted!
  */                                                                     \
 static inline void                                                      \
-name##_insert(struct list_item* hash, const size_t size,                \
-                     const HASH_KEY_TYPE key, struct list_item* item)   \
+name##_insert(struct list_item* hash, const key_type key, struct list_item* item) \
 {                                                                       \
     uint32_t index = name##_hash(key) % size;                           \
     list_prepend(&hash[index], item);                                   \
 }
 
-#define HASH_GENERATE_GET(name, field_item, field_key)  \
+#define HASH_GENERATE_GET(name, struct_name, field_item, field_key, key_type, size)  \
 /**
  * Gets an entry by its key.
  *
  * Returns NULL when not found.
  */                                                                     \
-static inline struct name*                                              \
-name##_get(struct list_item* hash, const size_t size, const HASH_KEY_TYPE key) \
+static inline struct struct_name*                                       \
+name##_get(struct list_item* hash, const key_type key)                  \
 {                                                                       \
     uint32_t index = name##_hash(key) % size;                           \
     struct list_item* slot = &hash[index];                              \
     struct list_item* it = slot;                                        \
-    struct name* found;                                                 \
+    struct struct_name* found;                                          \
     list_for(it, slot) {                                                \
-        found = cont(it, struct name, field_item);                      \
+        found = cont(it, struct struct_name, field_item);               \
         if (!found)                                                     \
             return NULL;                                                \
-        if (!name##_compare(found->field_key, key))                     \
+        if (!name##_cmp(found->field_key, key))                         \
             return found;                                               \
     }                                                                   \
     return NULL;                                                        \
