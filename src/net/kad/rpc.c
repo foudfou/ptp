@@ -4,6 +4,7 @@
 #include "log.h"
 #include "utils/safer.h"
 #include "net/kad/bencode/rpc_msg.h"
+#include "net/kad/queries.h"
 #include "net/socket.h"
 #include "timers.h"
 #include "net/kad/rpc.h"
@@ -42,7 +43,8 @@ int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
         log_error("Could not initialize dht.");
         return -1;
     }
-    list_init(&ctx->queries);
+
+    queries_init(ctx->queries);
 
     log_debug("DHT initialized.");
     return nodes_len;
@@ -60,37 +62,10 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
     }
 
     dht_destroy(ctx->dht);
-    struct list_item *queries = &ctx->queries;
+    struct list_item *queries = &ctx->queries->lqueries;
     list_free_all(queries, struct kad_rpc_query, litem);
     log_debug("DHT terminated.");
 }
-
-static struct kad_rpc_query *
-kad_rpc_query_find_by_id(struct kad_ctx *ctx, const kad_rpc_msg_tx_id *tx_id)
-{
-    struct kad_rpc_query *query;
-    struct list_item * it = &ctx->queries;
-    list_for(it, &ctx->queries) {
-        query = cont(it, struct kad_rpc_query, litem);
-        if (!query) {
-            log_error("Undefined container in list.");
-            return NULL;
-        }
-        if (kad_rpc_msg_tx_id_eq(&query->msg.tx_id, tx_id))
-            break;
-    }
-
-    if (it == &ctx->queries) {
-        char *id = log_fmt_hex(LOG_DEBUG, tx_id->bytes, KAD_RPC_MSG_TX_ID_LEN);
-        log_warning("Query (tx_id=%s) not found.", id);
-        free_safer(id);
-        return NULL;
-    }
-
-    return query;
-}
-
-typedef bool (*queryPredicateFunc)(struct kad_ctx *ctx, struct kad_rpc_query *q);
 
 static void
 kad_rpc_update_dht(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
@@ -173,12 +148,11 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 
     char *id = log_fmt_hex(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
 
-    struct kad_rpc_query *query = kad_rpc_query_find_by_id(ctx, &msg->tx_id);
-    if (!query) {
+    struct kad_rpc_query *query = NULL;
+    if (!queries_delete(ctx->queries, msg->tx_id, &query)) {
         log_warning("Query for response (id=%s) not found.", id);
         goto cleanup;
     }
-    list_delete(&query->litem);
 
     switch (query->msg.meth) {
     case KAD_RPC_METH_NONE: {
@@ -206,7 +180,6 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
         break;
     }
 
-    list_delete(&query->litem);
     free_safer(query);
     ret = true;
 

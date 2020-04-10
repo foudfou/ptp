@@ -3,6 +3,7 @@
 #include "events.h"
 #include "log.h"
 #include "net/actions.h"
+#include "net/kad/queries.h"
 #include "net/kad/rpc.h"
 #include "net/socket.h"
 #include "signals.h"
@@ -104,6 +105,8 @@ bool server_run(const struct config *conf)
     timer_init(&timers, &timer_kad_refresh, tick_init);
 
     struct kad_ctx kctx = {0};
+    struct queries queries = {0};
+    kctx.queries = &queries;
     int nodes_len = kad_rpc_init(&kctx, conf->conf_dir);
     if (nodes_len == -1) {
         log_fatal("Failed to initialize DHT. Aborting.");

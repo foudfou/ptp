@@ -14,6 +14,10 @@
 #include "utils/lookup.h"
 #include "net/kad/bencode/parser.h"
 
+// #include "net/kad/queries.h"
+struct queries;
+
+
 #define KAD_RPC_MSG_TX_ID_LEN 2
 
 enum kad_rpc_type {
@@ -93,10 +97,9 @@ struct kad_rpc_node_pair {
 };
 
 struct kad_ctx {
-    struct kad_dht   *dht;
+    struct kad_dht *dht;
     /* List of sent kad_rpc_query's */
-    // FIXME replace with struct queries
-    struct list_item  queries;
+    struct queries *queries;
 };
 
 int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[]);

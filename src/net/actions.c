@@ -3,6 +3,7 @@
 #include "config.h"
 #include "log.h"
 #include "net/kad/rpc.h"
+#include "net/kad/queries.h"
 #include "net/socket.h"
 #include "timers.h"
 #include "utils/array.h"
@@ -375,8 +376,8 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
     log_debug("Sent %d bytes.", slen);
     iobuf_reset(&qbuf);
 
-    // FIXME kad_rpc_add_query() to possibly control the list.
-    list_append(&kctx->queries, &query->litem);
+    if (queries_put(kctx->queries, query))
+        log_info("Evicted query from full list.");
 
     free_safer(id);
     iobuf_reset(&qbuf);

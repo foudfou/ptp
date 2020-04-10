@@ -1,4 +1,7 @@
 /* Copyright (c) 2020 Foudil Brétel.  All rights reserved. */
+#ifndef QUERIES_H
+#define QUERIES_H
+
 #include <stdint.h>
 #include "net/kad/rpc.h"
 #include "utils/hash.h"
@@ -39,7 +42,7 @@ struct queries {
     struct list_item hqueries[HQUERIES_SIZE];
 };
 
-void queries_init(struct queries *lru) {
+static inline void queries_init(struct queries *lru) {
     list_init(&lru->lqueries);
     hash_init(lru->hqueries, HQUERIES_SIZE);
 }
@@ -47,7 +50,7 @@ void queries_init(struct queries *lru) {
 /**
  * Returns evicted item or NULL.
  */
-struct kad_rpc_query *
+static inline struct kad_rpc_query *
 queries_put(struct queries *lru, struct kad_rpc_query *q) {
     struct kad_rpc_query *rv = NULL;
 
@@ -66,15 +69,24 @@ queries_put(struct queries *lru, struct kad_rpc_query *q) {
     return rv;
 }
 
-/**
- * Delete query with tx_id `id` from queries and return it.
- */
-struct kad_rpc_query *
-queries_delete(struct queries *lru, const kad_rpc_msg_tx_id id) {
-    struct kad_rpc_query *rv = NULL;
-    rv = hqueries_get(lru->hqueries, id);
-    hash_delete(&rv->hitem);
-    list_delete(&rv->litem);
-    lru->len--;
-    return rv;
+static inline struct kad_rpc_query *
+queries_get(struct queries *lru, const kad_rpc_msg_tx_id id) {
+    return hqueries_get(lru->hqueries, id);
 }
+
+/**
+ * Delete query with tx_id `id` from queries and return it in `out`.
+ */
+static inline bool
+queries_delete(struct queries *lru, const kad_rpc_msg_tx_id id, struct kad_rpc_query **out) {
+    *out = queries_get(lru, id);
+    if (!*out)
+        return false;
+    hash_delete(&(*out)->hitem);
+    list_delete(&(*out)->litem);
+    lru->len--;
+    return true;
+}
+
+
+#endif /* QUERIES_H */

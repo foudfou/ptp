@@ -1,27 +1,9 @@
 /* Copyright (c) 2020 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
-#include "net/kad/queries.h"
 #include "net/kad/rpc.c"
 #include "timers.c"
-
-/* struct kad_rpc_query { */
-/*     struct list_item     litem; */
-/*     struct list_item     hitem; */
-/*     long long            created; // for expiring queries */
-/*     struct kad_rpc_msg   msg; */
-/*     struct kad_node_info node; */
-/* }; */
-/* struct kad_rpc_msg { */
-/*     kad_rpc_msg_tx_id    tx_id;   // t */
-/*     kad_guid             node_id; // from {a,r} dict: id_str */
-/*     enum kad_rpc_type    type;    // y {q,r,e} */
-/*     enum kad_rpc_meth    meth;    // q {"ping","find_node"} */
-/*     unsigned long long   err_code; */
-/*     char                 err_msg[BENC_PARSER_STR_LEN_MAX]; */
-/*     kad_guid             target;             // from {a,r} dict: target, nodes */
-/*     struct kad_node_info nodes[KAD_K_CONST]; // from {a,r} dict: target, nodes */
-/*     size_t               nodes_len; */
-/* }; */
+#include "utils/bits.h"
+#include "net/kad/queries.h"
 
 bool query_init(struct kad_rpc_query *q) {
     list_init(&q->litem);
@@ -41,13 +23,18 @@ int main()
     assert(query_init(&q0));
     assert(queries_put(&queries, &q0) == NULL);
     assert(queries.len == 1 && list_count(&queries.lqueries) == 1);
-    assert(hqueries_get(queries.hqueries, q0.msg.tx_id) == &q0);
+    assert(queries_get(&queries, q0.msg.tx_id) == &q0);
 
-    struct kad_rpc_query *q = queries_delete(&queries, q0.msg.tx_id);
+    struct kad_rpc_query *q = NULL;
+    kad_rpc_msg_tx_id tx_id = q0.msg.tx_id;
+    BITS_TGL(tx_id.bytes[0], 1);
+    assert(!queries_delete(&queries, tx_id, &q));
+    assert(queries.len == 1 && list_count(&queries.lqueries) == 1);
+
+    assert(queries_delete(&queries, q0.msg.tx_id, &q));
     assert(q == &q0);
     assert(queries.len == 0 && list_count(&queries.lqueries) == 0);
-    assert(hqueries_get(queries.hqueries, q0.msg.tx_id) == NULL);
-
+    assert(queries_get(&queries, q0.msg.tx_id) == NULL);
 
     for (int i = 0; i < QUERIES_CAPACITY; i++) {
         q = calloc(1, sizeof(struct kad_rpc_query));
@@ -68,7 +55,7 @@ int main()
 
     while (!list_is_empty(&queries.lqueries)) {
         q = cont(queries.lqueries.prev, struct kad_rpc_query, litem);
-        q = queries_delete(&queries, q->msg.tx_id);
+        assert(queries_delete(&queries, q->msg.tx_id, &q));
         free(q);
     }
     assert(list_count(&queries.lqueries) == 0);

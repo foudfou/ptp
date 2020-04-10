@@ -2,12 +2,15 @@
 #include <assert.h>
 #include <netinet/in.h>
 #include "log.h"
+#include "net/kad/queries.h"
 #include "net/kad/rpc.h"
 
 int main ()
 {
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_ctx ctx = {0};
+    struct queries queries = {0};
+    ctx.queries = &queries;
     assert(kad_rpc_init(&ctx, NULL) == 0);
 
     struct iobuf rsp = {0};
