@@ -4,7 +4,7 @@
 #include "log.h"
 #include "utils/safer.h"
 #include "net/kad/bencode/rpc_msg.h"
-#include "net/kad/queries.h"
+#include "net/kad/req_lru.h"
 #include "net/socket.h"
 #include "timers.h"
 #include "net/kad/rpc.h"
@@ -44,7 +44,7 @@ int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
         return -1;
     }
 
-    queries_init(ctx->queries);
+    req_lru_init(ctx->reqs_out);
 
     log_debug("DHT initialized.");
     return nodes_len;
@@ -62,8 +62,8 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
     }
 
     dht_destroy(ctx->dht);
-    struct list_item *queries = &ctx->queries->lqueries;
-    list_free_all(queries, struct kad_rpc_query, litem);
+    struct list_item *reqs_out = &ctx->reqs_out->litems;
+    list_free_all(reqs_out, struct kad_rpc_query, litem);
     log_debug("DHT terminated.");
 }
 
@@ -149,7 +149,7 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
     char *id = log_fmt_hex(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
 
     struct kad_rpc_query *query = NULL;
-    if (!queries_delete(ctx->queries, msg->tx_id, &query)) {
+    if (!req_lru_delete(ctx->reqs_out, msg->tx_id, &query)) {
         log_warning("Query for response (id=%s) not found.", id);
         goto cleanup;
     }

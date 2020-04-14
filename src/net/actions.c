@@ -3,7 +3,7 @@
 #include "config.h"
 #include "log.h"
 #include "net/kad/rpc.h"
-#include "net/kad/queries.h"
+#include "net/kad/req_lru.h"
 #include "net/socket.h"
 #include "timers.h"
 #include "utils/array.h"
@@ -369,7 +369,7 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
     log_debug("Sent %d bytes.", slen);
     iobuf_reset(&qbuf);
 
-    if (queries_put(kctx->queries, query))
+    if (req_lru_put(kctx->reqs_out, query))
         log_info("Evicted query from full list.");
 
     free_safer(id);
