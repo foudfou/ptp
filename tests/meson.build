@@ -20,6 +20,7 @@ tests_sources = [
   'utils/bstree.c',
   'utils/byte_array.c',
   'utils/hash.c',
+  'utils/heap.c',
   'utils/list.c',
   'utils/lookup.c',
   'utils/queue.c',

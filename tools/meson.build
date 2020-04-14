@@ -13,6 +13,7 @@ cppcheck = run_target('cppcheck', command : [
   '--error-exitcode=1', '--inline-suppr',
   '--suppress=assertWithSideEffect',
   '--suppress=ctunullpointer:'+join_paths(meson.source_root(), 'tests/utils/bstree.c'),
+  '--suppress=ctunullpointer:'+join_paths(meson.source_root(), 'tests/utils/heap.c'),
   '--suppress=constArgument:'+join_paths(meson.source_root(), 'tests/utils/bits.c'),
   '-I'+join_paths(meson.source_root(), 'src'),
   '-I'+join_paths(meson.source_root(), 'tests'),
