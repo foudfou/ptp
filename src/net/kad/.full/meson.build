@@ -1,5 +1,5 @@
 # -*- mode: meson -*-
-# Copyright (c) 2017-2019 Foudil Brétel.  All rights reserved.
+# Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 GUID_SIZE_IN_BYTES = 20
 

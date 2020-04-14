@@ -43,7 +43,7 @@ static inline                                                           \
 bool name##_grow(struct name *h) {                                      \
     /* FIXME overflow */                                                \
     size_t cap_new = h->cap * 2;                                        \
-    type *items_new = realloc(h->items, sizeof(*h->items) * cap_new);    \
+    type *items_new = realloc(h->items, sizeof(*h->items) * cap_new);   \
     if (items_new == NULL)                                              \
         return false;                                                   \
     h->cap = cap_new;                                                   \

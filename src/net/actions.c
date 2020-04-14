@@ -34,8 +34,6 @@ bool node_handle_data(int sock, struct kad_ctx *kctx)
     }
     log_debug("Received %d bytes.", slen);
 
-    // FIXME delay response
-
     struct iobuf rsp = {0};
     bool resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, &rsp);
     if (rsp.pos == 0) {
@@ -46,6 +44,8 @@ bool node_handle_data(int sock, struct kad_ctx *kctx)
         log_error("Response too large.");
         ret = false; goto cleanup;
     }
+
+    // FIXME delay response
 
     slen = sendto(sock, rsp.buf, rsp.pos, 0,
                   (struct sockaddr *)&node_addr, node_addr_len);
@@ -282,13 +282,6 @@ int peer_conn_close_all(struct list_item *peers)
     return fail;
 }
 
-bool kad_refresh(void *data)
-{
-    (void)data;
-    log_info("FIXME refresh cb");
-    return true;
-}
-
 /* Bootstrapping consists in:
    - read bootstrap nodes from file. File only contains ip/port's, this is
      similar to bittorrent.
@@ -466,3 +459,101 @@ static bool kad_bootstrap_schedule_lookups(
     list_free_all((&timers_tmp), struct timer, item);
     return false;
 }
+
+bool kad_refresh(void *data)
+{
+    (void)data;
+    log_info("FIXME refresh cb");
+    return true;
+}
+
+/*
+  While node lookup is the most important procedure in kademlia, the parper
+  gives a confusing description. This has led to varying interpretation (see
+  references). Hereafter is our own interpretation.
+
+  Q: What is node lookup ?
+
+  A: « to locate the k closest nodes to some given node ID. »
+
+  Q: How does node lookup work ?
+
+  A:
+
+  - recursive/iterative
+
+  - initiator picks alpha-const=3 closest nodes, adds them to
+  (by-distance-)sorted list of unknown nodes, aka `lookup` list, and sends
+  FIND_NODE in // [need timeout]
+
+  - when a response arrives, add responding node to dht, remove response from
+  lookup list.
+
+  [By definition dht holds known nodes — not only contacted ones: « When a
+  Kademlia node receives any message (request or reply) from another node, it
+  updates the appropriate k-bucket for the sender’s node ID. », « When u learns
+  of a new contact, it attempts to insert the contact in the appropriate
+  k-bucket. » So we should just add learned nodes to dht with null last_seen,
+  when not already here, and systematically add them to the lookup list. That
+  also means that FIND_NODE does insert new nodes into dht.]
+
+  - after round finishes, if returned nodes closer than lookup list, pick
+  alpha, otherwise pick k. Iterate by sending them FIND_NODE in //.
+
+  - paper says we can begin a new round before all alpha nodes of last round
+  answered. Basically that says: we can have alpha requests in flight; a round
+  finishes for each received response; we just pick the first node from the
+  lookup list for the next request.
+
+  - lookup finishes when k responses received [why not until looked-up id
+  found ? or max iteration reached ?].
+
+  Q: How do we implement node lookups ?
+
+  A:
+
+  - recursive lookup timer, state kept in kctx, with added `lookup` heap and
+  `in_flight` request list. Timer doesn't need to be signaled, for ex. when
+  receiving a response.
+
+  - pick alpha closest nodes from dht. Send them FIND_NODE. This effectively
+  registers the requests to the request and in_flight lists.
+
+  - when response received: corresponding request removed from request list
+  [already done] and in_flight list; node inserted into dht or updated; nodes
+  inserted to dht with last_seen null; nodes added to lookup list; lookup round
+  incremented.
+
+  - pick alpha (or next when parallel) closest nodes from lookup list. Send
+  them FIND_NODE. This effectively: removes them from lookup list; register
+  requests to the request and in_flight lists. Iterate: goto previous.
+
+  - lookup timer checks how many requests are in-flight via list of in-flight
+  queries. When a request times out, remove it from in_flight and request
+  lists.
+
+  - we will limit running lookup processes to 1, simply by checking lookup
+  round. Other lookup processes, like triggered by refresh, must be delayed.
+
+  - when lookup round >= k: stop timer; reset lookup round; reset lookup list.
+
+  Notes and references:
+
+  - « Alpha and Parallelism.  Kademlia uses a value of 3 for alpha, the degree
+  of parallelism used. It appears that (see stutz06) this value is optimal.
+  There are at least three approaches to managing parallelism. The first is to
+  launch alpha probes and wait until all have succeeded or timed out before
+  iterating. This is termed strict parallelism. The second is to limit the
+  number of probes in flight to alpha; whenever a probe returns a new one is
+  launched. We might call this bounded parallelism. A third is to iterate after
+  what seems to be a reasonable delay (duration unspecified), so that the
+  number of probes in flight is some low multiple of alpha. This is loose
+  parallelism and the approach used by Kademlia. »
+  (http://xlattice.sourceforge.net/components/protocol/kademlia/specs.html#lookup)
+
+  - https://github.com/libp2p/go-libp2p-kad-dht/issues/290
+
+  - https://github.com/ntoll/drogulus/blob/master/drogulus/dht/lookup.py
+
+  - https://pub.tik.ee.ethz.ch/students/2006-So/SA-2006-19.pdf
+*/

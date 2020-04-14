@@ -99,6 +99,7 @@ struct kad_rpc_node_pair {
 struct kad_ctx {
     struct kad_dht *dht;
     /* List of sent kad_rpc_query's */
+    // FIXME rename requests
     struct queries *queries;
 };
 
