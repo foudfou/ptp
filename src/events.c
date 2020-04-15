@@ -2,11 +2,19 @@
 #include "log.h"
 #include "net/actions.h"
 #include "net/socket.h"
+#include "utils/safer.h"
 #include "events.h"
+
+void free_event(struct event *e)
+{
+    for (size_t i = 0; i < e->alloc_len; ++i)
+        free_safer(e->alloc[i]);
+    free(e->self);
+}
 
 static bool event_node_data_cb(struct event_args args)
 {
-    return node_handle_data(args.node_data.sock, args.node_data.kctx);
+    return node_handle_data(args.node_data.timers, args.node_data.sock, args.node_data.kctx);
 }
 struct event event_node_data = {"node-data", .cb=event_node_data_cb, .args={{{0}}}, .fatal=false,};
 
@@ -20,6 +28,11 @@ static bool event_peer_conn_cb(struct event_args args)
     return true;
 }
 struct event event_peer_conn = {"peer-conn", .cb=event_peer_conn_cb, .args={{{0}}}, .fatal=true,};
+
+bool event_kad_response_cb(struct event_args args)
+{
+    return kad_response(args.kad_response.sock, args.kad_response.buf, args.kad_response.addr);
+}
 
 bool event_peer_data_cb(struct event_args args)
 {

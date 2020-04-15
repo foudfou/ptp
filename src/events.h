@@ -29,9 +29,16 @@ struct event_args {
     union {
         // TODO use struct server_ctx to simplify
         struct node_data {
-            int             sock;
-            struct kad_ctx *kctx;
+            struct list_item *timers;
+            int               sock;
+            struct kad_ctx   *kctx;
         } node_data;
+
+        struct kad_response {
+            int                      sock;
+            struct iobuf            *buf;
+            struct sockaddr_storage  addr;
+        } kad_response;
 
         struct peer_conn {
             int                  sock;
@@ -76,19 +83,25 @@ struct event_args {
 typedef bool (*eventHandlerFunc)(struct event_args args);
 
 struct event {
-    char                name[EVENT_NAME_MAX];
-    eventHandlerFunc    cb;
+    char               name[EVENT_NAME_MAX];
+    eventHandlerFunc   cb;
     /* Arguments must be captured at runtime. */
-    struct event_args   args;
-    bool                fatal;
-    /* Must be set for allocated events. Used to free allocated event. */
-    struct event       *self;
+    struct event_args  args;
+    bool               fatal;
+    /* Must be set for allocated events. Used to free allocated event after consumption. */
+    struct event      *self;
+    /* Used to free allocated associated data. Watch freeing order! */
+    size_t             alloc_len;
+    void              *alloc[];
 };
+
+void free_event(struct event *e);
 
 struct event event_node_data;
 struct event event_peer_conn;
 struct event event_kad_refresh;
 // event to be malloc'd
+bool event_kad_response_cb(struct event_args args);
 bool event_peer_data_cb(struct event_args args);
 bool event_kad_bootstrap_cb(struct event_args args);
 bool event_kad_ping_cb(struct event_args args);

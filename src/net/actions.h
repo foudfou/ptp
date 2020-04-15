@@ -33,7 +33,9 @@ struct peer {
     struct proto_msg_parser parser;
 };
 
-bool node_handle_data(int sock, struct kad_ctx *kctx);
+bool node_handle_data(struct list_item *timers, int sock, struct kad_ctx *kctx);
+bool kad_response(int sock, struct iobuf *rsp, struct sockaddr_storage addr);
+
 struct peer* peer_find_by_fd(struct list_item *peers, const int fd);
 int peer_conn_accept_all(const int listenfd, struct list_item *peers,
                          const int nfds, const struct config *conf);

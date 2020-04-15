@@ -103,7 +103,7 @@ with tempfile.TemporaryDirectory() as tmp_dir1, \
         )
 
         failures = 0
-        time.sleep(0.05)
+        time.sleep(.05)
 
     finally:
         for s in [node3, node2, bootnode]:

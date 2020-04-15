@@ -15,7 +15,24 @@
 #define SERVER_TCP_BUFLEN 10
 #define SERVER_UDP_BUFLEN 1400
 
-bool node_handle_data(int sock, struct kad_ctx *kctx)
+static bool set_timeout(struct list_item *timers, long long delay, bool once,
+                        struct event *evt)
+{
+    struct timer *timer = malloc(sizeof(struct timer));
+    if (!timer) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        return false;
+    }
+    *timer = (struct timer){
+        .name={0}, .once=once, .delay=delay,
+        .event=evt, .self=timer
+    };
+    strcpy_safer(timer->name, evt->name, EVENT_NAME_MAX);
+    timer_init(timers, timer, 0);
+    return true;
+}
+
+bool node_handle_data(struct list_item *timers, int sock, struct kad_ctx *kctx)
 {
     bool ret = true;
 
@@ -34,21 +51,57 @@ bool node_handle_data(int sock, struct kad_ctx *kctx)
     }
     log_debug("Received %d bytes.", slen);
 
-    struct iobuf rsp = {0};
-    bool resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, &rsp);
-    if (rsp.pos == 0) {
+    struct iobuf *rsp = malloc(sizeof(struct iobuf));
+    if (!rsp) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        return false;
+    }
+    memset(rsp, 0, sizeof(struct iobuf));
+
+    bool resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, rsp);
+    if (rsp->pos == 0) {
         log_info("Handling incoming message doesn't need further response.");
         ret = resp; goto cleanup;
     }
-    if (rsp.pos > SERVER_UDP_BUFLEN) {
+    if (rsp->pos > SERVER_UDP_BUFLEN) {
         log_error("Response too large.");
         ret = false; goto cleanup;
     }
 
-    // FIXME delay response
+    size_t nsub = 1;
+    struct event *evt = malloc(sizeof(struct event) + sizeof(void*[nsub]));
+    if (!evt) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        ret = false; goto cleanup;
+    }
+    *evt = (struct event){
+        "kad-response", .cb=event_kad_response_cb,
+        .args.kad_response={.sock=sock, .buf=rsp, .addr=node_addr},
+        .fatal=false, .self=evt, .alloc_len=nsub
+    };
+    evt->alloc[0] = rsp;
 
-    slen = sendto(sock, rsp.buf, rsp.pos, 0,
-                  (struct sockaddr *)&node_addr, node_addr_len);
+    if (!set_timeout(timers, 0, true, evt)) {
+        ret = false; goto cleanup2;
+    }
+
+    return ret;
+
+  cleanup2:
+    free_safer(evt);
+  cleanup:
+    iobuf_reset(rsp);
+    free_safer(rsp);
+    return ret;
+}
+
+bool kad_response(int sock, struct iobuf *rsp, struct sockaddr_storage addr)
+{
+    bool ret = true;
+
+    socklen_t addr_len = sizeof(struct sockaddr_storage);
+    ssize_t slen = sendto(sock, rsp->buf, rsp->pos, 0,
+                          (struct sockaddr *)&addr, addr_len);
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
             log_perror(LOG_ERR, "Failed sendto: %s", errno);
@@ -59,7 +112,7 @@ bool node_handle_data(int sock, struct kad_ctx *kctx)
     log_debug("Sent %d bytes.", slen);
 
   cleanup:
-    iobuf_reset(&rsp);
+    iobuf_reset(rsp);
     return ret;
 }
 

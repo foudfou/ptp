@@ -46,7 +46,7 @@ static bool timers_free_all(struct list_item *timers)
         struct timer *t = cont(timers->prev, struct timer, item);
         list_delete(timers->prev);
         if (t->event && t->event->self) {
-            free(t->event->self);
+            free_event(t->event->self);
         }
         if (t->self) {
             free(t->self);
@@ -189,6 +189,7 @@ bool server_run(const struct config *conf)
             }
 
             if (fds[i].fd == sock_udp) {
+                event_node_data.args.node_data.timers = &timers;
                 event_node_data.args.node_data.sock = sock_udp;
                 event_node_data.args.node_data.kctx = &kctx;
                 if (!event_queue_put(&evq, &event_node_data)) {
@@ -248,7 +249,7 @@ bool server_run(const struct config *conf)
                 ret = false;
             };
             if (ev->self) {
-                free(ev->self);
+                free_event(ev->self);
             }
             if (!ret) {
                 goto server_end;
