@@ -109,12 +109,12 @@ int main ()
     while (peer < peer_end) {
         assert(sockaddr_storage_fmt(peer->info.addr_str, &peer->info.addr));
 
-        assert(dht_insert(dht, &peer->info));
+        assert(dht_insert(dht, &peer->info, 0));
 
         struct kad_node_info bucket[KAD_K_CONST];
         int bucket_len = kad_bucket_get_nodes(&dht->buckets[peer->bucket], bucket, 0, NULL);
         /* printf("%s == %s\n", peer->info.addr_str, bucket[bucket_len-1].addr_str); */
-        assert(sockaddr_storage_cmp4(&peer->info.addr, &bucket[bucket_len-1].addr));
+        assert(sockaddr_storage_eq(&peer->info.addr, &bucket[bucket_len-1].addr));
 
         peer++;
     }
@@ -127,7 +127,7 @@ int main ()
 
     int peer_order[] = {2, 1, 3, 0, 4};
     for (size_t i = 0; i < added; ++i) {
-        assert(sockaddr_storage_cmp4(&nodes[i].addr, &peers[peer_order[i]].info.addr));
+        assert(sockaddr_storage_eq(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
     kad_guid_set(&target, (unsigned char[]){0xc0}); // 0b1100
@@ -135,7 +135,7 @@ int main ()
     assert(added == 5);
     memcpy(peer_order, (int[]){3, 2, 0, 4, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
-        assert(sockaddr_storage_cmp4(&nodes[i].addr, &peers[peer_order[i]].info.addr));
+        assert(sockaddr_storage_eq(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
     kad_guid_set(&target, (unsigned char[]){0x03}); // 0b0011
@@ -143,7 +143,7 @@ int main ()
     assert(added == 5);
     memcpy(peer_order, (int[]){0, 4, 2, 3, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
-        assert(sockaddr_storage_cmp4(&nodes[i].addr, &peers[peer_order[i]].info.addr));
+        assert(sockaddr_storage_eq(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
     dht_destroy(dht);

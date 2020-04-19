@@ -18,7 +18,6 @@
  */
 #include <stdbool.h>
 #include "events.h"
-#include "log.h"
 #include "options.h"
 #include "utils/list.h"
 
@@ -48,8 +47,6 @@ struct timer {
     struct event      *event;
 };
 
-bool timers_clock_res_is_millis();
-long long now_millis();
 bool timer_init(struct list_item *timers, struct timer *t, long long time);
 /** Right before poll() to calculate its `timeout` parameter. */
 int timers_get_soonest(struct list_item *timers);

@@ -16,6 +16,7 @@
 #include "utils/bitfield.h"
 #include "utils/bits.h"
 #include "utils/safer.h"
+#include "utils/time.h"
 #include "net/kad/bencode/dht.h"
 #include "net/kad/dht.h"
 
@@ -203,58 +204,84 @@ dht_get_from_list(const struct list_item *list, const kad_guid *node_id)
     return NULL;
 }
 
+static struct kad_node *
+dht_get_with_bucket(struct kad_dht *dht, const kad_guid *node_id,
+                    struct list_item **bucket)
+{
+    size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
+    struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], node_id);
+    struct list_item *bkt = NULL;
+
+    if (node) {
+        bkt = &dht->buckets[bkt_idx];
+    }
+    else {
+        node = dht_get_from_list(&dht->replacement, node_id);
+        bkt = &dht->replacement;
+    }
+    if (bucket)
+        *bucket = bkt;
+
+    return node;
+}
+
+struct kad_node *dht_get(struct kad_dht *dht, const kad_guid *node_id)
+{
+    return dht_get_with_bucket(dht, node_id, NULL);
+}
+
 /**
- * Try to update node's data and move it to the end of the bucket, or the the
+ * Try to update node's data and move it to the end of the bucket, or the
  * beginning of the replacement cache.
  *
  * Buckets are thus kept ordered by ascending last_seen time (least recent
  * first). The replacement list is kept ordered by descending last_seen time
  * (most recent first).
  *
- * Return 0 on success, -1 on failure, 1 when node unknown.
+ * « When a Kademlia node receives any message (re- quest or reply) from
+ * another node, it updates the appropriate k-bucket for the sender’s node ID.
+ * [...] If the appropriate k-bucket is full, however, then the recipient pings
+ * the k-bucket’s least-recently seen node to decide what to do. If the
+ * least-recently seen node fails to respond, it is evicted from the k-bucket *
+ * and the new sender inserted at the tail. Otherwise, if the least-recently
+ * seen node responds, it is moved to the tail of the list, and the new
+ * sender’s contact is discarded. »
  */
-int dht_update(struct kad_dht *dht, const struct kad_node_info *info)
+bool dht_update(struct kad_dht *dht, const struct kad_node_info *info, time_t time)
 {
-    size_t bkt_idx = kad_bucket_hash(&dht->self_id, &info->id);
-    struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], &info->id);
+    struct list_item *bucket = NULL;
+    struct kad_node *node = dht_get_with_bucket(dht, &info->id, &bucket);
     if (!node)
-        node = dht_get_from_list(&dht->replacement, &info->id);
-    if (!node)
-        return 1;
-    /* TODO: check that ip:port hasn't changed. */
+        return false;
 
-    struct timespec time;
-    if (clock_gettime(CLOCK_REALTIME, &time) < 0) {
-        log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
-        return -1;
+    if (!sockaddr_storage_eq_addr(&node->info.addr, &info->addr)) {
+        char *id = log_fmt_hex(LOG_DEBUG, info->id.bytes, KAD_GUID_SPACE_IN_BYTES);
+        log_warning("Node (%s) changed addr: %s -> %s.", id, node->info.addr_str, info->addr_str);
+        free_safer(id);
+
+        node->info.addr = info->addr;
+        strcpy(node->info.addr_str, info->addr_str);
     }
-
-    node->last_seen = time.tv_sec;
+    node->last_seen = time;
     node->stale = 0;
-    list_delete(&node->item);
-    list_append(&dht->buckets[bkt_idx], &node->item);
 
-    return 0;
+    list_delete(&node->item);
+    list_append(bucket, &node->item);
+
+    return true;
 }
 
 static struct kad_node *dht_node_new(const struct kad_node_info *info)
 {
-    struct timespec time;
-    if (clock_gettime(CLOCK_REALTIME, &time) < 0) {
-        log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
-        return NULL;
-    }
-
     struct kad_node *node = malloc(sizeof(struct kad_node));
     if (!node) {
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return NULL;
     }
+    memset(node, 0, sizeof(struct kad_node));
 
+    list_init(&node->item);
     kad_node_info_copy(&node->info, info);
-    node->last_seen = time.tv_sec;
-    node->stale = 0;
-    list_init(&(node->item));
 
     return node;
 }
@@ -262,9 +289,9 @@ static struct kad_node *dht_node_new(const struct kad_node_info *info)
 /**
  * Inserts a node into the routing table.
  *
- * Assumes unknown node, i.e. dht_update() did not succeed.
+ * Assumes unknown node, i.e. dht_get() or dht_update() failed.
  */
-bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info)
+bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t time)
 {
     if (kad_guid_eq(&dht->self_id, &info->id)) {
         log_error("Ignoring DHT insert of node with same id as me.");
@@ -274,6 +301,8 @@ bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info)
     struct kad_node *node = dht_node_new(info);
     if (!node)
         return false;
+    if (time)
+        node->last_seen = time;
 
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->info.id);
     struct list_item *bucket = &dht->buckets[bkt_idx];
@@ -306,17 +335,6 @@ bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
     return true;
 }
 
-const struct kad_node *
-dht_find(const struct kad_dht *dht, const kad_guid *node_id)
-{
-    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
-        struct kad_node *node = dht_get_from_list(&dht->buckets[i], node_id);
-        if (node)
-            return node;
-    }
-    return NULL;
-}
-
 int dht_read(struct kad_dht **dht, const char state_path[])
 {
     char buf[DHT_STATE_LEN_IN_BYTES];
@@ -345,7 +363,7 @@ int dht_read(struct kad_dht **dht, const char state_path[])
     free_safer(id);
 
     for (size_t i = 0; i < encoded.nodes_len; i++) {
-        if (!dht_insert(*dht, &encoded.nodes[i])) {
+        if (!dht_insert(*dht, &encoded.nodes[i], 0)) {
             log_error("DHT node insert from encoded [%d] failed.", i);
             goto fail;
         }

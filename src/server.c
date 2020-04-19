@@ -11,6 +11,7 @@
 #include "utils/bits.h"
 #include "utils/cont.h"
 #include "utils/safer.h"
+#include "utils/time.h"
 #include "server.h"
 
 #define POLL_EVENTS POLLIN|POLLPRI
@@ -73,7 +74,7 @@ bool server_run(const struct config *conf)
 {
     bool ret = true;
 
-    if (!timers_clock_res_is_millis()) {
+    if (!clock_res_is_millis()) {
         log_fatal("Time resolution is greater than millisecond. Aborting.");
         return false;
     }

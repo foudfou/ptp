@@ -2,11 +2,12 @@
 #include <limits.h>
 #include <unistd.h>
 #include "log.h"
-#include "utils/safer.h"
 #include "net/kad/bencode/rpc_msg.h"
 #include "net/kad/req_lru.h"
 #include "net/socket.h"
 #include "timers.h"
+#include "utils/safer.h"
+#include "utils/time.h"
 #include "net/kad/rpc.h"
 
 #define DHT_STATE_FILENAME "dht.dat"
@@ -67,25 +68,34 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
     log_debug("DHT terminated.");
 }
 
-static void
+static bool
 kad_rpc_update_dht(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
                    const kad_guid *node_id)
 {
     char *id = log_fmt_hex(LOG_DEBUG, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
     struct kad_node_info info = {.id=*node_id, .addr=*addr};
     sockaddr_storage_fmt(info.addr_str, addr);
-    int updated = dht_update(ctx->dht, &info);
-    if (updated == 0)
+
+    time_t now = 0;
+    if (!now_sec(&now))
+        return false;
+
+    bool rv = false;
+    if (dht_get(ctx->dht, node_id)) {
+        rv = dht_update(ctx->dht, &info, now);
         log_debug("DHT update of %s (id=%s).", &info.addr_str, id);
-    else if (updated > 0) { // insert needed
-        if (dht_insert(ctx->dht, &info))
-            log_debug("DHT insert of %s (id=%s).", &info.addr_str, id);
-        else
-            log_warning("Failed to insert kad_node (id=%s).", id);
     }
-    else
-        log_warning("Failed to update kad_node (id=%s)", id);
+    else {
+        rv = dht_insert(ctx->dht, &info, now);
+        log_debug("DHT insert of %s (id=%s).", &info.addr_str, id);
+    }
+
+    if (!rv)
+        log_warning("Failed to upsert kad_node (id=%s)", id);
+
     free_safer(id);
+
+    return rv;
 }
 
 static bool kad_rpc_handle_error(const struct kad_rpc_msg *msg)
@@ -168,8 +178,11 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 
     case KAD_RPC_METH_FIND_NODE: {
         for (size_t i=0; i<msg->nodes_len; ++i) {
-            if (msg->nodes[i].id.is_set)
-                kad_rpc_update_dht(ctx, &msg->nodes[i].addr, &msg->nodes[i].id);
+            if (msg->nodes[i].id.is_set && !dht_get(ctx->dht, &msg->nodes[i].id)) {
+                struct kad_node_info info = {.id=msg->nodes[i].id, .addr=msg->nodes[i].addr};
+                sockaddr_storage_fmt(info.addr_str, &info.addr);
+                dht_insert(ctx->dht, &info, 0);
+            }
             else
                 log_warning("Node id not set, DHT not updated.");
         }
@@ -229,10 +242,8 @@ bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
     }
     kad_rpc_msg_log(&msg); // TESTING
 
-    if (msg.node_id.is_set)
-        kad_rpc_update_dht(ctx, addr, &msg.node_id);
-    else
-        log_warning("Node id not set, DHT not updated.");
+    if (msg.node_id.is_set && !kad_rpc_update_dht(ctx, addr, &msg.node_id))
+        log_warning("DHT update failed.");
 
     switch (msg.type) {
     case KAD_RPC_TYPE_NONE: {

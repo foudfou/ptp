@@ -1,6 +1,7 @@
 /* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include "kad/test_util.c"
+#include "utils/time.h"
 #include "timers.h"
 
 static struct event ev1 = {"event-1", .cb=NULL, .args={{{0}}}, .fatal=false};
@@ -9,7 +10,7 @@ int main ()
 {
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
 
-    assert(timers_clock_res_is_millis());
+    assert(clock_res_is_millis());
 
     event_queue evq = {0};
 

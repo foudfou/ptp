@@ -8,6 +8,7 @@
 #include "timers.h"
 #include "utils/array.h"
 #include "utils/safer.h"
+#include "utils/time.h"
 #include "net/actions.h"
 
 #define BOOTSTRAP_NODES_LEN 64
@@ -422,8 +423,10 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
     log_debug("Sent %d bytes.", slen);
     iobuf_reset(&qbuf);
 
-    if (req_lru_put(kctx->reqs_out, query))
+    if (req_lru_put(kctx->reqs_out, query)) {
+        // FIXME mark evicted node as stale in dht
         log_info("Evicted query from full list.");
+    }
 
     free_safer(id);
     iobuf_reset(&qbuf);

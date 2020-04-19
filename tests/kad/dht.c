@@ -64,8 +64,8 @@ int main(int argc, char *argv[])
     sa->sin_family=AF_INET; sa->sin_port=htons(0x0016); sa->sin_addr.s_addr=htonl(0x01020304);
     assert(sockaddr_storage_fmt(info.addr_str, &info.addr));
     assert(strcmp(info.addr_str, "1.2.3.4,22") == 0);
-    assert(dht_update(dht, &info) == 1);
-    assert(dht_insert(dht, &info));
+    assert(!dht_update(dht, &info, 0));
+    assert(dht_insert(dht, &info, 0));
     /* dht_get...() is not exposed. So we're not supposed to do bad things like
        freeing a node, or assert(!n1) after it's been dht_delete'd. */
     bkt_idx = kad_bucket_hash(&dht->self_id, &info.id);
@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 
     // insert duplicate
     info.id = dht->self_id;
-    assert(!dht_insert(dht, &info));
+    assert(!dht_insert(dht, &info, 0));
 
     // bucket full
     struct kad_node_info opp;
@@ -86,7 +86,7 @@ int main(int argc, char *argv[])
     opp.id.bytes[0] ^= 0x80;
     assert(KAD_K_CONST <= 0xff);  // don't want to overflow
     for (int i = 0; i < KAD_K_CONST + 1; ++i) {
-        assert(dht_insert(dht, &opp));
+        assert(dht_insert(dht, &opp, 0));
         opp.id.bytes[KAD_GUID_SPACE_IN_BYTES-1] += 1;
     }
     assert(!list_is_empty(&dht->replacement));
@@ -104,7 +104,7 @@ int main(int argc, char *argv[])
     assert(dht);
     assert(memcmp(dht->self_id.bytes, "0123456789abcdefghij5", KAD_GUID_SPACE_IN_BYTES) == 0);
     for (size_t i=0; i<ARRAY_LEN(kad_test_nodes); i++) {
-        const struct kad_node *knode = dht_find(dht, &kad_test_nodes[i].id);
+        const struct kad_node *knode = dht_get(dht, &kad_test_nodes[i].id);
         assert(knode);
         assert(kad_node_info_equals(&knode->info, &kad_test_nodes[i]));
     }

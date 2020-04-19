@@ -91,24 +91,11 @@ void dht_destroy(struct kad_dht * dht);
 
 int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len, const char state_path[]);
 
-/**
- * « When a Kademlia node receives any message (re- quest or reply) from
- * another node, it updates the appropriate k-bucket for the sender’s node ID.
- * [...] If the appropriate k-bucket is full, however, then the recipient pings
- * the k-bucket’s least-recently seen node to decide what to do. If the
- * least-recently seen node fails to respond, it is evicted from the k-bucket *
- * and the new sender inserted at the tail. Otherwise, if the least-recently
- * seen node responds, it is moved to the tail of the list, and the new
- * sender’s contact is discarded. »
- *
- * So the proper sequence is to dht_update(), then dht_can_insert(),
- * and then [FIXME: when exactly] dht_insert().
- */
-int dht_update(struct kad_dht *dht, const struct kad_node_info *info);
-bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info);
+struct kad_node *dht_get(struct kad_dht *dht, const kad_guid *node_id);
+bool dht_update(struct kad_dht *dht, const struct kad_node_info *info, time_t time);
+bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t time);
 bool dht_delete(struct kad_dht *dht, const kad_guid *node_id);
 size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
                         struct kad_node_info nodes[], const kad_guid *caller);
-const struct kad_node *dht_find(const struct kad_dht *dht, const kad_guid *node_id);
 
 #endif /* DHT_H */

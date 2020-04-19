@@ -33,17 +33,9 @@ bool kad_node_info_equals(const struct kad_node_info *got,
     struct kad_node_info info = {0};
     kad_node_info_set(&info, expected);
 
-    if (!kad_guid_eq(&got->id, &info.id)) return false;
-    if (expected->addr4.sin_family == AF_INET) {
-        return sockaddr_storage_cmp4(&got->addr, &info.addr);
-    }
-    else if (expected->addr4.sin_family == AF_INET6) {
-        return sockaddr_storage_cmp6(&got->addr, &info.addr);
-    }
-    else {
-        // TODO
-    }
-    return false;
+    return
+        kad_guid_eq(&got->id, &info.id) &&
+        sockaddr_storage_eq(&got->addr, &info.addr);
 }
 
 /* https://stackoverflow.com/a/1157217/421846 */

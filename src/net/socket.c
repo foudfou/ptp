@@ -170,22 +170,61 @@ bool sockaddr_storage_fmt(char str[], const struct sockaddr_storage *ss)
     return true;
 }
 
-bool sockaddr_storage_cmp4(const struct sockaddr_storage *a,
-                           const struct sockaddr_storage *b)
+bool sockaddr_storage_eq_addr4(const struct sockaddr_storage *a,
+                               const struct sockaddr_storage *b)
 {
     return
         ((struct sockaddr_in*)a)->sin_addr.s_addr ==
-        ((struct sockaddr_in*)b)->sin_addr.s_addr &&
+        ((struct sockaddr_in*)b)->sin_addr.s_addr;
+}
+
+bool sockaddr_storage_eq4(const struct sockaddr_storage *a,
+                           const struct sockaddr_storage *b)
+{
+    return sockaddr_storage_eq_addr4(a, b) &&
         ((struct sockaddr_in*)a)->sin_port ==
         ((struct sockaddr_in*)b)->sin_port;
 }
 
-bool sockaddr_storage_cmp6(const struct sockaddr_storage *a,
+bool sockaddr_storage_eq_addr6(const struct sockaddr_storage *a,
+                                const struct sockaddr_storage *b)
+{
+    return 0 == memcmp(&((struct sockaddr_in6*)a)->sin6_addr.s6_addr,
+                       &((struct sockaddr_in6*)b)->sin6_addr.s6_addr, 16);
+}
+
+bool sockaddr_storage_eq6(const struct sockaddr_storage *a,
                            const struct sockaddr_storage *b)
 {
-    return
-        (0 == memcmp(&((struct sockaddr_in6*)a)->sin6_addr.s6_addr,
-                     &((struct sockaddr_in6*)b)->sin6_addr.s6_addr, 16) &&
-         ((struct sockaddr_in6*)a)->sin6_port ==
-         ((struct sockaddr_in6*)b)->sin6_port);
+    return sockaddr_storage_eq_addr6(a, b) &&
+        ((struct sockaddr_in6*)a)->sin6_port ==
+        ((struct sockaddr_in6*)b)->sin6_port;
+}
+
+bool sockaddr_storage_eq_addr(const struct sockaddr_storage *sa,
+                              const struct sockaddr_storage *sb)
+{
+    if (sa->ss_family != sb->ss_family)
+        return false;
+
+    if (sa->ss_family == AF_INET)
+        return sockaddr_storage_eq_addr4(sa, sb);
+    else if (sa->ss_family == AF_INET6)
+        return sockaddr_storage_eq_addr6(sa, sb);
+    else
+        return false;
+}
+
+bool sockaddr_storage_eq(const struct sockaddr_storage *sa,
+                         const struct sockaddr_storage *sb)
+{
+    if (sa->ss_family != sb->ss_family)
+        return false;
+
+    if (sa->ss_family == AF_INET)
+        return sockaddr_storage_eq4(sa, sb);
+    else if (sa->ss_family == AF_INET6)
+        return sockaddr_storage_eq6(sa, sb);
+    else
+        return false;
 }

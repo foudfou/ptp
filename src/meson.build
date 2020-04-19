@@ -20,6 +20,7 @@ libmain_sources = [
   'signals.c',
   'timers.c',
   'utils/safer.c',
+  'utils/time.c',
   'utils/u64.c',
 ]
 

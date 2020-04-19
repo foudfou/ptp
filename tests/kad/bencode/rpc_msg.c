@@ -96,11 +96,11 @@ int main ()
     struct sockaddr_storage ss = {0};
     struct sockaddr_in *sa = (struct sockaddr_in*)&ss;
     sa->sin_family=AF_INET; sa->sin_addr.s_addr=htonl(0xc0a8a80f); sa->sin_port=htons(0x2f58);
-    assert(sockaddr_storage_cmp4(&msg.nodes[0].addr, &ss));
+    assert(sockaddr_storage_eq(&msg.nodes[0].addr, &ss));
     assert(kad_guid_eq(&msg.nodes[1].id, &(kad_guid){.bytes = "mnopqrstuvwxyz123456", .is_set = true}));
     memset(&ss, 0, sizeof(ss));
     sa->sin_family=AF_INET; sa->sin_addr.s_addr=htonl(0xc0a8a819); sa->sin_port=htons(0x2f59);
-    assert(sockaddr_storage_cmp4(&msg.nodes[1].addr, &ss));
+    assert(sockaddr_storage_eq(&msg.nodes[1].addr, &ss));
 
     strcpy(buf, KAD_TEST_FIND_NODE_RESPONSE_IP6);
     memset(&msg, 0, sizeof(msg));
@@ -115,12 +115,12 @@ int main ()
     struct sockaddr_in6 *sa6 = (struct sockaddr_in6*)&ss;
     sa6->sin6_family=AF_INET6; sa6->sin6_port=htons(0x0203);
     memcpy(sa6->sin6_addr.s6_addr, (unsigned char[]){1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1}, sizeof(struct in6_addr));
-    assert(sockaddr_storage_cmp6(&msg.nodes[0].addr, &ss));
+    assert(sockaddr_storage_eq(&msg.nodes[0].addr, &ss));
     assert(kad_guid_eq(&msg.nodes[1].id, &(kad_guid){.bytes = "mnopqrstuvwxyz123456", .is_set = true}));
     memset(&ss, 0, sizeof(ss));
     sa6->sin6_family=AF_INET6; sa6->sin6_port=htons(0x0304);
     memcpy(sa6->sin6_addr.s6_addr, (unsigned char[]){1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0xaa}, sizeof(struct in6_addr));
-    assert(sockaddr_storage_cmp6(&msg.nodes[1].addr, &ss));
+    assert(sockaddr_storage_eq(&msg.nodes[1].addr, &ss));
 
     strcpy(buf, KAD_TEST_FIND_NODE_RESPONSE_BOGUS);
     memset(&msg, 0, sizeof(msg));
