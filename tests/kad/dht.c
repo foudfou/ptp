@@ -84,12 +84,19 @@ int main(int argc, char *argv[])
     struct kad_node_info opp;
     opp.id = dht->self_id;
     opp.id.bytes[0] ^= 0x80;
-    assert(KAD_K_CONST <= 0xff);  // don't want to overflow
+    opp.id.bytes[KAD_GUID_SPACE_IN_BYTES-1] = 0;
+    assert(KAD_K_CONST <= 0xff);  // avoid overflow
     for (int i = 0; i < KAD_K_CONST + 1; ++i) {
+        opp.id.bytes[KAD_GUID_SPACE_IN_BYTES-1] = i;
         assert(dht_insert(dht, &opp, 0));
-        opp.id.bytes[KAD_GUID_SPACE_IN_BYTES-1] += 1;
     }
     assert(!list_is_empty(&dht->replacement));
+
+    // mark stale
+    struct kad_node *stale = dht_get(dht, &opp.id);
+    assert(stale);
+    assert(dht_mark_stale(dht, &opp.id));
+    assert(stale->stale == 1);
 
     dht_destroy(dht);
 

@@ -423,8 +423,13 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
     log_debug("Sent %d bytes.", slen);
     iobuf_reset(&qbuf);
 
-    if (req_lru_put(kctx->reqs_out, query)) {
-        // FIXME mark evicted node as stale in dht
+    struct kad_rpc_query *evicted = req_lru_put(kctx->reqs_out, query);
+    if (evicted) {
+        long long now = now_millis();
+        if (now < 0)
+            goto failed2;
+        if (evicted->created + KAD_RPC_QUERY_TIMEOUT_MILLIS < now)
+            dht_mark_stale(kctx->dht, &evicted->node.id);
         log_info("Evicted query from full list.");
     }
 

@@ -19,6 +19,8 @@ struct req_lru;
 
 
 #define KAD_RPC_MSG_TX_ID_LEN 2
+// TODO tune and move to defs
+#define KAD_RPC_QUERY_TIMEOUT_MILLIS 60000
 
 enum kad_rpc_type {
     KAD_RPC_TYPE_NONE,

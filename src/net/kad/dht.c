@@ -210,8 +210,8 @@ dht_get_with_bucket(struct kad_dht *dht, const kad_guid *node_id,
 {
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
     struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], node_id);
-    struct list_item *bkt = NULL;
 
+    struct list_item *bkt = NULL;
     if (node) {
         bkt = &dht->buckets[bkt_idx];
     }
@@ -219,6 +219,7 @@ dht_get_with_bucket(struct kad_dht *dht, const kad_guid *node_id,
         node = dht_get_from_list(&dht->replacement, node_id);
         bkt = &dht->replacement;
     }
+
     if (bucket)
         *bucket = bkt;
 
@@ -332,6 +333,15 @@ bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
 
     list_delete(&node->item);
     free_safer(node);
+    return true;
+}
+
+bool dht_mark_stale(struct kad_dht *dht, const kad_guid *node_id)
+{
+    struct kad_node *node = dht_get(dht, node_id);
+    if (!node)
+        return false;
+    node->stale++;
     return true;
 }
 

@@ -35,7 +35,13 @@ struct kad_node {
     struct list_item     item;
     struct kad_node_info info;
     time_t               last_seen;
-    int                  stale;
+    /* « When a contact fails to respond to 5 RPCs in a row, it is considered
+       stale.  If a k-bucket is not full or its replacement cache is empty,
+       Kademlia merely flags stale contacts rather than remove them. This
+       ensures, among other things, that if a node’s own network connection
+       goes down teporarily, the node won’t completely void all of its
+       k-buckets. » */
+    int stale;
 };
 
 struct kad_dht {
@@ -95,6 +101,7 @@ struct kad_node *dht_get(struct kad_dht *dht, const kad_guid *node_id);
 bool dht_update(struct kad_dht *dht, const struct kad_node_info *info, time_t time);
 bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t time);
 bool dht_delete(struct kad_dht *dht, const kad_guid *node_id);
+bool dht_mark_stale(struct kad_dht *dht, const kad_guid *node_id);
 size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
                         struct kad_node_info nodes[], const kad_guid *caller);
 
