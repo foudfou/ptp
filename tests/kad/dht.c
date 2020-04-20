@@ -92,7 +92,7 @@ int main(int argc, char *argv[])
     assert(!list_is_empty(&dht->replacement));
 
     // mark stale
-    struct kad_node *stale = dht_get(dht, &opp.id);
+    struct kad_node *stale = dht_get_with_bucket(dht, &opp.id, NULL, NULL);
     assert(stale);
     assert(dht_mark_stale(dht, &opp.id));
     assert(stale->stale == 1);
@@ -110,7 +110,8 @@ int main(int argc, char *argv[])
     assert(dht);
     assert(memcmp(dht->self_id.bytes, "0123456789abcdefghij5", KAD_GUID_SPACE_IN_BYTES) == 0);
     for (size_t i=0; i<ARRAY_LEN(kad_test_nodes); i++) {
-        const struct kad_node *knode = dht_get(dht, &kad_test_nodes[i].id);
+        const struct kad_node *knode =
+            dht_get_with_bucket(dht, &kad_test_nodes[i].id, NULL, NULL);
         assert(knode);
         assert(kad_node_info_equals(&knode->info, &kad_test_nodes[i]));
     }

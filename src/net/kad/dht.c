@@ -206,30 +206,24 @@ dht_get_from_list(const struct list_item *list, const kad_guid *node_id)
 
 static struct kad_node *
 dht_get_with_bucket(struct kad_dht *dht, const kad_guid *node_id,
-                    struct list_item **bucket)
+                    struct list_item **bucket, size_t *bucket_idx)
 {
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
-    struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], node_id);
+    if (bucket_idx)
+        *bucket_idx = bkt_idx;
 
-    struct list_item *bkt = NULL;
-    if (node) {
-        bkt = &dht->buckets[bkt_idx];
-    }
-    else {
-        node = dht_get_from_list(&dht->replacement, node_id);
+    struct list_item *bkt = &dht->buckets[bkt_idx];
+    struct kad_node *node = dht_get_from_list(bkt, node_id);
+
+    if (!node) {
         bkt = &dht->replacement;
+        node = dht_get_from_list(bkt, node_id);
     }
 
     if (bucket)
         *bucket = bkt;
 
     return node;
-}
-
-// Intentionally kept internal.
-static struct kad_node *dht_get(struct kad_dht *dht, const kad_guid *node_id)
-{
-    return dht_get_with_bucket(dht, node_id, NULL);
 }
 
 /**
@@ -252,7 +246,7 @@ static struct kad_node *dht_get(struct kad_dht *dht, const kad_guid *node_id)
 bool dht_update(struct kad_dht *dht, const struct kad_node_info *info, time_t time)
 {
     struct list_item *bucket = NULL;
-    struct kad_node *node = dht_get_with_bucket(dht, &info->id, &bucket);
+    struct kad_node *node = dht_get_with_bucket(dht, &info->id, &bucket, NULL);
     if (!node)
         return false;
 
@@ -273,7 +267,8 @@ bool dht_update(struct kad_dht *dht, const struct kad_node_info *info, time_t ti
     return true;
 }
 
-static struct kad_node *dht_node_new(const struct kad_node_info *info)
+static struct kad_node *
+dht_node_new(const struct kad_node_info *info, time_t time)
 {
     struct kad_node *node = malloc(sizeof(struct kad_node));
     if (!node) {
@@ -284,6 +279,7 @@ static struct kad_node *dht_node_new(const struct kad_node_info *info)
 
     list_init(&node->item);
     kad_node_info_copy(&node->info, info);
+    node->last_seen = time;
 
     return node;
 }
@@ -298,21 +294,19 @@ bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t ti
         return false;
     }
 
-    struct list_item *bucket = NULL;
-    struct kad_node *node = dht_get_with_bucket(dht, &info->id, &bucket);
+    size_t bkt_idx = 0;
+    struct kad_node *node = dht_get_with_bucket(dht, &info->id, NULL, &bkt_idx);
     if (node) {
         log_error("DHT insert failed: existing node.");
         return false;
     }
 
-    if (!(node = dht_node_new(info)))
+    if (!(node = dht_node_new(info, time)))
         return false;
-    node->last_seen = time;
 
-    size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->info.id);
-    bucket = &dht->buckets[bkt_idx];
+    struct list_item *bucket = &dht->buckets[bkt_idx];
     if (kad_bucket_count(bucket) < KAD_K_CONST) {
-        list_append(&dht->buckets[bkt_idx], &node->item);
+        list_append(bucket, &node->item);
         log_debug("DHT insert into bucket %zu.", bkt_idx);
     }
     else {
@@ -341,7 +335,7 @@ bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
 
 bool dht_mark_stale(struct kad_dht *dht, const kad_guid *node_id)
 {
-    struct kad_node *node = dht_get(dht, node_id);
+    struct kad_node *node = dht_get_with_bucket(dht, node_id, NULL, NULL);
     if (!node)
         return false;
     node->stale++;
