@@ -72,27 +72,20 @@ static bool
 kad_rpc_update_dht(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
                    const kad_guid *node_id)
 {
-    char *id = log_fmt_hex(LOG_DEBUG, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
-    struct kad_node_info info = {.id=*node_id, .addr=*addr};
-    sockaddr_storage_fmt(info.addr_str, addr);
-
     time_t now = 0;
     if (!now_sec(&now))
         return false;
 
-    bool rv = false;
-    if (dht_get(ctx->dht, node_id)) {
-        rv = dht_update(ctx->dht, &info, now);
+    bool rv = true;
+    struct kad_node_info info = {.id=*node_id, .addr=*addr};
+    sockaddr_storage_fmt(info.addr_str, addr);
+    char *id = log_fmt_hex(LOG_DEBUG, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
+    if ((rv = dht_update(ctx->dht, &info, now)))
         log_debug("DHT update of %s (id=%s).", &info.addr_str, id);
-    }
-    else {
-        rv = dht_insert(ctx->dht, &info, now);
+    else if ((rv = dht_insert(ctx->dht, &info, now)))
         log_debug("DHT insert of %s (id=%s).", &info.addr_str, id);
-    }
-
-    if (!rv)
+    else
         log_warning("Failed to upsert kad_node (id=%s)", id);
-
     free_safer(id);
 
     return rv;
@@ -178,13 +171,15 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 
     case KAD_RPC_METH_FIND_NODE: {
         for (size_t i=0; i<msg->nodes_len; ++i) {
-            if (msg->nodes[i].id.is_set && !dht_get(ctx->dht, &msg->nodes[i].id)) {
-                struct kad_node_info info = {.id=msg->nodes[i].id, .addr=msg->nodes[i].addr};
-                sockaddr_storage_fmt(info.addr_str, &info.addr);
-                dht_insert(ctx->dht, &info, 0);
-            }
-            else
+            if (!msg->nodes[i].id.is_set) {
                 log_warning("Node id not set, DHT not updated.");
+                continue;
+            }
+
+            struct kad_node_info info = {.id=msg->nodes[i].id, .addr=msg->nodes[i].addr};
+            sockaddr_storage_fmt(info.addr_str, &info.addr);
+            if (dht_insert(ctx->dht, &info, 0))
+                log_warning("Ignoring failed DHT insert.");
         }
         break;
     }

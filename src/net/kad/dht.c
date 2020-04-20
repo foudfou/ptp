@@ -226,7 +226,8 @@ dht_get_with_bucket(struct kad_dht *dht, const kad_guid *node_id,
     return node;
 }
 
-struct kad_node *dht_get(struct kad_dht *dht, const kad_guid *node_id)
+// Intentionally kept internal.
+static struct kad_node *dht_get(struct kad_dht *dht, const kad_guid *node_id)
 {
     return dht_get_with_bucket(dht, node_id, NULL);
 }
@@ -289,8 +290,6 @@ static struct kad_node *dht_node_new(const struct kad_node_info *info)
 
 /**
  * Inserts a node into the routing table.
- *
- * Assumes unknown node, i.e. dht_get() or dht_update() failed.
  */
 bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t time)
 {
@@ -299,16 +298,20 @@ bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t ti
         return false;
     }
 
-    struct kad_node *node = dht_node_new(info);
-    if (!node)
+    struct list_item *bucket = NULL;
+    struct kad_node *node = dht_get_with_bucket(dht, &info->id, &bucket);
+    if (node) {
+        log_error("DHT insert failed: existing node.");
         return false;
-    if (time)
-        node->last_seen = time;
+    }
+
+    if (!(node = dht_node_new(info)))
+        return false;
+    node->last_seen = time;
 
     size_t bkt_idx = kad_bucket_hash(&dht->self_id, &node->info.id);
-    struct list_item *bucket = &dht->buckets[bkt_idx];
-    size_t count = kad_bucket_count(bucket);
-    if (count < KAD_K_CONST) {
+    bucket = &dht->buckets[bkt_idx];
+    if (kad_bucket_count(bucket) < KAD_K_CONST) {
         list_append(&dht->buckets[bkt_idx], &node->item);
         log_debug("DHT insert into bucket %zu.", bkt_idx);
     }

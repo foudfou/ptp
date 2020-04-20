@@ -63,11 +63,10 @@ int main(int argc, char *argv[])
     struct sockaddr_in *sa = (struct sockaddr_in*)&info.addr;
     sa->sin_family=AF_INET; sa->sin_port=htons(0x0016); sa->sin_addr.s_addr=htonl(0x01020304);
     assert(sockaddr_storage_fmt(info.addr_str, &info.addr));
-    assert(strcmp(info.addr_str, "1.2.3.4,22") == 0);
+    assert(strcmp(info.addr_str, "1.2.3.4/22") == 0);
     assert(!dht_update(dht, &info, 0));
     assert(dht_insert(dht, &info, 0));
-    /* dht_get...() is not exposed. So we're not supposed to do bad things like
-       freeing a node, or assert(!n1) after it's been dht_delete'd. */
+    assert(!dht_insert(dht, &info, 0));
     bkt_idx = kad_bucket_hash(&dht->self_id, &info.id);
     struct kad_node *n1 = dht_get_from_list(&dht->buckets[bkt_idx], &info.id);
     assert(n1);

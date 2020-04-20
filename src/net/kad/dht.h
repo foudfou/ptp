@@ -3,8 +3,11 @@
 #define DHT_H
 
 /**
- * The dht is an opaque hash table-like structure. Its internal elements are
- * not exposed. Possible interactions are limited to insert, delete, update.
+ * The routing table is an opaque hash table-like structure. Its internal
+ * elements are not exposed. Possible interactions are limited to insert,
+ * delete, update.
+ *
+ * FIXME rename to "routes"
  */
 
 #include <netdb.h>
@@ -97,7 +100,7 @@ void dht_destroy(struct kad_dht * dht);
 
 int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len, const char state_path[]);
 
-struct kad_node *dht_get(struct kad_dht *dht, const kad_guid *node_id);
+/* dht_get() intentionally kept internal. */
 bool dht_update(struct kad_dht *dht, const struct kad_node_info *info, time_t time);
 bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t time);
 bool dht_delete(struct kad_dht *dht, const kad_guid *node_id);

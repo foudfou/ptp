@@ -166,7 +166,7 @@ bool sockaddr_storage_fmt(char str[], const struct sockaddr_storage *ss)
         log_error("Failed getnameinfo: %s.", gai_strerror(rv));
         return false;
     }
-    sprintf(str, "%s,%s", hbuf, pbuf);
+    sprintf(str, "%s/%s", hbuf, pbuf);
     return true;
 }
 
