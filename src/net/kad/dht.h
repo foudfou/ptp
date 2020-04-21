@@ -52,9 +52,9 @@ struct kad_dht {
     /* The routing table is implemented as hash table: an array of lists
        (buckets) of at most KAD_K_CONST node entries. Instead of using a
        generic hash table implementation, we build a specialized one for
-       specific operations on each list. Lists are sorted by construction:
-       either we append new nodes at the end, or we update nodes and move them
-       to the end. */
+       specific operations on each list. Lists are sorted by design: depending
+       on if we want to evict nodes (buckets) or get the most recent ones
+       (replacements). */
     struct list_item buckets[KAD_GUID_SPACE_IN_BITS]; // kad_node list
     /* « To reduce traffic, Kademlia delays probing contacts until it has
        useful messages to send them. When a Kademlia node receives an RPC from
@@ -66,7 +66,7 @@ struct kad_dht {
        replacement cache is kept sorted by time last seen, with the most
        recently seen entry having the highest priority as a replacement
        candidate. » */
-    struct list_item replacement; // kad_node list
+    struct list_item replacements[KAD_GUID_SPACE_IN_BITS]; // kad_node list
 };
 
 /**

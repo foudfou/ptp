@@ -89,13 +89,14 @@ int main(int argc, char *argv[])
         opp.id.bytes[KAD_GUID_SPACE_IN_BYTES-1] = i;
         assert(dht_insert(dht, &opp, 0));
     }
-    assert(!list_is_empty(&dht->replacement));
+    size_t blk_idx = 0;
+    struct kad_node *overflow = dht_get_with_bucket(dht, &opp.id, NULL, &blk_idx);
+    assert(overflow);
+    assert(!list_is_empty(&dht->replacements[blk_idx]));
 
     // mark stale
-    struct kad_node *stale = dht_get_with_bucket(dht, &opp.id, NULL, NULL);
-    assert(stale);
-    assert(dht_mark_stale(dht, &opp.id));
-    assert(stale->stale == 1);
+    assert(dht_mark_stale(dht, &overflow->info.id));
+    assert(overflow->stale == 1);
 
     dht_destroy(dht);
 

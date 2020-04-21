@@ -43,9 +43,10 @@ static void kad_generate_id(kad_guid *uid)
 static void dht_init(struct kad_dht *dht)
 {
     memset(&dht->self_id, 0, sizeof(kad_guid));
-    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
+    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
         list_init(&dht->buckets[i]);
-    list_init(&dht->replacement);
+        list_init(&dht->replacements[i]);
+    }
 }
 
 struct kad_dht *dht_create()
@@ -72,9 +73,9 @@ void dht_destroy(struct kad_dht *dht)
     for (int i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
         struct list_item *bucket = &dht->buckets[i];
         list_free_all(bucket, struct kad_node, item);
+        bucket = &dht->replacements[i];
+        list_free_all(bucket, struct kad_node, item);
     }
-    struct list_item *repl = &dht->replacement;
-    list_free_all(repl, struct kad_node, item);
     free_safer(dht);
 }
 
@@ -216,7 +217,7 @@ dht_get_with_bucket(struct kad_dht *dht, const kad_guid *node_id,
     struct kad_node *node = dht_get_from_list(bkt, node_id);
 
     if (!node) {
-        bkt = &dht->replacement;
+        bkt = &dht->replacements[bkt_idx];
         node = dht_get_from_list(bkt, node_id);
     }
 
@@ -310,7 +311,7 @@ bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t ti
         log_debug("DHT insert into bucket %zu.", bkt_idx);
     }
     else {
-        list_prepend(&dht->replacement, &node->item);
+        list_prepend(&dht->replacements[bkt_idx], &node->item);
         log_debug("DHT insert into replacement cache.");
     }
 
