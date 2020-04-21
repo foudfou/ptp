@@ -423,7 +423,11 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
     log_debug("Sent %d bytes.", slen);
     iobuf_reset(&qbuf);
 
-    struct kad_rpc_query *evicted = req_lru_put(kctx->reqs_out, query);
+    struct kad_rpc_query *evicted = NULL;
+    if (!req_lru_put(kctx->reqs_out, query, &evicted)) {
+        log_error("Cannot register duplicate query (id=%s)", id);
+        goto failed2;
+    }
     if (evicted) {
         long long now = now_millis();
         if (now < 0)

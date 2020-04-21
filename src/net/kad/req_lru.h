@@ -49,25 +49,31 @@ static inline void req_lru_init(struct req_lru *lru) {
 }
 
 /**
- * Returns evicted item or NULL.
+ * Exclusive insert.
+ *
+ * Returns false on duplicated. Sets `evicted` to evicted item.
  */
-static inline struct kad_rpc_query *
-req_lru_put(struct req_lru *lru, struct kad_rpc_query *q) {
-    struct kad_rpc_query *rv = NULL;
+static inline bool
+req_lru_put(struct req_lru *lru, struct kad_rpc_query *q,
+            struct kad_rpc_query **evicted) {
+    struct kad_rpc_query *dup = hreq_lru_get(lru->hitems, q->msg.tx_id);
+    if (dup)
+        return false;
 
     if (lru->len >= REQ_LRU_CAPACITY) {
         struct list_item *last = lru->litems.prev;
         list_delete(last);
-        struct kad_rpc_query *evicted = cont(last, struct kad_rpc_query, litem);
-        hash_delete(&evicted->hitem);
-        rv = evicted;
+        struct kad_rpc_query *evict = cont(last, struct kad_rpc_query, litem);
+        hash_delete(&evict->hitem);
+        if (evicted)
+            *evicted = evict;
     }
 
     list_insert(&lru->litems, &q->litem);
     hreq_lru_insert(lru->hitems, q->msg.tx_id, &q->hitem);
     lru->len++;
 
-    return rv;
+    return true;
 }
 
 static inline struct kad_rpc_query *

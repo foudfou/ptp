@@ -21,7 +21,7 @@ int main()
 
     struct kad_rpc_query q0 = {0};
     assert(query_init(&q0));
-    assert(req_lru_put(&reqs_out, &q0) == NULL);
+    assert(req_lru_put(&reqs_out, &q0, NULL));
     assert(reqs_out.len == 1 && list_count(&reqs_out.litems) == 1);
     assert(req_lru_get(&reqs_out, q0.msg.tx_id) == &q0);
 
@@ -40,7 +40,10 @@ int main()
         q = calloc(1, sizeof(struct kad_rpc_query));
         assert(q);
         assert(query_init(q));
-        assert(req_lru_put(&reqs_out, q) == NULL);
+        if (i % 255)
+            q->msg.tx_id.bytes[0] = i / 255;
+        q->msg.tx_id.bytes[KAD_RPC_MSG_TX_ID_LEN-1] = i;
+        assert(req_lru_put(&reqs_out, q, NULL));
     }
     assert(reqs_out.len == REQ_LRU_CAPACITY && list_count(&reqs_out.litems) == REQ_LRU_CAPACITY);
 
@@ -48,7 +51,8 @@ int main()
     q = calloc(1, sizeof(struct kad_rpc_query));
     assert(q);
     assert(query_init(q));
-    struct kad_rpc_query *evicted = req_lru_put(&reqs_out, q);
+    struct kad_rpc_query *evicted = NULL;
+    assert(req_lru_put(&reqs_out, q, &evicted));
     assert(evicted);
     assert(evicted == oldest);
     free(evicted);
