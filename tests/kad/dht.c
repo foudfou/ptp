@@ -64,12 +64,17 @@ int main(int argc, char *argv[])
     sa->sin_family=AF_INET; sa->sin_port=htons(0x0016); sa->sin_addr.s_addr=htonl(0x01020304);
     assert(sockaddr_storage_fmt(info.addr_str, &info.addr));
     assert(strcmp(info.addr_str, "1.2.3.4/22") == 0);
+
+    assert(!dht_delete(dht, &info.id));
     assert(!dht_update(dht, &info, 0));
     assert(dht_insert(dht, &info, 0));
     assert(!dht_insert(dht, &info, 0));
     bkt_idx = kad_bucket_hash(&dht->self_id, &info.id);
     struct kad_node *n1 = dht_get_from_list(&dht->buckets[bkt_idx], &info.id);
     assert(n1);
+
+    sa->sin_family=AF_INET; sa->sin_port=htons(0x0800); sa->sin_addr.s_addr=htonl(0x04030201);
+    assert(dht_update(dht, &info, 0));
 
     assert(dht_delete(dht, &info.id));
     n1 = dht_get_from_list(&dht->buckets[bkt_idx], &info.id);

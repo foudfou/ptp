@@ -1,0 +1,41 @@
+# Not integrated to CI: either we wait for "AlignConsecutiveDeclarations" to
+# work with "PointerAlignment: Right" (https://reviews.llvm.org/D27651?id=80996)
+# or we go "PointerAlignment: Left".
+#
+# file:///usr/share/doc/clang/html/ClangFormatStyleOptions.html
+BasedOnStyle: Mozilla
+IncludeBlocks: Merge
+IncludeCategories:
+  - Regex:           '^<ext/.*\.h>'
+    Priority:        2
+  - Regex:           '^<.*\.h>'
+    Priority:        1
+  - Regex:           '^<.*'
+    Priority:        2
+  - Regex:           '.*'
+    Priority:        3
+DerivePointerAlignment: false
+PointerAlignment: Right
+AlignAfterOpenBracket: true
+AllowAllArgumentsOnNextLine: false
+AllowAllParametersOfDeclarationOnNextLine: true
+# Does work with  https://reviews.llvm.org/D27651?id=80996
+AlignConsecutiveDeclarations: true
+BinPackArguments: true
+BinPackParameters: false
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction:   true
+  BeforeElse:      true
+ColumnLimit: 80
+ContinuationIndentWidth: 4
+IndentWidth: 4
+IndentCaseLabels: false
+BreakStringLiterals: true
+PenaltyBreakAssignment: 2000
+PenaltyBreakBeforeFirstCallParameter: 1000000
+PenaltyBreakString: 1
+PenaltyExcessCharacter: 10
+SpacesBeforeTrailingComments: 2
+Cpp11BracedListStyle: true
+SpacesInContainerLiterals: false
