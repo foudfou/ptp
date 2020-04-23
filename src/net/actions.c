@@ -11,6 +11,8 @@
 #include "utils/time.h"
 #include "net/actions.h"
 
+
+#define BOOTSTRAP_FILENAME "nodes.dat"
 #define BOOTSTRAP_NODES_LEN 64
 // FIXME: low for testing purpose.
 #define SERVER_TCP_BUFLEN 10
@@ -363,7 +365,11 @@ bool kad_bootstrap(struct list_item *timers, const struct config *conf,
     const char *elts[] = {conf->conf_dir, DATADIR, NULL};
     const char **it = elts;
     while (*it) {
-        snprintf(bootstrap_nodes_path, PATH_MAX-1, "%s/nodes.dat", *it);
+        int rv = snprintf(bootstrap_nodes_path, PATH_MAX-1, "%s/"BOOTSTRAP_FILENAME, *it);
+        if (rv < 0) {
+            log_error("Failed snprintf.");
+            return false;
+        }
         bootstrap_nodes_path[PATH_MAX-1] = '\0';
         if (access(bootstrap_nodes_path, R_OK|W_OK) != -1) {
             found = true;

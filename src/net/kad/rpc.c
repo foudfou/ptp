@@ -27,7 +27,11 @@ int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
     int nodes_len = 0;
     if (conf_dir) {
         char dht_state_path[PATH_MAX];
-        snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
+        int rv = snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
+        if (rv < 0) {
+            log_error("Failed snprintf.");
+            return false;
+        }
         dht_state_path[PATH_MAX-1] = '\0';
         if (access(dht_state_path, R_OK|W_OK) != -1 ) {
             nodes_len = dht_read(&ctx->dht, dht_state_path);
