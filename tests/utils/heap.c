@@ -15,7 +15,7 @@ struct some {
     char c;
 };
 
-static inline int min_heap_cmp(const struct some *a, struct some *b)
+static inline int min_heap_cmp(const struct some *a, const struct some *b)
 {
     return b->c - a->c;
 }
@@ -26,7 +26,8 @@ HEAP_GENERATE(min_heap, struct some *)
 
 int main ()
 {
-    HEAP_INIT(ints, int_heap, int, 4);
+    struct int_heap ints = {0};
+    assert(int_heap_init(&ints, 4));
     assert(memcmp(ints.items, (int[N]){0}, N) == 0);
 
     for (size_t i=0; i<N; ++i)
@@ -48,8 +49,8 @@ int main ()
 
     free_safer(ints.items);
 
-
-    HEAP_INIT(somes, min_heap, struct some *, 4);
+    struct min_heap somes = {0};
+    assert(min_heap_init(&somes, 4));
     assert(memcmp(somes.items, (int[N]){0}, N) == 0);
 
     struct some have[N] = {{74},{73},{72},{71},{70},{69},{68},{67},{66},{65}};

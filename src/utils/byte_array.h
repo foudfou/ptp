@@ -94,4 +94,21 @@ static inline void type##_xor(type *out, const type *id1, const type *id2) \
     }                                                                   \
 }
 
+static inline unsigned cntl0(unsigned char x)
+{
+    static const unsigned char clz_lookup[16] = {4, 3, 2, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0};
+    unsigned char upper = x >> 4;
+    unsigned char lower = x & 0x0F;
+    return upper ? clz_lookup[upper] : 4 + clz_lookup[lower];
+}
+
+/* Count leading zeros */
+static inline unsigned clz(unsigned char n) {
+#if defined(__GCC__) || defined(__clang__)
+  return n == 0 ? sizeof(n) * CHAR_BIT : __builtin_clz(n);
+#else
+  return cntl0(n);
+#endif
+}
+
 #endif /* BYTE_ARRAY_H */

@@ -7,6 +7,7 @@
  * 0x0100 ^ 0x0110 = 0x0010, common prefix "00". It thus really represents a
  * distance in the tree.
  */
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -30,6 +31,36 @@ void rand_init()
     if (clock_gettime(CLOCK_REALTIME, &time) < 0)
         log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
     srandom(time.tv_sec * time.tv_nsec * getpid());
+}
+
+/**
+ * Computes the longest common prefix between two nodes.
+ *
+ * This expresses the bucket-based proximity but is not equivalent to the XOR
+ * distance, which is more precise: « Given two 160-bit identifiers, x and y,
+ * Kademlia defines the distance between them as their bitwise exclusive or
+ * (XOR) interpreted as an integer, d(x, y) = x ⊕ y. »
+ *
+ * Note in practice we don't need to actually compute the integer value of the
+ * kad distance, which wouldn't fit into any C integer type, just compare
+ * distances. See node_heap_cmp().
+ */
+bool kad_longest_prefix(unsigned *diff, const kad_guid *a1, const kad_guid *a2) {
+    if (!a1 || !a2 || !a1->is_set || !a2->is_set)
+        return false;
+
+    kad_guid xor = {0};
+    kad_guid_xor(&xor, a1, a2);
+
+    *diff = KAD_GUID_SPACE_IN_BITS;
+    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BYTES; ++i) {
+        unsigned lz = clz(xor.bytes[i]);
+        *diff -= lz;
+        if (lz != CHAR_BIT)
+            break;
+    }
+
+    return true;
 }
 
 static void kad_generate_id(kad_guid *uid)

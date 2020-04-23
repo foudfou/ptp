@@ -5,5 +5,6 @@
 #define KAD_GUID_SPACE_IN_BYTES @guid_size_in_bytes@
 #define KAD_GUID_SPACE_IN_BITS  @guid_size_in_bits@
 #define KAD_K_CONST             @k_const@
+#define KAD_ALPHA_CONST         @alpha_const@
 
 #endif /* DEFS_H */

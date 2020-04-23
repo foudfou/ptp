@@ -13,6 +13,28 @@ int main ()
     ctx.reqs_out = &reqs_out;
     assert(kad_rpc_init(&ctx, NULL) == 0);
 
+    assert(0 == node_heap_cmp(
+               &(struct kad_node_lookup){.target = {.bytes = {[0]=0xff, [1]=0x04}},
+                       .id = {.bytes = {[0]=0xff, [1]=0x04}}},
+               &(struct kad_node_lookup){.target = {.bytes = {[0]=0xff, [1]=0x04}},
+                       .id = {.bytes = {[0]=0xff, [1]=0x04}}}));
+    assert(INT_MAX == node_heap_cmp(
+               &(struct kad_node_lookup){.target = {.bytes = {[0]=0, [1]=0}},
+                       .id = {.bytes = {[0]=0, [1]=0xff}}},
+               &(struct kad_node_lookup){.target = {.bytes = {[0]=1, [1]=0}},
+                       .id = {.bytes = {[0]=0, [1]=0xff}}}));
+    assert(0 < node_heap_cmp(
+               &(struct kad_node_lookup){.target = {.bytes = {[0]=0, [1]=0xff}},
+                       .id = {.bytes = {[0]=0, [1]=1}}}, // fe
+               &(struct kad_node_lookup){.target = {.bytes = {[0]=0, [1]=0xff}},
+                       .id = {.bytes = {[0]=1, [1]=0}}})); // 1ff
+    assert(0 > node_heap_cmp(
+               &(struct kad_node_lookup){.target = {.bytes = {[0]=0, [1]=0xff}},
+                       .id = {.bytes = {[0]=1, [1]=0}}},
+               &(struct kad_node_lookup){.target = {.bytes = {[0]=0, [1]=0xff}},
+                       .id = {.bytes = {[0]=0, [1]=1}}}));
+
+
     struct iobuf rsp = {0};
 
     struct sockaddr_storage ss = {0};

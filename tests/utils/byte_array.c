@@ -43,6 +43,10 @@ int main ()
     some_id_xor(&xored, &(some_id){.bytes = {0xaa,0xaa}}, &(some_id){.bytes = {0x55,0x55}});
     assert(some_id_eq(&xored, &(some_id){.bytes = {0xff,0xff}}));
 
+    assert(clz(0x80) == 0);
+    assert(clz(0x70) == 1);
+    assert(clz(0) == 8);
+
 
     return 0;
 }

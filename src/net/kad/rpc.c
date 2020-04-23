@@ -46,6 +46,7 @@ int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
     }
 
     req_lru_init(ctx->reqs_out);
+    node_heap_init(&ctx->lookup.nodes, 32);
 
     log_debug("DHT initialized.");
     return nodes_len;
@@ -63,6 +64,9 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
     }
 
     dht_destroy(ctx->dht);
+
+    free_safer(ctx->lookup.nodes.items);
+
     struct list_item *reqs_out = &ctx->reqs_out->litems;
     list_free_all(reqs_out, struct kad_rpc_query, litem);
     log_debug("DHT terminated.");

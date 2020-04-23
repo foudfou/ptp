@@ -56,6 +56,19 @@ int main(int argc, char *argv[])
         &(kad_guid){.bytes = "\x00""bcdefghij0123456789"},
         &(kad_guid){.bytes = "\x00""bcdefghij0123456789"}));
 
+    unsigned prefix = 0;
+    assert(!kad_longest_prefix(&prefix, &(kad_guid){.bytes = {0}}, &(kad_guid){.bytes = {0}}));
+    assert(kad_longest_prefix(
+               &prefix,
+               &(kad_guid){.bytes = {[0]=0xff, [1]=0x0}, .is_set = true},
+               &(kad_guid){.bytes = {[0]=0x7f, [1]=0x0}, .is_set = true}));
+    assert(prefix == KAD_GUID_SPACE_IN_BITS);
+    assert(kad_longest_prefix(
+               &prefix,
+               &(kad_guid){.bytes = {[0]=0xff, [1]=0x04}, .is_set = true},
+               &(kad_guid){.bytes = {[0]=0xff, [1]=0x02}, .is_set = true}));
+    assert(prefix == KAD_GUID_SPACE_IN_BITS - 13);
+
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_dht *dht = dht_create();
 

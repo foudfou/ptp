@@ -533,7 +533,7 @@ bool kad_refresh(void *data)
 }
 
 /*
-  While node lookup is the most important procedure in kademlia, the parper
+  While node lookup is the most important procedure in kademlia, the paper
   gives a confusing description. This has led to varying interpretation (see
   references). Hereafter is our own interpretation.
 

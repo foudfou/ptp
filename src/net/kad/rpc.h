@@ -5,11 +5,12 @@
 /**
  * KRPC Protocol as defined in http://www.bittorrent.org/beps/bep_0005.html.
  */
-
+#include <limits.h>
 #include <stdbool.h>
 #include "net/iobuf.h"
 #include "net/kad/dht.h"
 #include "utils/byte_array.h"
+#include "utils/heap.h"
 #include "utils/list.h"
 #include "utils/lookup.h"
 #include "net/kad/bencode/parser.h"
@@ -92,15 +93,46 @@ struct kad_rpc_query {
     struct kad_node_info node;
 };
 
-struct kad_rpc_node_pair {
-    struct list_item     item;
-    struct kad_node_info old;
-    struct kad_node_info new;
+struct kad_node_lookup {
+    kad_guid                target;
+    kad_guid                id;
+    struct sockaddr_storage addr;
+};
+
+/**
+ * Compares the distance of 2 nodes to a given target.
+ *
+ * Returns a negative number if a > b, 0 if a == b, a positive int if
+ * a < b. Intended for min-heap.
+ */
+static inline
+int node_heap_cmp(const struct kad_node_lookup *a,
+                  const struct kad_node_lookup *b)
+{
+    if (memcmp(&a->target, &b->target, KAD_GUID_SPACE_IN_BYTES) != 0)
+        return INT_MAX; // convention
+
+    kad_guid dista = {0};
+    kad_guid_xor(&dista, &a->id, &a->target);
+    kad_guid distb = {0};
+    kad_guid_xor(&distb, &b->id, &b->target);
+
+    size_t i = 0;
+    while (i < KAD_GUID_SPACE_IN_BYTES && (dista.bytes[i] == distb.bytes[i])) i++;
+    return i == KAD_GUID_SPACE_IN_BYTES ? 0 : distb.bytes[i] - dista.bytes[i];
+}
+HEAP_GENERATE(node_heap, struct kad_node_lookup *)
+
+struct kad_lookup {
+    int                   round;
+    struct kad_node_info *par[KAD_ALPHA_CONST];
+    struct node_heap      nodes;
 };
 
 struct kad_ctx {
-    struct kad_dht *dht;
-    struct req_lru *reqs_out;
+    struct kad_dht    *dht;
+    struct req_lru    *reqs_out;
+    struct kad_lookup  lookup;
 };
 
 int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[]);
@@ -111,5 +143,6 @@ bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg);
 
 bool kad_rpc_query_create(struct iobuf *buf, struct kad_rpc_query *query, const struct kad_ctx *ctx);
+
 
 #endif /* KAD_RPC_H */

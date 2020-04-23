@@ -2,7 +2,10 @@
 #define HEAP_H
 
 /**
- * A binary heap / priority queue implementation using a dynamic array.
+ * A binary heap / priority queue implementation.
+ *
+ * Employs a dynamic array, so users can start with a small capacity that will
+ * grow automatically as required.
  *
  * User MUST provide a comparison function:
  *
@@ -22,15 +25,11 @@
 #define RIGHT(i)  (2*(i) + 2)
 #define PARENT(i) (size_t)(((i) - 1)/2)
 
+
 #define HEAP_GENERATE(name, type)     \
     HEAP_GENERATE_BASE(name, type)    \
     HEAP_GENERATE_INSERT(name, type)  \
     HEAP_GENERATE_GET(name, type)
-
-#define HEAP_INIT(var_name, heap_name, item_type, capa)     \
-    struct heap_name var_name = {0};                        \
-    var_name.items = calloc(capa, sizeof(item_type));       \
-    var_name.cap = capa
 
 #define HEAP_GENERATE_BASE(name, type)                                  \
     struct name {                                                       \
@@ -38,6 +37,15 @@
         size_t  cap;                                                    \
         type   *items;                                                  \
     };                                                                  \
+                                                                        \
+static inline                                                           \
+bool name##_init(struct name *h, size_t capa) {                         \
+    h->items = calloc(capa, sizeof(type));                              \
+    if (h->items == NULL)                                               \
+        return false;                                                   \
+    h->cap = capa;                                                      \
+    return true;                                                        \
+}                                                                       \
                                                                         \
 static inline                                                           \
 bool name##_grow(struct name *h) {                                      \
@@ -62,7 +70,7 @@ static inline void name##swap(type *a, type *b) {                       \
 /**
  * Can fail if growing fails.
  */                                                                     \
-bool name##_insert(struct name *h, type item)                           \
+static inline bool name##_insert(struct name *h, type item)             \
 {                                                                       \
     if (h->len >= h->cap && !name##_grow(h))                            \
         return false;                                                   \
@@ -79,7 +87,7 @@ bool name##_insert(struct name *h, type item)                           \
 }
 
 #define HEAP_GENERATE_GET(name, type)                                   \
-type name##_get(struct name *h)                                         \
+static inline type name##_get(struct name *h)                           \
 {                                                                       \
     if (h->len == 0)                                                    \
         /* FIXME ok for pointers, but not for other types */            \
@@ -95,7 +103,7 @@ type name##_get(struct name *h)                                         \
            ((LEFT(i) < h->len && (name##_cmp(h->items[i], h->items[LEFT(i)]) < 0)) || \
             (RIGHT(i) < h->len && name##_cmp(h->items[i], h->items[RIGHT(i)]) < 0))) { \
         size_t child =                                                  \
-            (name##_cmp(h->items[LEFT(i)], h->items[RIGHT(i)]) < 0) ? \
+            (name##_cmp(h->items[LEFT(i)], h->items[RIGHT(i)]) < 0) ?   \
             RIGHT(i) : LEFT(i);                                         \
         name##swap(&h->items[i], &h->items[child]);                     \
         i = child;                                                      \

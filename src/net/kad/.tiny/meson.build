@@ -7,6 +7,7 @@ defs_alt.set('guid_size_in_bytes', 1)
 # yes, we'll only be using the first 4 bits
 defs_alt.set('guid_size_in_bits', 4)
 defs_alt.set('k_const', 6)
+defs_alt.set('alpha_const', 3)
 configure_file(input : '../defs.h.in',
                output : 'kad_defs.h',
                configuration : defs_alt)
