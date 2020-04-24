@@ -45,6 +45,7 @@ int main ()
 
     assert(clz(0x80) == 0);
     assert(clz(0x70) == 1);
+    assert(clz(1) == 7);
     assert(clz(0) == 8);
 
 

@@ -9,6 +9,7 @@
  * themselves, ascending. For ex. changing bit 8 (starting from 0) actually
  * changes the MSB of byte 1.
  */
+#include <limits.h>
 #include <stdbool.h>
 #include <string.h>
 #include "utils/bits.h"
@@ -105,9 +106,11 @@ static inline unsigned cntl0(unsigned char x)
 /* Count leading zeros */
 static inline unsigned clz(unsigned char n) {
 #if defined(__GCC__) || defined(__clang__)
-  return n == 0 ? sizeof(n) * CHAR_BIT : __builtin_clz(n);
+    return n == 0
+        ? sizeof(n) * CHAR_BIT
+        : __builtin_clzs((unsigned short)n << sizeof(n) * CHAR_BIT);
 #else
-  return cntl0(n);
+    return cntl0(n);
 #endif
 }
 

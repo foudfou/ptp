@@ -28,22 +28,37 @@ int main(int argc, char *argv[])
     char *source_dir = argv[1];
 
 
+    assert(kad_bucket_hash(&(kad_guid){.bytes = {0}}, &(kad_guid){.bytes = {0}})
+           == -1);
+    assert(kad_bucket_hash(
+               &(kad_guid){.bytes = {[0]=0xff, [1]=0x0}, .is_set = true},
+               &(kad_guid){.bytes = {[0]=0x7f, [1]=0x0}, .is_set = true})
+           == KAD_GUID_SPACE_IN_BITS - 1);
+    assert(kad_bucket_hash(
+               &(kad_guid){.bytes = {[0]=0xff, [1]=0x0}, .is_set = true},
+               &(kad_guid){.bytes = {[0]=0x8f, [1]=0x0}, .is_set = true})
+           == KAD_GUID_SPACE_IN_BITS - 2);
+    assert(kad_bucket_hash(
+               &(kad_guid){.bytes = {[0]=0xff, [1]=0x04}, .is_set = true},
+               &(kad_guid){.bytes = {[0]=0xff, [1]=0x02}, .is_set = true})
+           == KAD_GUID_SPACE_IN_BITS - 14);
+
     size_t bkt_idx = kad_bucket_hash(
-        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
-        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}, .is_set = true},
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}, .is_set = true});
     assert(bkt_idx == 0);
     bkt_idx = kad_bucket_hash(
-        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}},
-        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}, .is_set = true},
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}, .is_set = true});
     assert(bkt_idx == 0);
     bkt_idx = kad_bucket_hash(
-        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x8}},
-        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}});
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x8}, .is_set = true},
+        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}, .is_set = true});
     assert(bkt_idx == 3);
 
     bkt_idx = kad_bucket_hash(
-        &(kad_guid){.bytes = {[0]=0xff, [1]=0x0}},
-        &(kad_guid){.bytes = {[0]=0x7f, [1]=0x0}});
+        &(kad_guid){.bytes = {[0]=0xff, [1]=0x0}, .is_set = true},
+        &(kad_guid){.bytes = {[0]=0x7f, [1]=0x0}, .is_set = true});
     assert(bkt_idx == KAD_GUID_SPACE_IN_BITS-1);
 
     assert(!kad_guid_eq(
@@ -56,23 +71,10 @@ int main(int argc, char *argv[])
         &(kad_guid){.bytes = "\x00""bcdefghij0123456789"},
         &(kad_guid){.bytes = "\x00""bcdefghij0123456789"}));
 
-    unsigned prefix = 0;
-    assert(!kad_longest_prefix(&prefix, &(kad_guid){.bytes = {0}}, &(kad_guid){.bytes = {0}}));
-    assert(kad_longest_prefix(
-               &prefix,
-               &(kad_guid){.bytes = {[0]=0xff, [1]=0x0}, .is_set = true},
-               &(kad_guid){.bytes = {[0]=0x7f, [1]=0x0}, .is_set = true}));
-    assert(prefix == KAD_GUID_SPACE_IN_BITS);
-    assert(kad_longest_prefix(
-               &prefix,
-               &(kad_guid){.bytes = {[0]=0xff, [1]=0x04}, .is_set = true},
-               &(kad_guid){.bytes = {[0]=0xff, [1]=0x02}, .is_set = true}));
-    assert(prefix == KAD_GUID_SPACE_IN_BITS - 13);
-
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_dht *dht = dht_create();
 
-    struct kad_node_info info = { .id = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}}, {0} };
+    struct kad_node_info info = { .id = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}, .is_set = true}, {0} };
     struct sockaddr_in *sa = (struct sockaddr_in*)&info.addr;
     sa->sin_family=AF_INET; sa->sin_port=htons(0x0016); sa->sin_addr.s_addr=htonl(0x01020304);
     assert(sockaddr_storage_fmt(info.addr_str, &info.addr));

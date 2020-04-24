@@ -93,8 +93,6 @@ static inline void kad_node_info_copy(struct kad_node_info *dst,
 
 void rand_init();
 
-bool kad_longest_prefix(unsigned *diff, const kad_guid *a1, const kad_guid *a2);
-
 int dht_read(struct kad_dht **dht, const char state_path[]);
 bool dht_write(const struct kad_dht *dht, const char state_path[]);
 struct kad_dht *dht_create();

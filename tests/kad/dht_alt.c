@@ -95,6 +95,11 @@ int main ()
         {{{{0x70}, true}, {0}, {0}}, 3},
     };
 
+    assert(kad_bucket_hash(
+               &(kad_guid){.bytes = {0}, .is_set = true},
+               &(kad_guid){.bytes = {0}, .is_set = true})
+           == 0);
+
     struct sockaddr_storage ss = {0};
     struct sockaddr_in *sa = (struct sockaddr_in*)&ss;
     sa->sin_family=AF_INET; sa->sin_port=htons(0x0016);

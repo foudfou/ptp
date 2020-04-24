@@ -33,36 +33,6 @@ void rand_init()
     srandom(time.tv_sec * time.tv_nsec * getpid());
 }
 
-/**
- * Computes the longest common prefix between two nodes.
- *
- * This expresses the bucket-based proximity but is not equivalent to the XOR
- * distance, which is more precise: « Given two 160-bit identifiers, x and y,
- * Kademlia defines the distance between them as their bitwise exclusive or
- * (XOR) interpreted as an integer, d(x, y) = x ⊕ y. »
- *
- * Note in practice we don't need to actually compute the integer value of the
- * kad distance, which wouldn't fit into any C integer type, just compare
- * distances. See node_heap_cmp().
- */
-bool kad_longest_prefix(unsigned *diff, const kad_guid *a1, const kad_guid *a2) {
-    if (!a1 || !a2 || !a1->is_set || !a2->is_set)
-        return false;
-
-    kad_guid xor = {0};
-    kad_guid_xor(&xor, a1, a2);
-
-    *diff = KAD_GUID_SPACE_IN_BITS;
-    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BYTES; ++i) {
-        unsigned lz = clz(xor.bytes[i]);
-        *diff -= lz;
-        if (lz != CHAR_BIT)
-            break;
-    }
-
-    return true;
-}
-
 static void kad_generate_id(kad_guid *uid)
 {
     unsigned char rand[KAD_GUID_SPACE_IN_BYTES];
@@ -110,35 +80,48 @@ void dht_destroy(struct kad_dht *dht)
     free_safer(dht);
 }
 
-/* « [Kademlia] For each 0 ≤ i < 160, every node keeps a list of (IP address,
-   UDP port, Node ID) triples for nodes of distance between 2^i and 2^i+1 from
-   itself, sorted by time last seen (least-recently seen node at the head). We
-   call these lists k-buckets. » Ex: In a 4 bits space, for node 0 and k=3,
-   bucket 0 has nodes of distance 0..2  = node  0001
-   bucket 1 has nodes of distance 2..4  = nodes 001x
-   bucket 2 has nodes of distance 4..8  = nodes 01xx
-   bucket 3 has nodes of distance 8..16 = nodes 1xxx
-   Each bucket will hold up to k active nodes.
-*/
-static inline size_t kad_bucket_hash(const kad_guid *self_id,
-                                     const kad_guid *peer_id)
+/**
+ * Computes the bucket a peer falls into.
+ *
+ * « For each 0 ≤ i < 160, every node keeps a list of (IP address, UDP port,
+ * Node ID) triples for nodes of distance between 2^i and 2^i+1 from itself,
+ * sorted by time last seen (least-recently seen node at the head). We call
+ * these lists k-buckets. » Ex: In a 4 bits space,for node 0 and k=3,
+ *   bucket 0 has nodes of distance 0..2 = node 0001
+ *   bucket 1 has nodes of distance 2..4 = nodes 001x
+ *   bucket 2 has nodes of distance 4..8 = nodes 01xx
+ *   bucket 3 has nodes of distance 8..16 = nodes 1xxx
+ * Each bucket will hold up to k active nodes.
+ *
+ * This is actually the longest common prefix between two nodes. This expresses
+ * the bucket-based proximity but is not equivalent to the XOR distance, which
+ * is more precise: « Given two 160-bit identifiers, x and y, Kademlia defines
+ * the distance between them as their bitwise exclusive or (XOR) interpreted as
+ * an integer, d(x, y) = x ⊕ y. »
+ *
+ * Note in practice we don't need to actually compute the integer value of the
+ * kad distance, which wouldn't fit into any C integer type, just compare
+ * distances. See node_heap_cmp().
+ */
+static inline int kad_bucket_hash(const kad_guid *self_id,
+                                  const kad_guid *peer_id)
 {
-    kad_guid dist;
-    BYTE_ARRAY_INIT(kad_guid, dist);
-    size_t bucket_idx = KAD_GUID_SPACE_IN_BITS;
-    for (int i = 0; i < KAD_GUID_SPACE_IN_BYTES; ++i) {
-        dist.bytes[i] = self_id->bytes[i] ^ peer_id->bytes[i];
+    if (!self_id || !peer_id || !self_id->is_set || !peer_id->is_set)
+        return -1;
 
-        for (int j = 0; j < 8; ++j) {
-            bucket_idx--;
-            if (BITS_CHK(dist.bytes[i], (1U << (7 - j))) ||
-                bucket_idx == 0) // in case guid space in bytes and in bits are
-                                 // not consistent, like when testing
-                goto guid_end;
-        }
+    int diff = KAD_GUID_SPACE_IN_BITS;
+    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BYTES; ++i) {
+        // avoid additional kad_guid_xor()
+        unsigned char xor = self_id->bytes[i] ^ peer_id->bytes[i];
+        unsigned lz = clz(xor);
+        diff -= lz;
+        if (lz != CHAR_BIT ||
+            diff == 0) // in case guid space in bytes and in bits are not
+                       // consistent, like when testing
+            break;
     }
-  guid_end:
-    return bucket_idx;
+
+    return diff > 0 ? diff - 1 : 0;
 }
 
 static inline size_t
@@ -175,11 +158,12 @@ size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
     size_t nodes_pos = 0;
     bitfield visited[BITFIELD_RESERVE_BITS(KAD_GUID_SPACE_IN_BITS)] = {0};
 
-    size_t bucket_idx = kad_bucket_hash(&dht->self_id, target);
+    int bucket_idx = kad_bucket_hash(&dht->self_id, target);
     const struct list_item *bucket = &dht->buckets[bucket_idx];
 
     int prefix_idx = KAD_GUID_SPACE_IN_BITS - bucket_idx;
     kad_guid prefix_mask, target_next;
+    target_next.is_set = true;
     while (prefix_idx >= 0) {
         nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
         BITFIELD_SET(visited, bucket_idx, 1);
@@ -240,7 +224,7 @@ static struct kad_node *
 dht_get_with_bucket(struct kad_dht *dht, const kad_guid *node_id,
                     struct list_item **bucket, size_t *bucket_idx)
 {
-    size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
+    int bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
     if (bucket_idx)
         *bucket_idx = bkt_idx;
 
@@ -351,7 +335,7 @@ bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t ti
 
 bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
 {
-    size_t bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
+    int bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
     struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], node_id);
     if (!node) {
         char *id = log_fmt_hex(LOG_ERR, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
