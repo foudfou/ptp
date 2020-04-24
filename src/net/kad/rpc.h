@@ -112,14 +112,17 @@ int node_heap_cmp(const struct kad_node_lookup *a,
     if (memcmp(&a->target, &b->target, KAD_GUID_SPACE_IN_BYTES) != 0)
         return INT_MAX; // convention
 
-    kad_guid dista = {0};
-    kad_guid_xor(&dista, &a->id, &a->target);
-    kad_guid distb = {0};
-    kad_guid_xor(&distb, &b->id, &b->target);
-
     size_t i = 0;
-    while (i < KAD_GUID_SPACE_IN_BYTES && (dista.bytes[i] == distb.bytes[i])) i++;
-    return i == KAD_GUID_SPACE_IN_BYTES ? 0 : distb.bytes[i] - dista.bytes[i];
+    unsigned char xa, xb;
+    while (i < KAD_GUID_SPACE_IN_BYTES) {
+        // avoid kad_guid_xor()
+        xa = a->id.bytes[i] ^ a->target.bytes[i];
+        xb = b->id.bytes[i] ^ b->target.bytes[i];
+        if (xa != xb)
+            break;
+        i++;
+    }
+    return i == KAD_GUID_SPACE_IN_BYTES ? 0 : xb - xa;
 }
 HEAP_GENERATE(node_heap, struct kad_node_lookup *)
 
