@@ -2,7 +2,7 @@
 #ifndef _KAD_UTILS_H
 #define _KAD_UTILS_H
 
-#include "net/kad/dht.h"
+#include "net/kad/routes.h"
 
 /**
  * Helper to initialize sockaddr_storage. Handy to initialize kad_node_info.

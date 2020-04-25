@@ -2,11 +2,11 @@
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 libkad_sources = [
-  'bencode/dht.c',
+  'bencode/routes.c',
   'bencode/parser.c',
   'bencode/rpc_msg.c',
   'bencode/serde.c',
-  'dht.c',
+  'routes.c',
   'rpc.c',
 ]
 

@@ -1,13 +1,11 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
-#ifndef DHT_H
-#define DHT_H
+#ifndef ROUTES_H
+#define ROUTES_H
 
 /**
  * The routing table is an opaque hash table-like structure. Its internal
  * elements are not exposed. Possible interactions are limited to insert,
  * delete, update.
- *
- * FIXME rename to "routes"
  */
 
 #include <netdb.h>
@@ -47,7 +45,7 @@ struct kad_node {
     int stale;
 };
 
-struct kad_dht {
+struct kad_routes {
     kad_guid         self_id;
     /* The routing table is implemented as hash table: an array of lists
        (buckets) of at most KAD_K_CONST node entries. Instead of using a
@@ -73,11 +71,11 @@ struct kad_dht {
  * Intermediary structure for de-/serialization.
  *
  * While libtorrent seems to only include compact host info (address:port) when
- * serializing a dht, and supposingly pinging them when deserializing, we
+ * serializing routes, and supposingly pinging them when deserializing, we
  * prefer to store the node-id's as well. Besides, we store node-id's as raw
  * bytes network-ordered, while libtorrent uses a readable hex string.
  */
-struct kad_dht_encoded {
+struct kad_routes_encoded {
     kad_guid             self_id;
     struct kad_node_info nodes[KAD_GUID_SPACE_IN_BITS*KAD_K_CONST];
     size_t               nodes_len;
@@ -93,19 +91,19 @@ static inline void kad_node_info_copy(struct kad_node_info *dst,
 
 void rand_init();
 
-int dht_read(struct kad_dht **dht, const char state_path[]);
-bool dht_write(const struct kad_dht *dht, const char state_path[]);
-struct kad_dht *dht_create();
-void dht_destroy(struct kad_dht * dht);
+int routes_read(struct kad_routes **routes, const char state_path[]);
+bool routes_write(const struct kad_routes *routes, const char state_path[]);
+struct kad_routes *routes_create();
+void routes_destroy(struct kad_routes * routes);
 
 int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len, const char state_path[]);
 
-/* dht_get() intentionally kept internal. */
-bool dht_update(struct kad_dht *dht, const struct kad_node_info *info, time_t time);
-bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t time);
-bool dht_delete(struct kad_dht *dht, const kad_guid *node_id);
-bool dht_mark_stale(struct kad_dht *dht, const kad_guid *node_id);
-size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
+/* routes_get() intentionally kept internal. */
+bool routes_update(struct kad_routes *routes, const struct kad_node_info *info, time_t time);
+bool routes_insert(struct kad_routes *routes, const struct kad_node_info *info, time_t time);
+bool routes_delete(struct kad_routes *routes, const kad_guid *node_id);
+bool routes_mark_stale(struct kad_routes *routes, const kad_guid *node_id);
+size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
                         struct kad_node_info nodes[], const kad_guid *caller);
 
-#endif /* DHT_H */
+#endif /* ROUTES_H */

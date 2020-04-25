@@ -18,10 +18,10 @@
 #include "utils/bits.h"
 #include "utils/safer.h"
 #include "utils/time.h"
-#include "net/kad/bencode/dht.h"
-#include "net/kad/dht.h"
+#include "net/kad/bencode/routes.h"
+#include "net/kad/routes.h"
 
-#define DHT_STATE_LEN_IN_BYTES 4096
+#define ROUTES_STATE_LEN_IN_BYTES 4096
 #define NODES_FILE_LEN_IN_BYTES 512
 
 
@@ -41,43 +41,43 @@ static void kad_generate_id(kad_guid *uid)
     kad_guid_set(uid, rand);
 }
 
-static void dht_init(struct kad_dht *dht)
+static void routes_init(struct kad_routes *routes)
 {
-    memset(&dht->self_id, 0, sizeof(kad_guid));
+    memset(&routes->self_id, 0, sizeof(kad_guid));
     for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
-        list_init(&dht->buckets[i]);
-        list_init(&dht->replacements[i]);
+        list_init(&routes->buckets[i]);
+        list_init(&routes->replacements[i]);
     }
 }
 
-struct kad_dht *dht_create()
+struct kad_routes *routes_create()
 {
-    struct kad_dht *dht = malloc(sizeof(struct kad_dht));
-    if (!dht) {
+    struct kad_routes *routes = malloc(sizeof(struct kad_routes));
+    if (!routes) {
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         return NULL;
     }
-    dht_init(dht);
+    routes_init(routes);
 
     /* « Node IDs are currently just random 160-bit identifiers, though they
        could equally well be constructed as in Chord. » */
-    kad_generate_id(&dht->self_id);
-    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    kad_generate_id(&routes->self_id);
+    char *id = log_fmt_hex(LOG_DEBUG, routes->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_debug("self_id=%s", id);
     free_safer(id);
 
-    return dht;
+    return routes;
 }
 
-void dht_destroy(struct kad_dht *dht)
+void routes_destroy(struct kad_routes *routes)
 {
     for (int i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
-        struct list_item *bucket = &dht->buckets[i];
+        struct list_item *bucket = &routes->buckets[i];
         list_free_all(bucket, struct kad_node, item);
-        bucket = &dht->replacements[i];
+        bucket = &routes->replacements[i];
         list_free_all(bucket, struct kad_node, item);
     }
-    free_safer(dht);
+    free_safer(routes);
 }
 
 /**
@@ -152,14 +152,14 @@ kad_bucket_get_nodes(const struct list_item *bucket,
  * Traverse the routing table in ascending xor distance order relative to the
  * target key. http://stackoverflow.com/a/30655403/421846
  */
-size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
+size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
                         struct kad_node_info nodes[], const kad_guid *caller)
 {
     size_t nodes_pos = 0;
     bitfield visited[BITFIELD_RESERVE_BITS(KAD_GUID_SPACE_IN_BITS)] = {0};
 
-    int bucket_idx = kad_bucket_hash(&dht->self_id, target);
-    const struct list_item *bucket = &dht->buckets[bucket_idx];
+    int bucket_idx = kad_bucket_hash(&routes->self_id, target);
+    const struct list_item *bucket = &routes->buckets[bucket_idx];
 
     int prefix_idx = KAD_GUID_SPACE_IN_BITS - bucket_idx;
     kad_guid prefix_mask, target_next;
@@ -178,13 +178,13 @@ size_t dht_find_closest(struct kad_dht *dht, const kad_guid *target,
         kad_guid_setbit(&prefix_mask, prefix_idx);
 
         kad_guid_xor(&target_next, target, &prefix_mask);
-        bucket_idx = kad_bucket_hash(&dht->self_id, &target_next);
-        bucket = &dht->buckets[bucket_idx];
+        bucket_idx = kad_bucket_hash(&routes->self_id, &target_next);
+        bucket = &routes->buckets[bucket_idx];
     }
 
     for (int i = KAD_GUID_SPACE_IN_BITS - 1; i >= 0; i--) {
         if (!BITFIELD_GET(visited, i)) {
-            bucket = &dht->buckets[i];
+            bucket = &routes->buckets[i];
             nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
             BITFIELD_SET(visited, i, 1);
             log_debug("%s: other nodes added from bucket %d, total=%zu", __func__, i, nodes_pos);
@@ -208,7 +208,7 @@ static inline size_t kad_bucket_count(const struct list_item *bucket)
 }
 
 static inline struct kad_node*
-dht_get_from_list(const struct list_item *list, const kad_guid *node_id)
+routes_get_from_list(const struct list_item *list, const kad_guid *node_id)
 {
     const struct list_item *it = list;
     struct kad_node *found;
@@ -221,19 +221,19 @@ dht_get_from_list(const struct list_item *list, const kad_guid *node_id)
 }
 
 static struct kad_node *
-dht_get_with_bucket(struct kad_dht *dht, const kad_guid *node_id,
+routes_get_with_bucket(struct kad_routes *routes, const kad_guid *node_id,
                     struct list_item **bucket, size_t *bucket_idx)
 {
-    int bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
+    int bkt_idx = kad_bucket_hash(&routes->self_id, node_id);
     if (bucket_idx)
         *bucket_idx = bkt_idx;
 
-    struct list_item *bkt = &dht->buckets[bkt_idx];
-    struct kad_node *node = dht_get_from_list(bkt, node_id);
+    struct list_item *bkt = &routes->buckets[bkt_idx];
+    struct kad_node *node = routes_get_from_list(bkt, node_id);
 
     if (!node) {
-        bkt = &dht->replacements[bkt_idx];
-        node = dht_get_from_list(bkt, node_id);
+        bkt = &routes->replacements[bkt_idx];
+        node = routes_get_from_list(bkt, node_id);
     }
 
     if (bucket)
@@ -259,10 +259,10 @@ dht_get_with_bucket(struct kad_dht *dht, const kad_guid *node_id,
  * seen node responds, it is moved to the tail of the list, and the new
  * sender’s contact is discarded. »
  */
-bool dht_update(struct kad_dht *dht, const struct kad_node_info *info, time_t time)
+bool routes_update(struct kad_routes *routes, const struct kad_node_info *info, time_t time)
 {
     struct list_item *bucket = NULL;
-    struct kad_node *node = dht_get_with_bucket(dht, &info->id, &bucket, NULL);
+    struct kad_node *node = routes_get_with_bucket(routes, &info->id, &bucket, NULL);
     if (!node)
         return false;
 
@@ -284,7 +284,7 @@ bool dht_update(struct kad_dht *dht, const struct kad_node_info *info, time_t ti
 }
 
 static struct kad_node *
-dht_node_new(const struct kad_node_info *info, time_t time)
+routes_node_new(const struct kad_node_info *info, time_t time)
 {
     struct kad_node *node = malloc(sizeof(struct kad_node));
     if (!node) {
@@ -303,40 +303,40 @@ dht_node_new(const struct kad_node_info *info, time_t time)
 /**
  * Inserts a node into the routing table.
  */
-bool dht_insert(struct kad_dht *dht, const struct kad_node_info *info, time_t time)
+bool routes_insert(struct kad_routes *routes, const struct kad_node_info *info, time_t time)
 {
-    if (kad_guid_eq(&dht->self_id, &info->id)) {
-        log_error("Ignoring DHT insert of node with same id as me.");
+    if (kad_guid_eq(&routes->self_id, &info->id)) {
+        log_error("Ignoring routes insert of node with same id as me.");
         return false;
     }
 
     size_t bkt_idx = 0;
-    struct kad_node *node = dht_get_with_bucket(dht, &info->id, NULL, &bkt_idx);
+    struct kad_node *node = routes_get_with_bucket(routes, &info->id, NULL, &bkt_idx);
     if (node) {
-        log_error("DHT insert failed: existing node.");
+        log_error("Routes insert failed: existing node.");
         return false;
     }
 
-    if (!(node = dht_node_new(info, time)))
+    if (!(node = routes_node_new(info, time)))
         return false;
 
-    struct list_item *bucket = &dht->buckets[bkt_idx];
+    struct list_item *bucket = &routes->buckets[bkt_idx];
     if (kad_bucket_count(bucket) < KAD_K_CONST) {
         list_append(bucket, &node->item);
-        log_debug("DHT insert into bucket %zu.", bkt_idx);
+        log_debug("Routes insert into bucket %zu.", bkt_idx);
     }
     else {
-        list_prepend(&dht->replacements[bkt_idx], &node->item);
-        log_debug("DHT insert into replacement cache.");
+        list_prepend(&routes->replacements[bkt_idx], &node->item);
+        log_debug("Routes insert into replacement cache.");
     }
 
     return true;
 }
 
-bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
+bool routes_delete(struct kad_routes *routes, const kad_guid *node_id)
 {
-    int bkt_idx = kad_bucket_hash(&dht->self_id, node_id);
-    struct kad_node *node = dht_get_from_list(&dht->buckets[bkt_idx], node_id);
+    int bkt_idx = kad_bucket_hash(&routes->self_id, node_id);
+    struct kad_node *node = routes_get_from_list(&routes->buckets[bkt_idx], node_id);
     if (!node) {
         char *id = log_fmt_hex(LOG_ERR, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
         log_error("Unknown node (id=%s).", id);
@@ -349,45 +349,45 @@ bool dht_delete(struct kad_dht *dht, const kad_guid *node_id)
     return true;
 }
 
-bool dht_mark_stale(struct kad_dht *dht, const kad_guid *node_id)
+bool routes_mark_stale(struct kad_routes *routes, const kad_guid *node_id)
 {
-    struct kad_node *node = dht_get_with_bucket(dht, node_id, NULL, NULL);
+    struct kad_node *node = routes_get_with_bucket(routes, node_id, NULL, NULL);
     if (!node)
         return false;
     node->stale++;
     return true;
 }
 
-int dht_read(struct kad_dht **dht, const char state_path[])
+int routes_read(struct kad_routes **routes, const char state_path[])
 {
-    char buf[DHT_STATE_LEN_IN_BYTES];
+    char buf[ROUTES_STATE_LEN_IN_BYTES];
     size_t buf_len = 0;
     if (!file_read(buf, &buf_len, state_path)) {
-        log_error("Failed to read DHT state file (%s).", state_path);
+        log_error("Failed to read routes state file (%s).", state_path);
         goto fail;
     }
 
-    struct kad_dht_encoded encoded;
-    if (!benc_decode_dht(&encoded, buf, buf_len)) {
-        log_error("Decoding of DHT state file (%s) failed.", state_path);
+    struct kad_routes_encoded encoded;
+    if (!benc_decode_routes(&encoded, buf, buf_len)) {
+        log_error("Decoding of routes state file (%s) failed.", state_path);
         goto fail;
     }
 
-    *dht = malloc(sizeof(struct kad_dht));
-    if (!*dht) {
+    *routes = malloc(sizeof(struct kad_routes));
+    if (!*routes) {
         log_perror(LOG_ERR, "Failed malloc: %s.", errno);
         goto fail;
     }
-    dht_init(*dht);
+    routes_init(*routes);
 
-    (*dht)->self_id = encoded.self_id;
-    char *id = log_fmt_hex(LOG_DEBUG, (*dht)->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    (*routes)->self_id = encoded.self_id;
+    char *id = log_fmt_hex(LOG_DEBUG, (*routes)->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_debug("self_id=%s", id);
     free_safer(id);
 
     for (size_t i = 0; i < encoded.nodes_len; i++) {
-        if (!dht_insert(*dht, &encoded.nodes[i], 0)) {
-            log_error("DHT node insert from encoded [%d] failed.", i);
+        if (!routes_insert(*routes, &encoded.nodes[i], 0)) {
+            log_error("Routes node insert from encoded [%d] failed.", i);
             goto fail;
         }
     }
@@ -395,7 +395,7 @@ int dht_read(struct kad_dht **dht, const char state_path[])
     return encoded.nodes_len;
 
   fail:
-    *dht = NULL;
+    *routes = NULL;
     return -1;
 }
 
@@ -421,31 +421,31 @@ int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len,
 }
 
 static size_t
-dht_encode(const struct kad_dht *dht, struct kad_dht_encoded *encoded)
+routes_encode(const struct kad_routes *routes, struct kad_routes_encoded *encoded)
 {
-    encoded->self_id = dht->self_id;
+    encoded->self_id = routes->self_id;
     size_t start = encoded->nodes_len;
     for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
-        encoded->nodes_len += kad_bucket_get_nodes(&dht->buckets[i], encoded->nodes, encoded->nodes_len, NULL);
+        encoded->nodes_len += kad_bucket_get_nodes(&routes->buckets[i], encoded->nodes, encoded->nodes_len, NULL);
     }
     return encoded->nodes_len - start;
 }
 
-bool dht_write(const struct kad_dht *dht, const char state_path[]) {
+bool routes_write(const struct kad_routes *routes, const char state_path[]) {
     bool res = true;
 
-    struct kad_dht_encoded encoded = {0};
-    dht_encode(dht, &encoded);
+    struct kad_routes_encoded encoded = {0};
+    routes_encode(routes, &encoded);
 
     struct iobuf buf = {0};
-    if (!benc_encode_dht(&buf, &encoded)) {
-        log_error("Encoding of DHT state file (%s) failed.", state_path);
+    if (!benc_encode_routes(&buf, &encoded)) {
+        log_error("Encoding of routes state file (%s) failed.", state_path);
         res = false; goto cleanup;
     }
 
-    log_debug("Writing DHT state file (%s)", state_path);
+    log_debug("Writing routes state file (%s)", state_path);
     if (!file_write(state_path, buf.buf, buf.pos)) {
-        log_error("Failed to write DHT state file (%s).", state_path);
+        log_error("Failed to write routes state file (%s).", state_path);
         res = false; goto cleanup;
     }
 

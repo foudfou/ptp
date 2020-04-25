@@ -17,7 +17,7 @@
  * callbacks' arguments must be set at runtime.
  */
 #include <netinet/in.h>
-#include "net/kad/dht.h"
+#include "net/kad/routes.h"
 #include "utils/queue.h"
 
 #define EVENT_NAME_MAX 32

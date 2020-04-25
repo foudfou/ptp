@@ -439,7 +439,7 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
         if (now < 0)
             goto failed2;
         if (evicted->created + KAD_RPC_QUERY_TIMEOUT_MILLIS < now)
-            dht_mark_stale(kctx->dht, &evicted->node.id);
+            routes_mark_stale(kctx->routes, &evicted->node.id);
         log_info("Evicted query from full list.");
     }
 
@@ -500,7 +500,7 @@ static bool kad_bootstrap_schedule_lookups(
             .args.kad_find_node={
                 .kctx=kctx, .sock=sock,
                 .node={.id={{0},0}, .addr=nodes[i], .addr_str={0}},
-                .target=kctx->dht->self_id
+                .target=kctx->routes->self_id
             },
             .fatal=false, .self=events[i]
         };
@@ -557,16 +557,16 @@ bool kad_refresh(void *data)
   (by-distance-)sorted list of unknown nodes, aka `lookup` list, and sends
   FIND_NODE in // [need timeout]
 
-  - when a response arrives, add responding node to dht, remove response from
+  - when a response arrives, add responding node to routes, remove response from
   lookup list.
 
-  [By definition dht holds known nodes — not only contacted ones: « When a
+  [By definition routes holds known nodes — not only contacted ones: « When a
   Kademlia node receives any message (request or reply) from another node, it
   updates the appropriate k-bucket for the sender’s node ID. », « When u learns
   of a new contact, it attempts to insert the contact in the appropriate
-  k-bucket. » So we should just add learned nodes to dht with null last_seen,
+  k-bucket. » So we should just add learned nodes to routes with null last_seen,
   when not already here, and systematically add them to the lookup list. That
-  also means that FIND_NODE does insert new nodes into dht.]
+  also means that FIND_NODE does insert new nodes into routes.]
 
   - after round finishes, if returned nodes closer than lookup list, pick
   alpha, otherwise pick k. Iterate by sending them FIND_NODE in //.
@@ -587,12 +587,12 @@ bool kad_refresh(void *data)
   `in_flight` request list. Timer doesn't need to be signaled, for ex. when
   receiving a response.
 
-  - pick alpha closest nodes from dht. Send them FIND_NODE. This effectively
+  - pick alpha closest nodes from routes. Send them FIND_NODE. This effectively
   registers the requests to the request and in_flight lists.
 
   - when response received: corresponding request removed from request list
-  [already done] and in_flight list; node inserted into dht or updated; nodes
-  inserted to dht with last_seen null; nodes added to lookup list; lookup round
+  [already done] and in_flight list; node inserted into routes or updated; nodes
+  inserted to routes with last_seen null; nodes added to lookup list; lookup round
   incremented.
 
   - pick alpha (or next when parallel) closest nodes from lookup list. Send

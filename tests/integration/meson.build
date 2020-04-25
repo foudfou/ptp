@@ -4,8 +4,8 @@
 integration_tests = [
   ['send-to-server defaults', 'send-to-server',
    ['defaults', main_exe, '-c', '/NONEXISTENT_FOR_DEFAULTS']],
-  ['send-to-server dht state', 'send-to-server',
-   ['dht_state', main_exe, '-c', join_paths(meson.current_source_dir(), '../kad/data')]],
+  ['send-to-server routes state', 'send-to-server',
+   ['routes_state', main_exe, '-c', join_paths(meson.current_source_dir(), '../kad/data')]],
   ['listen-to-client bootstrap', 'listen-to-client', [main_exe]],
   ['multi-nodes bootstrap', 'multi-nodes', [main_exe]],
 ]

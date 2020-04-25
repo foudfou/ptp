@@ -48,10 +48,10 @@ def port_to_bigendian_bytes(port):
     return port.to_bytes((port.bit_length() + 7) // 8, 'big') or b'\0'
 
 def create_node(cmd, tmp_dir=None, bootstrap=None, nodeid=None):
-    dht_bin = b"d2:id20:" + nodeid + b"5:nodeslee"
-    dht_path = os.path.join(tmp_dir, "dht.dat")
-    with open(dht_path, 'wb') as f:
-        f.write(dht_bin)
+    routes_bin = b"d2:id20:" + nodeid + b"5:nodeslee"
+    routes_path = os.path.join(tmp_dir, "routes.dat")
+    with open(routes_path, 'wb') as f:
+        f.write(routes_bin)
 
     if bootstrap is not None:
         port_bytes = port_to_bigendian_bytes(bootstrap)
@@ -111,13 +111,13 @@ with tempfile.TemporaryDirectory() as tmp_dir1, \
             s.wait(1)
 
         import shutil
-        shutil.copyfile(tmp_dir1 + "/dht.dat", "/tmp/dht1.dat")
-        shutil.copyfile(tmp_dir2 + "/dht.dat", "/tmp/dht2.dat")
-        shutil.copyfile(tmp_dir3 + "/dht.dat", "/tmp/dht3.dat")
+        shutil.copyfile(tmp_dir1 + "/routes.dat", "/tmp/routes1.dat")
+        shutil.copyfile(tmp_dir2 + "/routes.dat", "/tmp/routes2.dat")
+        shutil.copyfile(tmp_dir3 + "/routes.dat", "/tmp/routes3.dat")
 
-        # TODO inspect dht contents. After bootstrap we expect node2 *or* node3
-        # to know about the other one. After refresh we expect both nodes to
-        # know about each other.
+        # TODO inspect routes contents. After bootstrap we expect node2 *or*
+        # node3 to know about the other one. After refresh we expect both nodes
+        # to know about each other.
 
         # shutil.rmtree(tmp_dir)
         print(os.listdir(tmp_dir1))

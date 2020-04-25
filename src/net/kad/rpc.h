@@ -8,7 +8,7 @@
 #include <limits.h>
 #include <stdbool.h>
 #include "net/iobuf.h"
-#include "net/kad/dht.h"
+#include "net/kad/routes.h"
 #include "utils/byte_array.h"
 #include "utils/heap.h"
 #include "utils/list.h"
@@ -133,7 +133,7 @@ struct kad_lookup {
 };
 
 struct kad_ctx {
-    struct kad_dht    *dht;
+    struct kad_routes *routes;
     struct req_lru    *reqs_out;
     struct kad_lookup  lookup;
 };

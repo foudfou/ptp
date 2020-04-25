@@ -10,13 +10,13 @@
 #include "utils/time.h"
 #include "net/kad/rpc.h"
 
-#define DHT_STATE_FILENAME "dht.dat"
+#define ROUTES_STATE_FILENAME "routes.dat"
 
 /**
- * Creates a DHT.
+ * Creates routes.
  *
- * If @conf_dir is provied, then read dht from state file. Otherwise create new
- * dht.
+ * If @conf_dir is provied, then read routes from routes file. Otherwise create
+ * new routes.
  *
  * Returns the number of known nodes or -1 in case of failure.
  */
@@ -26,58 +26,58 @@ int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
 
     int nodes_len = 0;
     if (conf_dir) {
-        char dht_state_path[PATH_MAX];
-        int rv = snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
+        char routes_state_path[PATH_MAX];
+        int rv = snprintf(routes_state_path, PATH_MAX-1, "%s/"ROUTES_STATE_FILENAME, conf_dir);
         if (rv < 0) {
             log_error("Failed snprintf.");
             return false;
         }
-        dht_state_path[PATH_MAX-1] = '\0';
-        if (access(dht_state_path, R_OK|W_OK) != -1 ) {
-            nodes_len = dht_read(&ctx->dht, dht_state_path);
+        routes_state_path[PATH_MAX-1] = '\0';
+        if (access(routes_state_path, R_OK|W_OK) != -1 ) {
+            nodes_len = routes_read(&ctx->routes, routes_state_path);
         } else {
-            log_info("DHT state file not readable and writable. Generating new DHT.");
-            ctx->dht = dht_create();
+            log_info("Routes state file not readable and writable. Generating new routes.");
+            ctx->routes = routes_create();
         }
     }
     else {
-        ctx->dht = dht_create();
+        ctx->routes = routes_create();
     }
 
-    if (!ctx->dht) {
-        log_error("Could not initialize dht.");
+    if (!ctx->routes) {
+        log_error("Could not initialize routes.");
         return -1;
     }
 
     req_lru_init(ctx->reqs_out);
     node_heap_init(&ctx->lookup.nodes, 32);
 
-    log_debug("DHT initialized.");
+    log_debug("Routes initialized.");
     return nodes_len;
 }
 
 void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
 {
     if (conf_dir) {
-        char dht_state_path[PATH_MAX];
-        snprintf(dht_state_path, PATH_MAX-1, "%s/"DHT_STATE_FILENAME, conf_dir);
-        dht_state_path[PATH_MAX-1] = '\0';
-        if (!dht_write(ctx->dht, dht_state_path)) {
-            log_error("Saving DHT failed.");
+        char routes_state_path[PATH_MAX];
+        snprintf(routes_state_path, PATH_MAX-1, "%s/"ROUTES_STATE_FILENAME, conf_dir);
+        routes_state_path[PATH_MAX-1] = '\0';
+        if (!routes_write(ctx->routes, routes_state_path)) {
+            log_error("Saving routes failed.");
         }
     }
 
-    dht_destroy(ctx->dht);
+    routes_destroy(ctx->routes);
 
     free_safer(ctx->lookup.nodes.items);
 
     struct list_item *reqs_out = &ctx->reqs_out->litems;
     list_free_all(reqs_out, struct kad_rpc_query, litem);
-    log_debug("DHT terminated.");
+    log_debug("Routes terminated.");
 }
 
 static bool
-kad_rpc_update_dht(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
+kad_rpc_update_routes(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
                    const kad_guid *node_id)
 {
     time_t now = 0;
@@ -88,10 +88,10 @@ kad_rpc_update_dht(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
     struct kad_node_info info = {.id=*node_id, .addr=*addr};
     sockaddr_storage_fmt(info.addr_str, addr);
     char *id = log_fmt_hex(LOG_DEBUG, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
-    if ((rv = dht_update(ctx->dht, &info, now)))
-        log_debug("DHT update of %s (id=%s).", &info.addr_str, id);
-    else if ((rv = dht_insert(ctx->dht, &info, now)))
-        log_debug("DHT insert of %s (id=%s).", &info.addr_str, id);
+    if ((rv = routes_update(ctx->routes, &info, now)))
+        log_debug("Routes update of %s (id=%s).", &info.addr_str, id);
+    else if ((rv = routes_insert(ctx->routes, &info, now)))
+        log_debug("Routes insert of %s (id=%s).", &info.addr_str, id);
     else
         log_warning("Failed to upsert kad_node (id=%s)", id);
     free_safer(id);
@@ -121,7 +121,7 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
     case KAD_RPC_METH_PING: {
         struct kad_rpc_msg resp = {0};
         resp.tx_id = msg->tx_id;
-        resp.node_id = ctx->dht->self_id;
+        resp.node_id = ctx->routes->self_id;
         resp.type = KAD_RPC_TYPE_RESPONSE;
         resp.meth = KAD_RPC_METH_PING;
         if (!benc_encode_rpc_msg(rsp, &resp)) {
@@ -134,10 +134,10 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
     case KAD_RPC_METH_FIND_NODE: {
         struct kad_rpc_msg resp = {0};
         resp.tx_id = msg->tx_id;
-        resp.node_id = ctx->dht->self_id;
+        resp.node_id = ctx->routes->self_id;
         resp.type = KAD_RPC_TYPE_RESPONSE;
         resp.meth = KAD_RPC_METH_FIND_NODE;
-        resp.nodes_len = dht_find_closest(ctx->dht, &msg->target, resp.nodes,
+        resp.nodes_len = routes_find_closest(ctx->routes, &msg->target, resp.nodes,
                                           &msg->node_id);
         if (!benc_encode_rpc_msg(rsp, &resp)) {
             log_error("Error while encoding find node response.");
@@ -173,21 +173,21 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 
     case KAD_RPC_METH_PING: {
         log_debug("Handling ping response (id=%s).", id);
-        // Nothing left to do as dht already updated in kad_rpc_handle
+        // Nothing left to do as routes already updated in kad_rpc_handle
         break;
     }
 
     case KAD_RPC_METH_FIND_NODE: {
         for (size_t i=0; i<msg->nodes_len; ++i) {
             if (!msg->nodes[i].id.is_set) {
-                log_warning("Node id not set, DHT not updated.");
+                log_warning("Node id not set, routes not updated.");
                 continue;
             }
 
             struct kad_node_info info = {.id=msg->nodes[i].id, .addr=msg->nodes[i].addr};
             sockaddr_storage_fmt(info.addr_str, &info.addr);
-            if (dht_insert(ctx->dht, &info, 0))
-                log_warning("Ignoring failed DHT insert.");
+            if (routes_insert(ctx->routes, &info, 0))
+                log_warning("Ignoring failed routes insert.");
         }
         break;
     }
@@ -238,15 +238,15 @@ bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
     if (!benc_decode_rpc_msg(&msg, buf, slen)) {
         log_error("Invalid message received.");
         struct kad_rpc_msg rspmsg = {0};
-        kad_rpc_error(&rspmsg, KAD_RPC_ERR_PROTOCOL, &msg, &ctx->dht->self_id);
+        kad_rpc_error(&rspmsg, KAD_RPC_ERR_PROTOCOL, &msg, &ctx->routes->self_id);
         if (!benc_encode_rpc_msg(rsp, &rspmsg))
             log_error("Error while encoding error response.");
         return false;
     }
     kad_rpc_msg_log(&msg); // TESTING
 
-    if (msg.node_id.is_set && !kad_rpc_update_dht(ctx, addr, &msg.node_id))
-        log_warning("DHT update failed.");
+    if (msg.node_id.is_set && !kad_rpc_update_routes(ctx, addr, &msg.node_id))
+        log_warning("Routes update failed.");
 
     switch (msg.type) {
     case KAD_RPC_TYPE_NONE: {
@@ -310,7 +310,7 @@ bool kad_rpc_query_create(struct iobuf *buf,
     if ((query->created = now_millis()) == -1)
         return false;
     kad_rpc_generate_tx_id(&query->msg.tx_id);
-    query->msg.node_id = ctx->dht->self_id;
+    query->msg.node_id = ctx->routes->self_id;
     query->msg.type = KAD_RPC_TYPE_QUERY;
 
     if (!benc_encode_rpc_msg(buf, &query->msg)) {

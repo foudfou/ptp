@@ -14,7 +14,7 @@
 #include "config.h"
 
 const struct config CONFIG_DEFAULT = {
-    .conf_dir  = "~/.config/ptp", // FIXME intended for dht.state
+    .conf_dir  = "~/.config/ptp",
     .bind_addr = "::",
     .bind_port = "22000",
     .log_type  = LOG_TYPE_STDOUT,

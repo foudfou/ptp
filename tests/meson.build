@@ -27,10 +27,10 @@ tests_sources = [
   'utils/rbtree.c',
   'utils/u64.c',
   'file.c',
-  'kad/bencode/dht.c',
+  'kad/bencode/routes.c',
   'kad/bencode/parser.c',
   'kad/bencode/rpc_msg.c',
-  'kad/dht.c',
+  'kad/routes.c',
   'kad/req_lru.c',
   'kad/rpc.c',
   'timers_periodic.c',
@@ -50,7 +50,7 @@ foreach fname : tests_sources
 endforeach
 
 tests_alt_sources = [
-  'kad/dht_alt.c',
+  'kad/routes_alt.c',
 ]
 
 foreach fname : tests_alt_sources

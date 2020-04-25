@@ -110,7 +110,7 @@ bool server_run(const struct config *conf)
     kctx.reqs_out = &reqs_out;
     int nodes_len = kad_rpc_init(&kctx, conf->conf_dir);
     if (nodes_len == -1) {
-        log_fatal("Failed to initialize DHT. Aborting.");
+        log_fatal("Failed to initialize routes. Aborting.");
         return false;
     }
     else if (nodes_len == 0) {

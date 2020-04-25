@@ -7,7 +7,7 @@
  */
 #include <stdbool.h>
 #include "net/iobuf.h"
-#include "net/kad/dht.h"
+#include "net/kad/routes.h"
 #include "utils/lookup.h"
 
 // "Compact node info"

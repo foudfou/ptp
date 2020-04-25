@@ -1,12 +1,12 @@
 /* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include "log.h"
-#include "net/kad/dht.h"
-#include "net/kad/bencode/dht.h"
+#include "net/kad/routes.h"
+#include "net/kad/bencode/routes.h"
 #include "net/socket.h"
 #include "utils/array.h"
 #include "kad/test_util.h"
-#include "data_dht.h"
+#include "data_routes.h"
 
 #define BENC_PARSER_BUF_MAX 256
 
@@ -17,10 +17,10 @@ int main ()
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
 
     char buf[BENC_PARSER_BUF_MAX] = "\0";
-    struct kad_dht_encoded encoded = {0};
+    struct kad_routes_encoded encoded = {0};
 
-    strcpy(buf, KAD_TEST_DHT);
-    assert(benc_decode_dht(&encoded, buf, strlen(buf)));
+    strcpy(buf, KAD_TEST_ROUTES);
+    assert(benc_decode_routes(&encoded, buf, strlen(buf)));
     assert(kad_guid_eq(&encoded.self_id, &(kad_guid){.bytes = "0123456789abcdefghij", .is_set = true}));
     assert(encoded.nodes_len == ARRAY_LEN(kad_test_nodes));
 
@@ -28,13 +28,13 @@ int main ()
         assert(kad_node_info_equals(&encoded.nodes[i], &kad_test_nodes[i]));
     }
 
-    struct iobuf dhtbuf = {0};
+    struct iobuf routesbuf = {0};
     memset(&encoded, 0, sizeof(encoded));
     encoded.self_id = (kad_guid){.bytes = "0123456789abcdefghij"};
-    assert(benc_encode_dht(&dhtbuf, &encoded));
-    assert(strncmp(dhtbuf.buf, "d2:id20:0123456789abcdefghij5:nodeslee", dhtbuf.pos) == 0);
-    assert(dhtbuf.pos == 38);
-    iobuf_reset(&dhtbuf);
+    assert(benc_encode_routes(&routesbuf, &encoded));
+    assert(strncmp(routesbuf.buf, "d2:id20:0123456789abcdefghij5:nodeslee", routesbuf.pos) == 0);
+    assert(routesbuf.pos == 38);
+    iobuf_reset(&routesbuf);
 
     memset(&encoded, 0, sizeof(encoded));
     encoded.self_id = (kad_guid){.bytes = "0123456789abcdefghij"};
@@ -44,10 +44,10 @@ int main ()
     }
     encoded.nodes_len = ARRAY_LEN(kad_test_nodes);
 
-    assert(benc_encode_dht(&dhtbuf, &encoded));
-    assert(strncmp(dhtbuf.buf, KAD_TEST_DHT, dhtbuf.pos) == 0);
-    assert(dhtbuf.pos == 178);
-    iobuf_reset(&dhtbuf);
+    assert(benc_encode_routes(&routesbuf, &encoded));
+    assert(strncmp(routesbuf.buf, KAD_TEST_ROUTES, routesbuf.pos) == 0);
+    assert(routesbuf.pos == 178);
+    iobuf_reset(&routesbuf);
 
 
     log_shutdown(LOG_TYPE_STDOUT);

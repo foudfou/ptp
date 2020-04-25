@@ -1,11 +1,11 @@
 /* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include "net/socket.h"
-#include "net/kad/dht.c"      // testing static functions
+#include "net/kad/routes.c"      // testing static functions
 
 /* _alt tests get a tiny guid space (4 bits) for easier reasoning.
 
-   Consider the following nodes and their dht:
+   Consider the following nodes and their routes:
 
    node 1010:
    bucket 0, node  1011
@@ -76,10 +76,10 @@
 int main ()
 {
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
-    struct kad_dht *dht = dht_create();
+    struct kad_routes *routes = routes_create();
 
-    dht->self_id.bytes[0] = 0xa0; // 0b1010
-    char *id = log_fmt_hex(LOG_DEBUG, dht->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    routes->self_id.bytes[0] = 0xa0; // 0b1010
+    char *id = log_fmt_hex(LOG_DEBUG, routes->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_debug("self_id reset (id=%s)", id);
     free_safer(id);
 
@@ -114,10 +114,10 @@ int main ()
     while (peer < peer_end) {
         assert(sockaddr_storage_fmt(peer->info.addr_str, &peer->info.addr));
 
-        assert(dht_insert(dht, &peer->info, 0));
+        assert(routes_insert(routes, &peer->info, 0));
 
         struct kad_node_info bucket[KAD_K_CONST];
-        int bucket_len = kad_bucket_get_nodes(&dht->buckets[peer->bucket], bucket, 0, NULL);
+        int bucket_len = kad_bucket_get_nodes(&routes->buckets[peer->bucket], bucket, 0, NULL);
         /* printf("%s == %s\n", peer->info.addr_str, bucket[bucket_len-1].addr_str); */
         assert(sockaddr_storage_eq(&peer->info.addr, &bucket[bucket_len-1].addr));
 
@@ -127,7 +127,7 @@ int main ()
     kad_guid target;
     kad_guid_set(&target, (unsigned char[]){0x90}); // 0b1001
     struct kad_node_info nodes[KAD_K_CONST];
-    size_t added = dht_find_closest(dht, &target, nodes, NULL);
+    size_t added = routes_find_closest(routes, &target, nodes, NULL);
     assert(added == 5);
 
     int peer_order[] = {2, 1, 3, 0, 4};
@@ -136,7 +136,7 @@ int main ()
     }
 
     kad_guid_set(&target, (unsigned char[]){0xc0}); // 0b1100
-    added = dht_find_closest(dht, &target, nodes, NULL);
+    added = routes_find_closest(routes, &target, nodes, NULL);
     assert(added == 5);
     memcpy(peer_order, (int[]){3, 2, 0, 4, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
@@ -144,14 +144,14 @@ int main ()
     }
 
     kad_guid_set(&target, (unsigned char[]){0x03}); // 0b0011
-    added = dht_find_closest(dht, &target, nodes, NULL);
+    added = routes_find_closest(routes, &target, nodes, NULL);
     assert(added == 5);
     memcpy(peer_order, (int[]){0, 4, 2, 3, 1}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
         assert(sockaddr_storage_eq(&nodes[i].addr, &peers[peer_order[i]].info.addr));
     }
 
-    dht_destroy(dht);
+    routes_destroy(routes);
     log_shutdown(LOG_TYPE_STDOUT);
 
 
