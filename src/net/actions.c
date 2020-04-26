@@ -557,8 +557,10 @@ bool kad_refresh(void *data)
   (by-distance-)sorted list of unknown nodes, aka `lookup` list, and sends
   FIND_NODE in // [need timeout]
 
-  - when a response arrives, add responding node to routes, remove response from
-  lookup list.
+  - when a response arrives, add responding node to routes and lookup list.
+
+  - nodes are removed from lookup list on iteration, when picking the next ones
+  to issue FIND_NODE to.
 
   [By definition routes holds known nodes — not only contacted ones: « When a
   Kademlia node receives any message (request or reply) from another node, it
@@ -591,9 +593,9 @@ bool kad_refresh(void *data)
   registers the requests to the request and in_flight lists.
 
   - when response received: corresponding request removed from request list
-  [already done] and in_flight list; node inserted into routes or updated; nodes
-  inserted to routes with last_seen null; nodes added to lookup list; lookup round
-  incremented.
+  [already done] and in_flight list; node inserted into routes or updated
+  [already done]; nodes inserted to routes with last_seen null; nodes added to
+  lookup list; lookup round incremented.
 
   - pick alpha (or next when parallel) closest nodes from lookup list. Send
   them FIND_NODE. This effectively: removes them from lookup list; register

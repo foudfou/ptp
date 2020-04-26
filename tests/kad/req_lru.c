@@ -3,16 +3,9 @@
 #include "net/kad/rpc.c"
 #include "timers.c"
 #include "utils/bits.h"
+#include "kad/test_util.h"
 #include "net/kad/req_lru.h"
 
-bool query_init(struct kad_rpc_query *q) {
-    list_init(&q->litem);
-    list_init(&q->hitem);
-    kad_rpc_generate_tx_id(&q->msg.tx_id);
-    return (q->created = now_millis()) != -1;
-}
-
-#include <stdio.h>
 int main()
 {
     struct req_lru reqs_out = {0};

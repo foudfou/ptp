@@ -104,6 +104,6 @@ bool routes_insert(struct kad_routes *routes, const struct kad_node_info *info, 
 bool routes_delete(struct kad_routes *routes, const kad_guid *node_id);
 bool routes_mark_stale(struct kad_routes *routes, const kad_guid *node_id);
 size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
-                        struct kad_node_info nodes[], const kad_guid *caller);
+                           struct kad_node_info nodes[], const kad_guid *caller);
 
 #endif /* ROUTES_H */

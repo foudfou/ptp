@@ -31,7 +31,7 @@ int main ()
     assert(memcmp(ints.items, (int[N]){0}, N) == 0);
 
     for (size_t i=0; i<N; ++i)
-        int_heap_insert(&ints, i);
+        assert(int_heap_insert(&ints, i));
 
     /*
       |         9
@@ -56,7 +56,7 @@ int main ()
     struct some have[N] = {{74},{73},{72},{71},{70},{69},{68},{67},{66},{65}};
 
     for (size_t i=0; i<N; ++i)
-        min_heap_insert(&somes, &have[i]);
+        assert(min_heap_insert(&somes, &have[i]));
     assert(somes.len == N);
 
     /*

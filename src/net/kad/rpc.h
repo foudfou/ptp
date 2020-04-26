@@ -128,7 +128,7 @@ HEAP_GENERATE(node_heap, struct kad_node_lookup *)
 
 struct kad_lookup {
     int                   round;
-    struct kad_node_info *par[KAD_ALPHA_CONST];
+    struct kad_rpc_query *par[KAD_ALPHA_CONST]; // aka in-flight
     struct node_heap      nodes;
 };
 

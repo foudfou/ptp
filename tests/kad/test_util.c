@@ -1,6 +1,7 @@
 /* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <errno.h>
 #include <time.h>
+#include "net/kad/rpc.c"
 #include "net/socket.h"
 #include "kad/test_util.h"
 
@@ -36,6 +37,13 @@ bool kad_node_info_equals(const struct kad_node_info *got,
     return
         kad_guid_eq(&got->id, &info.id) &&
         sockaddr_storage_eq(&got->addr, &info.addr);
+}
+
+bool query_init(struct kad_rpc_query *q) {
+    list_init(&q->litem);
+    list_init(&q->hitem);
+    kad_rpc_generate_tx_id(&q->msg.tx_id);
+    return (q->created = now_millis()) != -1;
 }
 
 /* https://stackoverflow.com/a/1157217/421846 */

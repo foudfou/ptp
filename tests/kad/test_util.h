@@ -2,6 +2,7 @@
 #ifndef _KAD_UTILS_H
 #define _KAD_UTILS_H
 
+#include "net/kad/rpc.h"
 #include "net/kad/routes.h"
 
 /**
@@ -32,6 +33,7 @@ struct kad_node_info_data {
 
 void kad_node_info_set(struct kad_node_info *dst, const struct kad_node_info_data *src);
 bool kad_node_info_equals(const struct kad_node_info *got, const struct kad_node_info_data *expected);
+bool query_init(struct kad_rpc_query *q);
 
 int msleep(long ms);
 

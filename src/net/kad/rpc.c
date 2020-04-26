@@ -153,6 +153,75 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
 }
 
 static bool
+routes_insert_nodes(struct kad_ctx *ctx,
+                    const struct kad_node_info nodes[],
+                    const size_t nodes_len)
+{
+    for (size_t i=0; i<nodes_len; ++i) {
+        if (!nodes[i].id.is_set) {
+            log_warning("Node id not set, routes not updated.");
+            continue;
+        }
+
+        struct kad_node_info info = {.id=nodes[i].id, .addr=nodes[i].addr};
+        sockaddr_storage_fmt(info.addr_str, &info.addr);
+        if (!routes_insert(ctx->routes, &info, 0))
+            log_warning("Ignoring failed routes insert.");
+    }
+    return true;
+}
+
+/* /\** \param node pointing to existing request in reqs_out *\/ */
+/* static bool */
+/* lookup_add_par(struct kad_ctx *ctx, struct kad_rpc_query *query) */
+/* { */
+/*     int i = 0; */
+/*     while (i < KAD_ALPHA_CONST && ctx->lookup.par[i] != NULL) */
+/*         i++; */
+/*     if (i == KAD_ALPHA_CONST) */
+/*         return false; */
+/*     ctx->lookup.par[i] = query; */
+/*     return true; */
+/* } */
+
+static bool
+lookup_remove_par(struct kad_ctx *ctx, const struct kad_rpc_query *query)
+{
+    bool ret = false;
+    for (int i = 0; i < KAD_ALPHA_CONST; ++i) {
+        if (query == ctx->lookup.par[i]) {
+            ctx->lookup.par[i] = NULL;
+            ret = true;
+            break;
+        }
+    }
+    return ret;
+}
+
+bool lookup_add_nodes(struct kad_ctx *ctx,
+                      const struct kad_node_info nodes[],
+                      const size_t nodes_len,
+                      const kad_guid target)
+{
+    for (size_t i=0; i<nodes_len; ++i) {
+        struct kad_node_lookup *node = malloc(sizeof(struct kad_node_lookup));
+        if (!node) {
+            log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+            return false;
+        }
+        node->target = target;
+        node->id = nodes[i].id;
+        node->addr = nodes[i].addr;
+
+        if (!node_heap_insert(&ctx->lookup.nodes, node)) {
+            log_error("Lookup node insert failed.");
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool
 kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 {
     bool ret = false;
@@ -178,16 +247,11 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
     }
 
     case KAD_RPC_METH_FIND_NODE: {
-        for (size_t i=0; i<msg->nodes_len; ++i) {
-            if (!msg->nodes[i].id.is_set) {
-                log_warning("Node id not set, routes not updated.");
-                continue;
-            }
-
-            struct kad_node_info info = {.id=msg->nodes[i].id, .addr=msg->nodes[i].addr};
-            sockaddr_storage_fmt(info.addr_str, &info.addr);
-            if (routes_insert(ctx->routes, &info, 0))
-                log_warning("Ignoring failed routes insert.");
+        log_debug("Handling find_node response (id=%s).", id);
+        routes_insert_nodes(ctx, msg->nodes, msg->nodes_len);
+        if (lookup_remove_par(ctx, query)) {
+            lookup_add_nodes(ctx, msg->nodes, msg->nodes_len, query->msg.target);
+            ctx->lookup.round += 1;
         }
         break;
     }

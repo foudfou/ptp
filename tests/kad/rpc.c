@@ -2,8 +2,9 @@
 #include <assert.h>
 #include <netinet/in.h>
 #include "log.h"
+#include "kad/test_util.h"
 #include "net/kad/req_lru.h"
-#include "net/kad/rpc.h"
+#include "net/kad/rpc.c"
 
 int main ()
 {
@@ -38,9 +39,9 @@ int main ()
     struct iobuf rsp = {0};
 
     struct sockaddr_storage ss = {0};
-    struct sockaddr_in6 *sa = (struct sockaddr_in6*)&ss;
-    sa->sin6_family=AF_INET6; sa->sin6_port=htons(0x88b8);
-    memcpy(sa->sin6_addr.s6_addr, (unsigned char[]){0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}, sizeof(struct in6_addr));
+    struct sockaddr_in6 *sa6 = (struct sockaddr_in6*)&ss;
+    sa6->sin6_family=AF_INET6; sa6->sin6_port=htons(0x88b8);
+    memcpy(sa6->sin6_addr.s6_addr, (unsigned char[]){0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1}, sizeof(struct in6_addr));
     assert(!kad_rpc_handle(&ctx, &ss, "", 0, &rsp));
     assert(rsp.pos != 0);
     iobuf_reset(&rsp);
@@ -50,6 +51,59 @@ int main ()
     assert(!kad_rpc_handle(&ctx, &ss, buf, 47, &rsp));
     assert(rsp.pos == 0);
     iobuf_reset(&rsp);
+
+
+    // find_node answer
+
+    struct kad_rpc_query *q1 = calloc(1, sizeof(struct kad_rpc_query));
+    assert(q1);
+    assert(query_init(q1));
+    *q1 = (struct kad_rpc_query){
+        .msg = {
+            .tx_id={"x1", true},
+            .node_id={{0x1}, true},
+            .type=KAD_RPC_TYPE_QUERY,
+            .meth=KAD_RPC_METH_FIND_NODE,
+            .target={{3}, true},
+        }
+    };
+    struct kad_rpc_query *evicted;
+    assert(req_lru_put(ctx.reqs_out, q1, &evicted));
+    ctx.lookup.par[0] = q1;
+
+    struct kad_node_info nodes[3] = {
+        {{{0x2}, true}, {0}, {0}},
+        {{{0x4}, true}, {0}, {0}},
+        {{{0x6}, true}, {0}, {0}},
+    };
+
+    struct sockaddr_in *sa = (struct sockaddr_in*)&ss;
+    sa->sin_family=AF_INET; sa->sin_port=htons(0x0016);
+    sa->sin_addr.s_addr=htonl(0x01010101); nodes[0].addr = ss;
+    sa->sin_addr.s_addr=htonl(0x01010200); nodes[1].addr = ss;
+    sa->sin_addr.s_addr=htonl(0x01010201); nodes[2].addr = ss;
+
+    struct kad_rpc_msg r1 = {
+        .tx_id={"x1", true},
+        .node_id={{0x1}, true},
+        .type=KAD_RPC_TYPE_RESPONSE,
+        .meth=KAD_RPC_METH_FIND_NODE,
+        .nodes={nodes[0], nodes[1], nodes[2]},
+        .nodes_len=3,
+    };
+    assert(kad_rpc_handle_response(&ctx, &r1));
+
+    assert(list_count(&ctx.reqs_out->litems) == 0);
+    size_t route_count = 0;
+    for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
+        route_count += list_count(&ctx.routes->buckets[i]);
+    assert(route_count == 4);
+    assert(ctx.lookup.nodes.len == 3);
+    assert(ctx.lookup.round == 1);
+
+    for (size_t i = 0; i < ctx.lookup.nodes.len; ++i)
+        free(ctx.lookup.nodes.items[i]);
+
 
     kad_rpc_terminate(&ctx, NULL);
     log_shutdown(LOG_TYPE_STDOUT);
