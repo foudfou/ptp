@@ -79,7 +79,7 @@ int main ()
     struct kad_routes *routes = routes_create();
 
     routes->self_id.bytes[0] = 0xa0; // 0b1010
-    char *id = log_fmt_hex(LOG_DEBUG, routes->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex_dyn(LOG_DEBUG, routes->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_debug("self_id reset (id=%s)", id);
     free_safer(id);
 

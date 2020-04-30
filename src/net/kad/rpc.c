@@ -87,7 +87,7 @@ kad_rpc_update_routes(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
     bool rv = true;
     struct kad_node_info info = {.id=*node_id, .addr=*addr};
     sockaddr_storage_fmt(info.addr_str, addr);
-    char *id = log_fmt_hex(LOG_DEBUG, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex_dyn(LOG_DEBUG, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
     if ((rv = routes_update(ctx->routes, &info, now)))
         log_debug("Routes update of %s (id=%s).", &info.addr_str, id);
     else if ((rv = routes_insert(ctx->routes, &info, now)))
@@ -101,7 +101,7 @@ kad_rpc_update_routes(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
 
 static bool kad_rpc_handle_error(const struct kad_rpc_msg *msg)
 {
-    char *id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex_dyn(LOG_DEBUG, msg->node_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_error("Received error message (%zull) from id(%s): %s.",
               msg->err_code, id, msg->err_msg);
     free_safer(id);
@@ -138,7 +138,7 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
         resp.type = KAD_RPC_TYPE_RESPONSE;
         resp.meth = KAD_RPC_METH_FIND_NODE;
         resp.nodes_len = routes_find_closest(ctx->routes, &msg->target, resp.nodes,
-                                          &msg->node_id);
+                                             &msg->node_id);
         if (!benc_encode_rpc_msg(rsp, &resp)) {
             log_error("Error while encoding find node response.");
             return false;
@@ -224,30 +224,37 @@ bool lookup_add_nodes(struct kad_ctx *ctx,
 static bool
 kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 {
-    bool ret = false;
-
-    char *id = log_fmt_hex(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
+    LOG_FMT_HEX_DECL(tx_id, KAD_RPC_MSG_TX_ID_LEN);
+    log_fmt_hex(tx_id, KAD_RPC_MSG_TX_ID_LEN, msg->tx_id.bytes);
 
     struct kad_rpc_query *query = NULL;
     if (!req_lru_delete(ctx->reqs_out, msg->tx_id, &query)) {
-        log_warning("Query for response (id=%s) not found.", id);
-        goto cleanup;
+        log_warning("Query for response (id=%s) not found.", tx_id);
+        return false;
+    }
+
+    if (!kad_guid_eq(&query->node.id, &msg->node_id)) {
+        LOG_FMT_HEX_DECL(q_id, KAD_GUID_SPACE_IN_BYTES);
+        log_fmt_hex(q_id, KAD_GUID_SPACE_IN_BYTES, query->node.id.bytes);
+        LOG_FMT_HEX_DECL(m_id, KAD_GUID_SPACE_IN_BYTES);
+        log_fmt_hex(m_id, KAD_GUID_SPACE_IN_BYTES, msg->node_id.bytes);
+        log_info("Node (id=%s) previously known as (id=%s).", m_id, q_id);
     }
 
     switch (query->msg.meth) {
     case KAD_RPC_METH_NONE: {
         log_error("Got query for method none.");
-        goto cleanup;
+        return false;
     }
 
     case KAD_RPC_METH_PING: {
-        log_debug("Handling ping response (id=%s).", id);
+        log_debug("Handling ping response (id=%s).", tx_id);
         // Nothing left to do as routes already updated in kad_rpc_handle
         break;
     }
 
     case KAD_RPC_METH_FIND_NODE: {
-        log_debug("Handling find_node response (id=%s).", id);
+        log_debug("Handling find_node response (id=%s).", tx_id);
         routes_insert_nodes(ctx, msg->nodes, msg->nodes_len);
         if (lookup_remove_par(ctx, query)) {
             lookup_add_nodes(ctx, msg->nodes, msg->nodes_len, query->msg.target);
@@ -261,11 +268,7 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
     }
 
     free_safer(query);
-    ret = true;
-
-  cleanup:
-    free_safer(id);
-    return ret;
+    return true;
 }
 
 static void kad_rpc_generate_tx_id(kad_rpc_msg_tx_id *tx_id)
@@ -341,9 +344,9 @@ bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
  */
 void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
 {
-    char *tx_id = log_fmt_hex(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
-    char *node_id = log_fmt_hex(LOG_DEBUG, msg->node_id.bytes,
-                                KAD_GUID_SPACE_IN_BYTES);
+    char *tx_id = log_fmt_hex_dyn(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
+    char *node_id = log_fmt_hex_dyn(LOG_DEBUG, msg->node_id.bytes,
+                                    KAD_GUID_SPACE_IN_BYTES);
     log_debug(
         "msg={\n  tx_id=0x%s\n  node_id=0x%s\n  type=%d\n  err_code=%lld\n"
         "  err_msg=%s\n  meth=%d",
@@ -352,14 +355,14 @@ void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
     free_safer(tx_id);
     free_safer(node_id);
 
-    node_id = log_fmt_hex(LOG_DEBUG, msg->target.bytes,
-                          msg->target.is_set ? KAD_GUID_SPACE_IN_BYTES : 0);
+    node_id = log_fmt_hex_dyn(LOG_DEBUG, msg->target.bytes,
+                              msg->target.is_set ? KAD_GUID_SPACE_IN_BYTES : 0);
     log_debug("  target=0x%s", node_id);
     free_safer(node_id);
 
     for (size_t i = 0; i < msg->nodes_len; i++) {
-        node_id = log_fmt_hex(LOG_DEBUG, msg->nodes[i].id.bytes,
-                              KAD_GUID_SPACE_IN_BYTES);
+        node_id = log_fmt_hex_dyn(LOG_DEBUG, msg->nodes[i].id.bytes,
+                                  KAD_GUID_SPACE_IN_BYTES);
         log_debug("  nodes[%zu]=0x%s %s", i, node_id, msg->nodes[i].addr_str);
         free_safer(node_id);
     }

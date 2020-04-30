@@ -69,10 +69,17 @@ void log_stream_msg(int prio, const char *fmt, ...);
 void log_perror(const int prio, const char *fmt, const int errnum);
 
 /**
- * If prio is met, returns an id as a string, which THE CONSUMER MUST FREE.
- * Otherwise returns NULL.
+ * Hex formating.
+ *
+ * Use the static default version with LOG_FMT_HEX_DECL.
+ *
+ * Use the dynamic version for debug messages. This avoid needless allocation,
+ * since it only returns the allocated formatted string when prio is
+ * met. CONSUMER MUST FREE it. Returns NULL otherwise.
  */
-char *log_fmt_hex(const int prio, const unsigned char *id, const size_t len);
+#define LOG_FMT_HEX_DECL(name, len) char name[2*len+1]
+bool log_fmt_hex(char dst[], const size_t len, const unsigned char *id);
+char *log_fmt_hex_dyn(const int prio, const unsigned char *id, const size_t len);
 
 bool log_init(log_type_t log_type, int log_mask);
 bool log_shutdown(log_type_t log_type);

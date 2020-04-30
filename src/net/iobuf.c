@@ -51,9 +51,9 @@ bool iobuf_append(struct iobuf *buf, const char *data, const size_t len)
     memcpy(buf->buf + buf->pos, data, len);
     buf->pos += len;
 
-    char *bufx = log_fmt_hex(LOG_DEBUG, (unsigned char*)buf->buf, buf->pos);
+    // LOG_FMT_HEX_DECL(bufx, buf->pos);
+    // log_fmt_hex(bufx, buf->pos, (unsigned char*)buf->buf);
     // log_debug("iobuf=%s", bufx);
-    free_safer(bufx);
 
     return true;
 

@@ -280,9 +280,9 @@ int peer_conn_handle_data(struct peer *peer, struct kad_ctx *kctx)
     log_debug("Received %d bytes.", slen);
 
     if (peer->parser.stage == PROTO_MSG_STAGE_ERROR) {
-        char *bufx = log_fmt_hex(LOG_ERR, (unsigned char*)buf, slen);
+        LOG_FMT_HEX_DECL(bufx, slen);
+        log_fmt_hex(bufx, slen, (unsigned char*)buf);
         log_error("Parsing error. buf=%s", bufx);
-        free_safer(bufx);
         goto end;
     }
 
@@ -412,11 +412,12 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
 
     struct iobuf qbuf = {0};
     if (!kad_rpc_query_create(&qbuf, query, kctx)) {
-        goto failed1;
+        goto failed;
     }
 
-    char *id = log_fmt_hex(LOG_DEBUG, query->msg.tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
-    log_info("Sending kad msg [%d] to %s (id=%s)", query->msg.meth, node.addr_str, id);
+    LOG_FMT_HEX_DECL(tx_id, KAD_RPC_MSG_TX_ID_LEN);
+    log_fmt_hex(tx_id, KAD_RPC_MSG_TX_ID_LEN, query->msg.tx_id.bytes);
+    log_info("Sending kad msg [%d] to %s (id=%s)", query->msg.meth, node.addr_str, tx_id);
 
     socklen_t addr_len = sizeof(struct sockaddr_storage);
     ssize_t slen = sendto(sock, qbuf.buf, qbuf.pos, 0, (struct sockaddr *)&node.addr, addr_len);
@@ -424,32 +425,29 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
         if (errno != EWOULDBLOCK) {
             log_perror(LOG_ERR, "Failed sendto: %s", errno);
         }
-        goto failed2;
+        goto failed;
     }
     log_debug("Sent %d bytes.", slen);
     iobuf_reset(&qbuf);
 
     struct kad_rpc_query *evicted = NULL;
     if (!req_lru_put(kctx->reqs_out, query, &evicted)) {
-        log_error("Cannot register duplicate query (id=%s)", id);
-        goto failed2;
+        log_error("Cannot register duplicate query (id=%s)", tx_id);
+        goto failed;
     }
     if (evicted) {
         long long now = now_millis();
         if (now < 0)
-            goto failed2;
+            goto failed;
         if (evicted->created + KAD_RPC_QUERY_TIMEOUT_MILLIS < now)
             routes_mark_stale(kctx->routes, &evicted->node.id);
         log_info("Evicted query from full list.");
     }
 
-    free_safer(id);
     iobuf_reset(&qbuf);
     return true;
 
-  failed2:
-    free_safer(id);
-  failed1:
+  failed:
     iobuf_reset(&qbuf);
     free_safer(query);
     return false;

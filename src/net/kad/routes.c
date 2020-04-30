@@ -62,7 +62,7 @@ struct kad_routes *routes_create()
     /* « Node IDs are currently just random 160-bit identifiers, though they
        could equally well be constructed as in Chord. » */
     kad_generate_id(&routes->self_id);
-    char *id = log_fmt_hex(LOG_DEBUG, routes->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex_dyn(LOG_DEBUG, routes->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_debug("self_id=%s", id);
     free_safer(id);
 
@@ -267,9 +267,9 @@ bool routes_update(struct kad_routes *routes, const struct kad_node_info *info, 
         return false;
 
     if (!sockaddr_storage_eq_addr(&node->info.addr, &info->addr)) {
-        char *id = log_fmt_hex(LOG_DEBUG, info->id.bytes, KAD_GUID_SPACE_IN_BYTES);
+        LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES);
+        log_fmt_hex(id, KAD_GUID_SPACE_IN_BYTES, info->id.bytes);
         log_warning("Node (%s) changed addr: %s -> %s.", id, node->info.addr_str, info->addr_str);
-        free_safer(id);
 
         node->info.addr = info->addr;
         strcpy(node->info.addr_str, info->addr_str);
@@ -338,9 +338,9 @@ bool routes_delete(struct kad_routes *routes, const kad_guid *node_id)
     int bkt_idx = kad_bucket_hash(&routes->self_id, node_id);
     struct kad_node *node = routes_get_from_list(&routes->buckets[bkt_idx], node_id);
     if (!node) {
-        char *id = log_fmt_hex(LOG_ERR, node_id->bytes, KAD_GUID_SPACE_IN_BYTES);
+        LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES);
+        log_fmt_hex(id, KAD_GUID_SPACE_IN_BYTES, node_id->bytes);
         log_error("Unknown node (id=%s).", id);
-        free_safer(id);
         return false;
     }
 
@@ -381,7 +381,7 @@ int routes_read(struct kad_routes **routes, const char state_path[])
     routes_init(*routes);
 
     (*routes)->self_id = encoded.self_id;
-    char *id = log_fmt_hex(LOG_DEBUG, (*routes)->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex_dyn(LOG_DEBUG, (*routes)->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_debug("self_id=%s", id);
     free_safer(id);
 
