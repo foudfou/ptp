@@ -101,7 +101,7 @@ bool benc_encode_routes(struct iobuf *buf, const struct kad_routes_encoded *rout
     return true;
 }
 
-int benc_decode_bootstrap_nodes(struct sockaddr_storage nodes[],
+int benc_decode_bootstrap_nodes(struct kad_node_info nodes[],
                                 const size_t nodes_len,
                                 const char buf[], const size_t slen)
 {
@@ -117,7 +117,7 @@ int benc_decode_bootstrap_nodes(struct sockaddr_storage nodes[],
         return -1;
     }
 
-    int nnodes = benc_read_addrs(nodes, nodes_len, n);
+    int nnodes = benc_read_nodes(nodes, nodes_len, n);
     if (nnodes < 0) {
         log_error("Reading bencoded nodes addresses failed.");
         return -1;

@@ -46,6 +46,7 @@ int peer_conn_close_all(struct list_item *peers);
 bool kad_bootstrap(struct list_item *timers, const struct config *conf, struct kad_ctx *kctx, const int sock);
 bool kad_ping(struct kad_ctx *kctx, const int sock, const struct kad_node_info node);
 bool kad_find_node(struct kad_ctx *kctx, const int sock, const struct kad_node_info node, const kad_guid target);
+bool kad_lookup(const kad_guid target, struct list_item *timers, struct kad_ctx *ctx, const int sock);
 bool kad_refresh(void *data);
 
 #endif /* ACTIONS_H */

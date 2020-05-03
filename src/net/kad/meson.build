@@ -6,6 +6,7 @@ libkad_sources = [
   'bencode/parser.c',
   'bencode/rpc_msg.c',
   'bencode/serde.c',
+  'lookup.c',
   'routes.c',
   'rpc.c',
 ]

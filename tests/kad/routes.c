@@ -90,6 +90,7 @@ int main(int argc, char *argv[])
 
     sa->sin_family=AF_INET; sa->sin_port=htons(0x0800); sa->sin_addr.s_addr=htonl(0x04030201);
     assert(routes_update(routes, &info, 0));
+    assert(routes_upsert(routes, &info, 1504274391));
 
     assert(routes_delete(routes, &info.id));
     n1 = routes_get_from_list(&routes->buckets[bkt_idx], &info.id);
@@ -117,6 +118,18 @@ int main(int argc, char *argv[])
     // mark stale
     assert(routes_mark_stale(routes, &overflow->info.id));
     assert(overflow->stale == 1);
+
+    // upsert
+    assert(list_count(&routes->buckets[blk_idx]) == 8);
+    assert(list_count(&routes->replacements[blk_idx]) == 1);
+    opp.id.bytes[KAD_GUID_SPACE_IN_BYTES-1] = 0xf;
+    assert(routes_upsert(routes, &opp, 0));
+    assert(list_count(&routes->buckets[blk_idx]) == 8);
+    assert(list_count(&routes->replacements[blk_idx]) == 2);
+    // TODO check new node is properly placed
+    assert(routes_upsert(routes, &opp, 1504274391));
+    assert(list_count(&routes->buckets[blk_idx]) == 8);
+    assert(list_count(&routes->replacements[blk_idx]) == 2);
 
     routes_destroy(routes);
 

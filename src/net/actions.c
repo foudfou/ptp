@@ -17,23 +17,8 @@
 // FIXME: low for testing purpose.
 #define SERVER_TCP_BUFLEN 10
 #define SERVER_UDP_BUFLEN 1400
+#define KAD_LOOKUP_INTERVAL_MILLIS 50
 
-static bool set_timeout(struct list_item *timers, long long delay, bool once,
-                        struct event *evt)
-{
-    struct timer *timer = malloc(sizeof(struct timer));
-    if (!timer) {
-        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
-        return false;
-    }
-    *timer = (struct timer){
-        .name={0}, .once=once, .delay=delay,
-        .event=evt, .self=timer
-    };
-    strcpy_safer(timer->name, evt->name, EVENT_NAME_MAX);
-    timer_init(timers, timer, 0);
-    return true;
-}
 
 bool node_handle_data(struct list_item *timers, int sock, struct kad_ctx *kctx)
 {
@@ -338,25 +323,18 @@ int peer_conn_close_all(struct list_item *peers)
     return fail;
 }
 
-/* Bootstrapping consists in:
-   - read bootstrap nodes from file. File only contains ip/port's, this is
-     similar to bittorrent.
-   - launch lookup request for its own node ID to each bootstrap node.
-   - refresh all k-buckets TODO
-
-   Note ping request isn't useful since the find_node request will give us more
-   information.
-
-   Note it's just easier to query all bootstrap nodes than trying one-by-one
-   until one succeeds. The difficulty resides in signaling timers when
-   receiving responses.
-
-   « To join the network, a node u must have a contact to an already
+/* « To join the network, a node u must have a contact to an already
    participating node w. u inserts w into the appropriate k-bucket. u then
    performs a node lookup for its own node ID. Finally, u refreshes all
    k-buckets further away than its closest neighbor. »
- */
-static bool kad_bootstrap_schedule_lookups(struct sockaddr_storage nodes[], size_t nodes_len, struct list_item *timers, struct kad_ctx *kctx, const int sock);
+
+   We'll stick to kad's spec as a first approach.  Note bittorrent has a
+   slightly different approach: only ip/port's without guid are used for
+   bootstrap nodes. In bittorrent original kad implementation, bootstrap nodes
+   are then ping'd and then added to the routes. In recent implementations,
+   router nodes are handled differently than normal nodes.
+*/
+bool kad_lookup(const kad_guid target, struct list_item *timers, struct kad_ctx *ctx, const int sock);
 bool kad_bootstrap(struct list_item *timers, const struct config *conf,
                    struct kad_ctx *kctx, const int sock)
 {
@@ -383,7 +361,7 @@ bool kad_bootstrap(struct list_item *timers, const struct config *conf,
         return true;
     }
 
-    struct sockaddr_storage nodes[BOOTSTRAP_NODES_LEN];
+    struct kad_node_info nodes[BOOTSTRAP_NODES_LEN];
     int nodes_len = kad_read_bootstrap_nodes(nodes, ARRAY_LEN(nodes), bootstrap_nodes_path);
     if (nodes_len < 0) {
         log_error("Failed to read bootstrap nodes.");
@@ -395,7 +373,12 @@ bool kad_bootstrap(struct list_item *timers, const struct config *conf,
         return true;
     }
 
-    return kad_bootstrap_schedule_lookups(nodes, nodes_len, timers, kctx, sock);
+    for (int i = 0; i < nodes_len; ++i) {
+        if (!routes_insert(kctx->routes, &nodes[i], 0))
+            log_error("Could not insert bootstrap node to routes.");
+    }
+
+    return kad_lookup(kctx->routes->self_id, timers, kctx, sock);
 }
 
 bool kad_query(struct kad_ctx *kctx, const int sock,
@@ -444,6 +427,10 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
         log_info("Evicted query from full list.");
     }
 
+    bool is_lookup_query = query->msg.meth == KAD_RPC_METH_FIND_NODE;
+    if (is_lookup_query && !kad_lookup_par_add(&kctx->lookup, query))
+        log_error("Already %d find_node requests in-flight.", KAD_ALPHA_CONST);
+
     iobuf_reset(&qbuf);
     return true;
 
@@ -473,8 +460,9 @@ bool kad_find_node(struct kad_ctx *kctx, const int sock,
     return kad_query(kctx, sock, node, msg);
 }
 
-static bool kad_bootstrap_schedule_lookups(
-    struct sockaddr_storage nodes[], size_t nodes_len,
+static bool kad_schedule_find_nodes(
+    const kad_guid target,
+    struct kad_node_info nodes[], size_t nodes_len,
     struct list_item *timers, struct kad_ctx *kctx,
     const int sock)
 {
@@ -495,11 +483,7 @@ static bool kad_bootstrap_schedule_lookups(
         }
         *events[i] = (struct event){
             "kad-find-node", .cb=event_kad_find_node_cb,
-            .args.kad_find_node={
-                .kctx=kctx, .sock=sock,
-                .node={.id={{0},0}, .addr=nodes[i], .addr_str={0}},
-                .target=kctx->routes->self_id
-            },
+            .args.kad_find_node={.target=target, .node=nodes[i], .kctx=kctx, .sock=sock},
             .fatal=false, .self=events[i]
         };
         sockaddr_storage_fmt(events[i]->args.kad_find_node.node.addr_str,
@@ -522,10 +506,40 @@ static bool kad_bootstrap_schedule_lookups(
     return true;
 
   cleanup:
-    for (size_t j=0; j<i; j++) {
+    for (size_t j=0; j<i; j++)
         free(events[j]);
-    }
     list_free_all((&timers_tmp), struct timer, item);
+    return false;
+}
+
+static bool kad_schedule_lookup(
+    const kad_guid target,
+    struct list_item *timers,
+    struct kad_ctx *ctx,
+    const int sock)
+{
+    long long now = now_millis();
+    if (now < 0)
+        return false;
+
+    struct event *evt = malloc(sizeof(struct event));
+    if (!evt) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        goto cleanup;
+    }
+    *evt = (struct event){
+        "kad-lookup", .cb=event_kad_lookup_cb,
+        .args.kad_lookup={.target=target, .timers=timers, .kctx=ctx, .sock=sock},
+        .fatal=false, .self=evt
+    };
+
+    if (!set_timeout(timers, KAD_LOOKUP_INTERVAL_MILLIS, true, evt))
+        goto cleanup;
+
+    return true;
+
+  cleanup:
+    free_safer(evt);
     return false;
 }
 
@@ -536,95 +550,79 @@ bool kad_refresh(void *data)
     return true;
 }
 
-/*
-  While node lookup is the most important procedure in kademlia, the paper
-  gives a confusing description. This has led to varying interpretation (see
-  references). Hereafter is our own interpretation.
+void kad_lookup_complete(struct kad_ctx *ctx)
+{
+    // TODO return the k closest nodes to target from lookup.past
+    kad_lookup_reset(&ctx->lookup);
+    log_debug("Lookup complete.");
+}
 
-  Q: What is node lookup ?
+bool kad_lookup(const kad_guid target, struct list_item *timers,
+                struct kad_ctx *ctx, const int sock)
+{
+    log_debug("Lookup progress check, round=%d", ctx->lookup.round);
+    struct kad_node_info next[KAD_K_CONST] = {0};
+    size_t next_len = 0;
 
-  A: « to locate the k closest nodes to some given node ID. »
+    if (ctx->lookup.round >= KAD_K_CONST) {
+        kad_lookup_complete(ctx);
+        return true;
+    }
 
-  Q: How does node lookup work ?
+    struct kad_node_lookup *contact[KAD_K_CONST] = {0};
+    if (ctx->lookup.round > 0) {
+        for (size_t i = 0; i < ctx->lookup.par_len; ++i) {
+            struct kad_rpc_query *query = ctx->lookup.par[i];
+            if (query != NULL) {
+                long long now = now_millis();
+                if (now >= 0 && query->created + KAD_RPC_QUERY_TIMEOUT_MILLIS < now) {
+                    routes_mark_stale(ctx->routes, &query->node.id);
+                    free_safer(query);
+                    query = NULL;
+                }
+                continue;
+            }
 
-  A:
+            struct kad_node_lookup *nl = node_heap_get(&ctx->lookup.next);
+            if (!nl)
+                continue;
 
-  - recursive/iterative
+            next[next_len].id = nl->id;
+            next[next_len].addr = nl->addr;
 
-  - initiator picks alpha-const=3 closest nodes, adds them to
-  (by-distance-)sorted list of unknown nodes, aka `lookup` list, and sends
-  FIND_NODE in // [need timeout]
+            contact[next_len] = nl;
 
-  - when a response arrives, add responding node to routes and lookup list.
+            next_len++;
+        }
+    }
+    else {
+        next_len = routes_find_closest(ctx->routes, &ctx->routes->self_id,
+                                        next, NULL);
+        if (next_len > KAD_ALPHA_CONST)
+            next_len = KAD_ALPHA_CONST;
 
-  - nodes are removed from lookup list on iteration, when picking the next ones
-  to issue FIND_NODE to.
+        for (size_t i = 0; i < KAD_ALPHA_CONST; ++i)
+            contact[i] = kad_lookup_new_from(&next[i], target);
+    }
 
-  [By definition routes holds known nodes — not only contacted ones: « When a
-  Kademlia node receives any message (request or reply) from another node, it
-  updates the appropriate k-bucket for the sender’s node ID. », « When u learns
-  of a new contact, it attempts to insert the contact in the appropriate
-  k-bucket. » So we should just add learned nodes to routes with null last_seen,
-  when not already here, and systematically add them to the lookup list. That
-  also means that FIND_NODE does insert new nodes into routes.]
+    if (next_len == 0) {
+        log_debug("Lookup nodes exhausted.");
+        kad_lookup_complete(ctx);
+        return true;
+    }
 
-  - after round finishes, if returned nodes closer than lookup list, pick
-  alpha, otherwise pick k. Iterate by sending them FIND_NODE in //.
+    log_debug("Scheduling %d find_node lookups.", next_len);
+    if (!kad_schedule_find_nodes(target, next, next_len, timers, ctx, sock))
+        return false;
 
-  - paper says we can begin a new round before all alpha nodes of last round
-  answered. Basically that says: we can have alpha requests in flight; a round
-  finishes for each received response; we just pick the first node from the
-  lookup list for the next request.
+    for (size_t i = 0; i < ctx->lookup.par_len; ++i) {
+        if (!contact[i])
+            break;
+        if (!node_heap_insert(&ctx->lookup.past, contact[i])) {
+            log_error("Failed insert into lookup past nodes.");
+            free_safer(contact[i]);
+        }
+    }
 
-  - lookup finishes when k responses received [why not until looked-up id
-  found ? or max iteration reached ?].
-
-  Q: How do we implement node lookups ?
-
-  A:
-
-  - recursive lookup timer, state kept in kctx, with added `lookup` heap and
-  `in_flight` request list. Timer doesn't need to be signaled, for ex. when
-  receiving a response.
-
-  - pick alpha closest nodes from routes. Send them FIND_NODE. This effectively
-  registers the requests to the request and in_flight lists.
-
-  - when response received: corresponding request removed from request list
-  [already done] and in_flight list; node inserted into routes or updated
-  [already done]; nodes inserted to routes with last_seen null; nodes added to
-  lookup list; lookup round incremented.
-
-  - pick alpha (or next when parallel) closest nodes from lookup list. Send
-  them FIND_NODE. This effectively: removes them from lookup list; register
-  requests to the request and in_flight lists. Iterate: goto previous.
-
-  - lookup timer checks how many requests are in-flight via list of in-flight
-  queries. When a request times out, remove it from in_flight and request
-  lists.
-
-  - we will limit running lookup processes to 1, simply by checking lookup
-  round. Other lookup processes, like triggered by refresh, must be delayed.
-
-  - when lookup round >= k: stop timer; reset lookup round; reset lookup list.
-
-  Notes and references:
-
-  - « Alpha and Parallelism.  Kademlia uses a value of 3 for alpha, the degree
-  of parallelism used. It appears that (see stutz06) this value is optimal.
-  There are at least three approaches to managing parallelism. The first is to
-  launch alpha probes and wait until all have succeeded or timed out before
-  iterating. This is termed strict parallelism. The second is to limit the
-  number of probes in flight to alpha; whenever a probe returns a new one is
-  launched. We might call this bounded parallelism. A third is to iterate after
-  what seems to be a reasonable delay (duration unspecified), so that the
-  number of probes in flight is some low multiple of alpha. This is loose
-  parallelism and the approach used by Kademlia. »
-  (http://xlattice.sourceforge.net/components/protocol/kademlia/specs.html#lookup)
-
-  - https://github.com/libp2p/go-libp2p-kad-dht/issues/290
-
-  - https://github.com/ntoll/drogulus/blob/master/drogulus/dht/lookup.py
-
-  - https://pub.tik.ee.ethz.ch/students/2006-So/SA-2006-19.pdf
-*/
+    return kad_schedule_lookup(target, timers, ctx, sock);
+}

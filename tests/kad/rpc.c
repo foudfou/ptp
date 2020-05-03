@@ -19,7 +19,7 @@ int main ()
                        .id = {.bytes = {[0]=0xff, [1]=0x04}}},
                &(struct kad_node_lookup){.target = {.bytes = {[0]=0xff, [1]=0x04}},
                        .id = {.bytes = {[0]=0xff, [1]=0x04}}}));
-    assert(INT_MAX == node_heap_cmp(
+    assert(INT_MIN == node_heap_cmp(
                &(struct kad_node_lookup){.target = {.bytes = {[0]=0, [1]=0}},
                        .id = {.bytes = {[0]=0, [1]=0xff}}},
                &(struct kad_node_lookup){.target = {.bytes = {[0]=1, [1]=0}},
@@ -98,11 +98,8 @@ int main ()
     for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++)
         route_count += list_count(&ctx.routes->buckets[i]);
     assert(route_count == 4);
-    assert(ctx.lookup.nodes.len == 3);
+    assert(ctx.lookup.next.len == 3);
     assert(ctx.lookup.round == 1);
-
-    for (size_t i = 0; i < ctx.lookup.nodes.len; ++i)
-        free(ctx.lookup.nodes.items[i]);
 
 
     kad_rpc_terminate(&ctx, NULL);

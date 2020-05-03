@@ -8,9 +8,8 @@
 #include <limits.h>
 #include <stdbool.h>
 #include "net/iobuf.h"
+#include "net/kad/lookup.h"
 #include "net/kad/routes.h"
-#include "utils/byte_array.h"
-#include "utils/heap.h"
 #include "utils/list.h"
 #include "utils/lookup.h"
 #include "net/kad/bencode/parser.h"
@@ -19,7 +18,6 @@
 struct req_lru;
 
 
-#define KAD_RPC_MSG_TX_ID_LEN 2
 // TODO tune and move to defs
 #define KAD_RPC_QUERY_TIMEOUT_MILLIS 60000
 
@@ -66,8 +64,6 @@ static const lookup_entry kad_rpc_err_names[] = {
     { 0,                        NULL },
 };
 
-BYTE_ARRAY_GENERATE(kad_rpc_msg_tx_id, KAD_RPC_MSG_TX_ID_LEN)
-
 /**
  * KRPC message.
  *
@@ -91,45 +87,6 @@ struct kad_rpc_query {
     long long            created; // for expiring queries
     struct kad_rpc_msg   msg;
     struct kad_node_info node;
-};
-
-struct kad_node_lookup {
-    kad_guid                target;
-    kad_guid                id;
-    struct sockaddr_storage addr;
-};
-
-/**
- * Compares the distance of 2 nodes to a given target.
- *
- * Returns a negative number if a > b, 0 if a == b, a positive int if
- * a < b. Intended for min-heap.
- */
-static inline
-int node_heap_cmp(const struct kad_node_lookup *a,
-                  const struct kad_node_lookup *b)
-{
-    if (memcmp(&a->target, &b->target, KAD_GUID_SPACE_IN_BYTES) != 0)
-        return INT_MAX; // convention
-
-    size_t i = 0;
-    unsigned char xa, xb;
-    while (i < KAD_GUID_SPACE_IN_BYTES) {
-        // avoid kad_guid_xor()
-        xa = a->id.bytes[i] ^ a->target.bytes[i];
-        xb = b->id.bytes[i] ^ b->target.bytes[i];
-        if (xa != xb)
-            break;
-        i++;
-    }
-    return i == KAD_GUID_SPACE_IN_BYTES ? 0 : xb - xa;
-}
-HEAP_GENERATE(node_heap, struct kad_node_lookup *)
-
-struct kad_lookup {
-    int                   round;
-    struct kad_rpc_query *par[KAD_ALPHA_CONST]; // aka in-flight
-    struct node_heap      nodes;
 };
 
 struct kad_ctx {

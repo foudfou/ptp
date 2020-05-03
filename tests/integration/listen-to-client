@@ -3,13 +3,13 @@
 
 """Script for single client integration tests."""
 
-
 import os
-import re
 import socket
 import subprocess as sub
 import sys
 import tempfile
+
+from helpers import check_data
 
 SERVER_HOST = '::1'
 SERVER_PORT = 0
@@ -26,21 +26,6 @@ server_cmd.extend(server_args)
 EXPECTED_MESSAGES = [
     ("find_node", b"^d1:t2:(.){2}1:y1:q1:q9:find_node1:ad6:target20:(?P<id>.{20})2:id20:(?P=id)ee$")
 ]
-
-def check_data(expect, data, ctx):
-    failure = 0
-    patt = re.compile(expect, re.DOTALL)
-    if re.search(patt, data):
-        result = "OK"
-        err = None
-    else:
-        failure += 1
-        result = "\033[31mFAIL\033[0m"
-        err = data
-    print("{}/{} {} .. {}".format(ctx['line'], ctx['len'], ctx['name'], result))
-    if err:
-        print("---\n   data {} did not match expected {}".format(data, expect))
-    return failure
 
 def port_to_bigendian_bytes(port):
     return port.to_bytes((port.bit_length() + 7) // 8, 'big') or b'\0'
@@ -68,7 +53,7 @@ with tempfile.TemporaryDirectory() as tmp_dir, \
         # print(port)
         port_bytes = port_to_bigendian_bytes(port)
 
-        bootstrap_bin = b"l18:\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
+        bootstrap_bin = b"l38:iam-thebootstrapnode\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
         bootstrap_path = os.path.join(tmp_dir, "nodes.dat")
         with open(bootstrap_path, 'wb') as f:
             f.write(bootstrap_bin)

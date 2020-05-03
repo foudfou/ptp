@@ -39,7 +39,7 @@ int main ()
       |   6   7   1   4
       |  0 3 2
      */
-    int expect_ints[] = {9,8,5,6,7,1,4,0,3,2};
+    int expect_ints[N] = {9,8,5,6,7,1,4,0,3,2};
     assert(ints.len == N);
     assert(memcmp(ints.items, expect_ints, N) == 0);
 

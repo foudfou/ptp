@@ -9,7 +9,7 @@
 bool benc_decode_routes(struct kad_routes_encoded *routes, const char buf[], const size_t slen);
 bool benc_encode_routes(struct iobuf *buf, const struct kad_routes_encoded *routes);
 
-int benc_decode_bootstrap_nodes(struct sockaddr_storage nodes[],
+int benc_decode_bootstrap_nodes(struct kad_node_info nodes[],
                                 const size_t nodes_len,
                                 const char buf[], const size_t slen);
 

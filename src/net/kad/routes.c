@@ -168,7 +168,7 @@ size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
         nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
         BITFIELD_SET(visited, bucket_idx, 1);
         // TODO generalize inclusion of __func__
-        log_debug("%s: nodes added from bucket %d, total=%zu", __func__, bucket_idx, nodes_pos);
+        // log_debug("%s: nodes added from bucket %d, total=%zu", __func__, bucket_idx, nodes_pos);
         // log_debug("__bucket_idx=%zu, prefix=%zu, added=%zu", bucket_idx, prefix_idx, nodes_pos);
         if (nodes_pos >= KAD_K_CONST)
             goto filled;
@@ -187,7 +187,7 @@ size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
             bucket = &routes->buckets[i];
             nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
             BITFIELD_SET(visited, i, 1);
-            log_debug("%s: other nodes added from bucket %d, total=%zu", __func__, i, nodes_pos);
+            // log_debug("%s: other nodes added from bucket %d, total=%zu", __func__, i, nodes_pos);
         }
 
         if (nodes_pos >= KAD_K_CONST)
@@ -313,7 +313,7 @@ bool routes_insert(struct kad_routes *routes, const struct kad_node_info *info, 
     size_t bkt_idx = 0;
     struct kad_node *node = routes_get_with_bucket(routes, &info->id, NULL, &bkt_idx);
     if (node) {
-        log_error("Routes insert failed: existing node.");
+        log_warning("Routes insert failed: existing node.");
         return false;
     }
 
@@ -331,6 +331,22 @@ bool routes_insert(struct kad_routes *routes, const struct kad_node_info *info, 
     }
 
     return true;
+}
+
+bool routes_upsert(struct kad_routes *routes, const struct kad_node_info *node, time_t time)
+{
+    bool rv = true;
+
+    char *id = log_fmt_hex_dyn(LOG_DEBUG, node->id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    if ((rv = routes_update(routes, node, time)))
+        log_debug("Routes update of %s (id=%s).", &node->addr_str, id);
+    else if ((rv = routes_insert(routes, node, time)))
+        log_debug("Routes insert of %s (id=%s).", &node->addr_str, id);
+    else
+        log_warning("Failed to upsert kad_node (id=%s)", id);
+    free_safer(id);
+
+    return rv;
 }
 
 bool routes_delete(struct kad_routes *routes, const kad_guid *node_id)
@@ -399,7 +415,7 @@ int routes_read(struct kad_routes **routes, const char state_path[])
     return -1;
 }
 
-int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len,
+int kad_read_bootstrap_nodes(struct kad_node_info nodes[], size_t nodes_len,
                              const char state_path[])
 {
     char buf[NODES_FILE_LEN_IN_BYTES];
@@ -410,7 +426,7 @@ int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len,
     }
     log_debug("Reading bootstrap nodes from file '%s'.", state_path);
 
-    // FIXME would it not be easier to have a simple text file ?
+    // Since bootstrap file contains node id's, a binary file is fine.
     int nnodes = benc_decode_bootstrap_nodes(nodes, nodes_len, buf, buf_len);
     if (nnodes < 0) {
         log_error("Decoding of bootsrap nodes file (%s) failed.", state_path);

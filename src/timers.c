@@ -1,9 +1,27 @@
 /* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <limits.h>
 #include "log.h"
-#include "utils/time.h"
 #include "utils/cont.h"
+#include "utils/time.h"
+#include "utils/safer.h"
 #include "timers.h"
+
+bool set_timeout(struct list_item *timers, long long delay, bool once,
+                 struct event *evt)
+{
+    struct timer *timer = malloc(sizeof(struct timer));
+    if (!timer) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        return false;
+    }
+    *timer = (struct timer){
+        .name={0}, .once=once, .delay=delay,
+        .event=evt, .self=timer
+    };
+    strcpy_safer(timer->name, evt->name, EVENT_NAME_MAX);
+    timer_init(timers, timer, 0);
+    return true;
+}
 
 /**
  * `now` optional: will be set to current time if 0.

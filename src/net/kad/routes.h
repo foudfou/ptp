@@ -14,15 +14,11 @@
 #include <sys/socket.h>
 #include <time.h>
 #include "kad_defs.h"
+#include "net/kad/id.h"
 #include "net/socket.h"
 #include "utils/cont.h"
-#include "utils/byte_array.h"
 #include "utils/list.h"
 #include "utils/helpers.h"
-
-/* Byte arrays are not affected by endian issues.
-   http://stackoverflow.com/a/4523537/421846 */
-BYTE_ARRAY_GENERATE(kad_guid, KAD_GUID_SPACE_IN_BYTES)
 
 struct kad_node_info {
     kad_guid                id;
@@ -96,11 +92,12 @@ bool routes_write(const struct kad_routes *routes, const char state_path[]);
 struct kad_routes *routes_create();
 void routes_destroy(struct kad_routes * routes);
 
-int kad_read_bootstrap_nodes(struct sockaddr_storage nodes[], size_t nodes_len, const char state_path[]);
+int kad_read_bootstrap_nodes(struct kad_node_info nodes[], size_t nodes_len, const char state_path[]);
 
 /* routes_get() intentionally kept internal. */
 bool routes_update(struct kad_routes *routes, const struct kad_node_info *info, time_t time);
 bool routes_insert(struct kad_routes *routes, const struct kad_node_info *info, time_t time);
+bool routes_upsert(struct kad_routes *routes, const struct kad_node_info *node, time_t time);
 bool routes_delete(struct kad_routes *routes, const kad_guid *node_id);
 bool routes_mark_stale(struct kad_routes *routes, const kad_guid *node_id);
 size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,

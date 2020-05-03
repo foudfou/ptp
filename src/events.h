@@ -5,13 +5,15 @@
 /**
  * Events for the event-loop.
  *
- * Events are created as sort of closures: a callback and its arguments. They
- * are embedded into a timer, which in turn is appended to the main timer
- * list. The event loop consumes timers, effectively removing them from the
- * list and destroying them and their associated event.
+ * Events are created as sort of closures: a callback and its arguments. To
+ * schedule them, we insert them into to the event queue either directly or via
+ * timers, may it be with zero delay: an event is embedded into a timer, which
+ * in turn is appended to the main timer list. The event loop consumes timers,
+ * effectively removing them from the list, destroying them, freeing their
+ * associated event and its associated allocations.
  *
- * Events are usually inserted into to the event queue by scheduling them via
- * timers, may it be with zero delay.
+ * In the future, we may want to distinguish emitted events from event
+ * listeners.
  *
  * Some events are static as they will be unique during a loop iteration. The
  * callbacks' arguments must be set at runtime.
@@ -77,6 +79,13 @@ struct event_args {
             struct kad_node_info  node;
             kad_guid              target;
         } kad_find_node;
+
+        struct {
+            kad_guid              target;
+            struct list_item     *timers;
+            struct kad_ctx       *kctx;
+            int                   sock;
+        } kad_lookup;
     };
 };
 
@@ -106,5 +115,6 @@ bool event_peer_data_cb(struct event_args args);
 bool event_kad_bootstrap_cb(struct event_args args);
 bool event_kad_ping_cb(struct event_args args);
 bool event_kad_find_node_cb(struct event_args args);
+bool event_kad_lookup_cb(struct event_args args);
 
 #endif /* EVENTS_H */

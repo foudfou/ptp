@@ -106,7 +106,7 @@ bool log_fmt_hex(char dst[], const size_t len, const unsigned char *id)
 {
     for (size_t i = 0; i < len; i++)
         // no format string vuln
-        if (sprintf(dst + 2*i, "%02x", *(id + i)) < 0)
+        if (sprintf(dst + 2*i, "%02X", *(id + i)) < 0)
             return false;
     dst[2*len] = '\0';
     return true;
@@ -119,7 +119,7 @@ char *log_fmt_hex_dyn(const int prio, const unsigned char *id, const size_t len)
 
     char *str = malloc(2*len+1);
     for (size_t i = 0; i < len; i++)
-        sprintf(str + 2*i, "%02x", *(id + i)); // no format string vuln
+        sprintf(str + 2*i, "%02X", *(id + i)); // no format string vuln
     str[2*len] = '\0';
     return str;
 }

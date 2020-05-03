@@ -23,7 +23,7 @@ const struct benc_node*
 benc_node_navigate_to_key(const struct benc_node *dict,
                           const lookup_entry k_names[],
                           const int k1, const int k2);
-int benc_read_addrs(struct sockaddr_storage addr[], const size_t addr_len,
+int benc_read_nodes(struct kad_node_info nodes[], const size_t nodes_len,
                     const struct benc_node *list);
 int benc_read_nodes_from_key(struct kad_node_info nodes[], const size_t nodes_len,
                              const struct benc_node *dict,

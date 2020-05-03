@@ -73,3 +73,9 @@ bool event_kad_find_node_cb(struct event_args args)
     return kad_find_node(args.kad_find_node.kctx, args.kad_find_node.sock,
                          args.kad_find_node.node, args.kad_find_node.target);
 }
+
+bool event_kad_lookup_cb(struct event_args args)
+{
+    return kad_lookup(args.kad_lookup.target, args.kad_lookup.timers,
+                      args.kad_lookup.kctx, args.kad_lookup.sock);
+}
