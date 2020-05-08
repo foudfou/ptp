@@ -127,12 +127,12 @@ static inline int kad_bucket_hash(const kad_guid *self_id,
 static inline size_t
 kad_bucket_get_nodes(const struct list_item *bucket,
                      struct kad_node_info nodes[], size_t nodes_pos,
-                     const kad_guid *caller) {
+                     size_t max, const kad_guid *caller) {
     const struct list_item *it = bucket;
     struct kad_node *node;
     size_t bucket_pos = 0;
     list_for(it, bucket) {
-        if (bucket_pos >= KAD_K_CONST)
+        if (bucket_pos >= max)
             break;
         node = cont(it, struct kad_node, item);
         if (caller && kad_guid_eq(&node->info.id, caller)) {
@@ -165,7 +165,8 @@ size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
     kad_guid prefix_mask, target_next;
     target_next.is_set = true;
     while (prefix_idx >= 0) {
-        nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
+        size_t max = KAD_K_CONST - nodes_pos;
+        nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, max, caller);
         BITFIELD_SET(visited, bucket_idx, 1);
         // TODO generalize inclusion of __func__
         // log_debug("%s: nodes added from bucket %d, total=%zu", __func__, bucket_idx, nodes_pos);
@@ -185,7 +186,8 @@ size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
     for (int i = KAD_GUID_SPACE_IN_BITS - 1; i >= 0; i--) {
         if (!BITFIELD_GET(visited, i)) {
             bucket = &routes->buckets[i];
-            nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, caller);
+            size_t max = KAD_K_CONST - nodes_pos;
+            nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, max, caller);
             BITFIELD_SET(visited, i, 1);
             // log_debug("%s: other nodes added from bucket %d, total=%zu", __func__, i, nodes_pos);
         }
@@ -442,7 +444,7 @@ routes_encode(const struct kad_routes *routes, struct kad_routes_encoded *encode
     encoded->self_id = routes->self_id;
     size_t start = encoded->nodes_len;
     for (size_t i = 0; i < KAD_GUID_SPACE_IN_BITS; i++) {
-        encoded->nodes_len += kad_bucket_get_nodes(&routes->buckets[i], encoded->nodes, encoded->nodes_len, NULL);
+        encoded->nodes_len += kad_bucket_get_nodes(&routes->buckets[i], encoded->nodes, encoded->nodes_len, KAD_K_CONST, NULL);
     }
     return encoded->nodes_len - start;
 }

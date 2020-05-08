@@ -99,14 +99,18 @@ static inline type name##_get(struct name *h)                           \
     h->items[h->len] = (type)0;                                         \
                                                                         \
     size_t i = 0;                                                       \
-    while ((i < h->len) &&                                              \
-           ((LEFT(i) < h->len && (name##_cmp(h->items[i], h->items[LEFT(i)]) < 0)) || \
-            (RIGHT(i) < h->len && name##_cmp(h->items[i], h->items[RIGHT(i)]) < 0))) { \
-        size_t child =                                                  \
-            (name##_cmp(h->items[LEFT(i)], h->items[RIGHT(i)]) < 0) ?   \
-            RIGHT(i) : LEFT(i);                                         \
-        name##swap(&h->items[i], &h->items[child]);                     \
-        i = child;                                                      \
+    while (i < h->len) {                                                \
+        size_t largest = i;                                             \
+        size_t l = LEFT(i);                                             \
+        size_t r = RIGHT(i);                                            \
+        if (l < h->len && name##_cmp(h->items[i], h->items[l]) < 0)     \
+            largest = l;                                                \
+        if (r < h->len && name##_cmp(h->items[largest], h->items[r]) < 0) \
+            largest = r;                                                \
+        if (largest == i)                                               \
+            break;                                                      \
+        name##swap(&h->items[i], &h->items[largest]);                   \
+        i = largest;                                                    \
     }                                                                   \
                                                                         \
     return ret;                                                         \

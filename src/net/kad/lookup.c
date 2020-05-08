@@ -23,14 +23,15 @@ void kad_lookup_reset(struct kad_lookup *lookup)
     lookup->par_len = KAD_ALPHA_CONST;
 
     while (lookup->next.len > 0) {
+        // log_error("___lookup reset: next.len=%ld", lookup->next.len);
         struct kad_node_lookup *nl = node_heap_get(&lookup->next);
-        // log_debug("lookup reset: next nl=%p", nl);
+        // log_error("___lookup reset: next nl=%p", nl);
         if (nl) free_safer(nl);
     }
 
     while (lookup->past.len > 0) {
         struct kad_node_lookup *nl = node_heap_get(&lookup->past);
-        // log_debug("lookup reset: past nl=%p", nl);
+        // log_error("___lookup reset: past nl=%p", nl);
         if (nl) free_safer(nl);
     }
 
@@ -38,13 +39,23 @@ void kad_lookup_reset(struct kad_lookup *lookup)
         lookup->par[i] = NULL;
 }
 
+bool kad_lookup_par_is_empty(struct kad_lookup *lookup)
+{
+    // Consider the whole par[], not its dynamic portion lookup->par_len.
+    size_t par_len = KAD_K_CONST;
+    size_t i = 0;
+    while (i < par_len && lookup->par[i] == NULL)
+        i++;
+    return i == par_len;
+}
+
 /** \param node pointing to existing request in reqs_out */
 bool kad_lookup_par_add(struct kad_lookup *lookup, struct kad_rpc_query *query)
 {
-    int i = 0;
-    while (i < KAD_ALPHA_CONST && lookup->par[i] != NULL)
+    size_t i = 0;
+    while (i < lookup->par_len && lookup->par[i] != NULL)
         i++;
-    if (i == KAD_ALPHA_CONST)
+    if (i == lookup->par_len)
         return false;
     lookup->par[i] = query;
     return true;
@@ -52,7 +63,8 @@ bool kad_lookup_par_add(struct kad_lookup *lookup, struct kad_rpc_query *query)
 
 bool kad_lookup_par_remove(struct kad_lookup *lookup, const struct kad_rpc_query *query)
 {
-    for (int i = 0; i < KAD_K_CONST; ++i)
+    // Consider the whole par[], not its dynamic portion lookup->par_len.
+    for (size_t i = 0; i < KAD_K_CONST; ++i)
         if (query == lookup->par[i]) {
             lookup->par[i] = NULL;
             return true;

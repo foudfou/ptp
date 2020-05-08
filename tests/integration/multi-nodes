@@ -8,13 +8,33 @@ One bootstrap and 2 agents.
 """
 
 import os
+import random
 import time
 import socket
 import subprocess as sub
 import sys
 import tempfile
 
-from helpers import check_data
+from contextlib import contextmanager
+
+
+DEBUG=False
+
+def rand_node_id():
+    return bytes([random.randint(0, 255) for _ in range(20)])
+
+NODES = [
+    b"1234567890abcdefghij", # 0x3132, bootstrap node
+    b"abcdefghij1234567890", # 0x6162
+    b"mnopqrstuv0987654321", # 0x6D6E
+]
+# Increasing node count will fail tests because replacement cache is not
+# included into persisted routes.
+NODES.extend([rand_node_id() for _ in range(10 - len(NODES))])
+NODES_LEN = len(NODES)
+
+SLEEP_BOOTSTRAP_NODE_READY = .01
+SLEEP_NODES_FINISH = .2
 
 SERVER_HOST = '::1'
 SOCKET_TIMEOUT_SECONDS = 1
@@ -23,13 +43,9 @@ path = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disab
 
 server_bin  = sys.argv[1]
 server_args = sys.argv[2:]
-server_cmd = [server_bin, "-l", "error", "-a", SERVER_HOST]  # pylint: disable=invalid-name
+server_cmd = [server_bin, "-l", "debug" if DEBUG else "error", "-a", SERVER_HOST]  # pylint: disable=invalid-name
 server_cmd.extend(server_args)
 
-
-EXPECTED_MESSAGES = [
-    ("ping", b'^d1:t2:(.){2}1:y1:q1:q4:ping1:ad2:id20:(.){20}ee$')
-]
 
 def free_port():
     """
@@ -64,8 +80,17 @@ def create_node(cmd, tmp_dir=None, bootstrap=None, nodeid=None):
     port = free_port()
     cmd.extend(["-p", str(port), "-c", tmp_dir])
 
-    server = sub.Popen(cmd, stderr=sub.STDOUT, close_fds=True)
+    server = sub.Popen(cmd, stderr=sub.STDOUT, close_fds=True, stdout=sub.PIPE)
     return (server, port)
+
+@contextmanager
+def tmpdirs(count):
+    dirs = [tempfile.TemporaryDirectory() for i in range(count)]
+    try:
+        yield dirs
+    finally:
+        for d in dirs:
+            d.cleanup()
 
 
 
@@ -81,68 +106,91 @@ if config_idx > 0:
     sys.exit(1)
 
 
+with tmpdirs(NODES_LEN) as tmp_dirs:
+    dirs = [d.name for d in tmp_dirs]
 
-with tempfile.TemporaryDirectory() as tmp_dir1, \
-     tempfile.TemporaryDirectory() as tmp_dir2, \
-     tempfile.TemporaryDirectory() as tmp_dir3:
     try:
-        bootnode_id = b"1234567890abcdefghij"
+        instances = []
+
         (bootnode, bootnode_port) = create_node(
-            server_cmd.copy(), tmp_dir=tmp_dir1,
-            nodeid=bootnode_id
+            server_cmd.copy(), tmp_dir=dirs[0],
+            nodeid=NODES[0]
         )
+        instances.append((bootnode, bootnode_port))
 
-        node2_id = b"abcdefghij1234567890"
-        (node2, node2_port) = create_node(
-            server_cmd.copy(), tmp_dir=tmp_dir2, bootstrap=bootnode_port,
-            nodeid=node2_id
-        )
+        time.sleep(SLEEP_BOOTSTRAP_NODE_READY)
 
-        node3_id = b"mnopqrstuv0987654321"
-        (node3, node3_port) = create_node(
-            server_cmd.copy(), tmp_dir=tmp_dir3, bootstrap=bootnode_port,
-            nodeid=node3_id
-        )
+        for i in range(1, NODES_LEN):
+            instances.append(create_node(
+                server_cmd.copy(), tmp_dir=dirs[i], bootstrap=bootnode_port,
+                nodeid=NODES[i]
+            ))
 
-        time.sleep(.3)
+        time.sleep(SLEEP_NODES_FINISH)
 
     finally:
-        for s in [node3, node2, bootnode]:
+        for s in [server for server, port in list(reversed(instances))]:
             s.terminate()
+            if DEBUG:
+                outs, errs = s.communicate(timeout=15)
             s.wait(1)
+            if DEBUG:
+                if outs:
+                    with open(f'/tmp/{str(s.pid)}.out', 'wb') as fd:
+                        fd.write(outs)
+                if errs:
+                    with open(f'/tmp/{str(s.pid)}.err', 'wb') as fd:
+                        fd.write(errs)
 
         # import shutil
         # shutil.copyfile(tmp_dir1 + "/routes.dat", "/tmp/routes1.dat")
-        # shutil.copyfile(tmp_dir2 + "/routes.dat", "/tmp/routes2.dat")
-        # shutil.copyfile(tmp_dir3 + "/routes.dat", "/tmp/routes3.dat")
 
-        with open(tmp_dir1 + "/routes.dat", 'rb') as fd1, \
-             open(tmp_dir2 + "/routes.dat", 'rb') as fd2, \
-             open(tmp_dir3 + "/routes.dat", 'rb') as fd3:
-            routes1 = fd1.read()
-            routes2 = fd2.read()
-            routes3 = fd3.read()
+        routes = []
+        for i in range(NODES_LEN):
+            with open(dirs[i] + "/routes.dat", 'rb') as fd:
+                routes.append(fd.read())
 
         failures = 0
 
-        def routes_re(me, other1, other2):
-            return \
-                b'd2:id20:' + me + b'5:nodesl' + \
-                b'(38:' + other1 + b'(.{6}|.{18})38:' + other2 + b'(.{6}|.{18})|' + \
-                b'38:' + other2 + b'(.{6}|.{18})38:' + other1 + b'(.{6}|.{18}))' + \
-                b'ee'
+        def extract_routes(me, data):
+            ret = {}
 
-        failures += check_data(
-            routes_re(bootnode_id, node2_id, node3_id),
-            routes1, {"line": 1, "len": 3, "name": "bootnode routes"})
+            if data[0:36] != b'd2:id20:' + me + b'5:nodesl' or \
+               data[-2:] != b'ee':
+                return ret
 
-        failures += check_data(
-            routes_re(node2_id, node3_id, bootnode_id),
-            routes2, {"line": 2, "len": 3, "name": "node2 routes"})
+            nodes = data[36:-2]
 
-        failures += check_data(
-            routes_re(node3_id, bootnode_id, node2_id),
-            routes3, {"line": 3, "len": 3, "name": "node3 routes"})
+            node_ids = []
+            i = 0
+            while len(nodes) - 26 > i:
+                length = nodes[i:i+3]
+                if length == b'26:':
+                    j = 26
+                elif length == b'38:':
+                    j = 38
+                else:
+                    return ret
+                i += 3
+                node_ids.append(nodes[i:i+20])
+                i += j
+
+            return set(node_ids)
+
+        nodes_set = set(NODES)
+        for i in range(NODES_LEN):
+            node_routes = extract_routes(NODES[i], routes[i])
+            if node_routes == nodes_set - {NODES[i]}:
+                result = "OK"
+                data = None
+            else:
+                failures += 1
+                result = "\033[31mFAIL\033[0m"
+                data = routes[i]
+            print(f"{i}/{NODES_LEN} routes_{i} .. {result}")
+            if data:
+                print(f"---\n   incorrect data {data}")
+
 
 retcode = 1 if failures else 0
 sys.exit(retcode)

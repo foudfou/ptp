@@ -57,6 +57,16 @@ static void log_time(char tstr[])
     }
 }
 
+/*
+static void log_time(char tstr[])
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC_RAW, &now);
+    uint64_t us = now.tv_sec * 1000000 + now.tv_nsec / 1000;
+    snprintf(tstr, LOG_MSG_LEN, "%ld", us);
+}
+*/
+
 int log_stream_setlogmask(int mask)
 {
   int oldmask = log_ctx.fmask;

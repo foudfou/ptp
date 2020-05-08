@@ -18,13 +18,16 @@
 #include "net/socket.h"
 #include "utils/cont.h"
 #include "utils/list.h"
+#include "utils/safer.h"
 #include "utils/helpers.h"
+
+#define ADDR_STR_LEN INET6_ADDRSTRLEN+INET_PORTSTRLEN
 
 struct kad_node_info {
     kad_guid                id;
     struct sockaddr_storage addr;
     // Textual representation of addr for logging/debugging
-    char                    addr_str[INET6_ADDRSTRLEN+INET_PORTSTRLEN];
+    char                    addr_str[ADDR_STR_LEN];
 };
 
 /* Nodes (DHT) are not peers (network). */
@@ -82,7 +85,7 @@ static inline void kad_node_info_copy(struct kad_node_info *dst,
 {
     dst->id = src->id;
     dst->addr = src->addr;
-    strcpy(dst->addr_str, src->addr_str);
+    strcpy_safer(dst->addr_str, src->addr_str, ADDR_STR_LEN);
 }
 
 void rand_init();

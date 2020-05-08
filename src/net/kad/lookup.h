@@ -2,6 +2,13 @@
 #ifndef KAD_LOOKUP_H
 #define KAD_LOOKUP_H
 
+/**
+ * State for the kad node lookup process.
+ *
+ * This state is accessed by 2 unsynced events: kad_lookup_recv() and
+ * kad_lookup_progress().
+ */
+
 /*
   While node lookup is the most important procedure in kademlia, the paper
   gives a confusing description. This has led to varying interpretation (see
@@ -173,6 +180,7 @@ struct kad_lookup {
 void kad_lookup_init(struct kad_lookup *lookup);
 void kad_lookup_terminate(struct kad_lookup *lookup);
 void kad_lookup_reset(struct kad_lookup *lookup);
+bool kad_lookup_par_is_empty(struct kad_lookup *lookup);
 bool kad_lookup_par_add(struct kad_lookup *lookup, struct kad_rpc_query *query);
 bool kad_lookup_par_remove(struct kad_lookup *lookup, const struct kad_rpc_query *query);
 struct kad_node_lookup *kad_lookup_new_from(const struct kad_node_info *info, const kad_guid target);

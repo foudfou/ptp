@@ -49,11 +49,21 @@ int main ()
 
     free_safer(ints.items);
 
+
     struct min_heap somes = {0};
     assert(min_heap_init(&somes, 4));
     assert(memcmp(somes.items, (int[N]){0}, N) == 0);
 
     struct some have[N] = {{74},{73},{72},{71},{70},{69},{68},{67},{66},{65}};
+
+    assert(min_heap_insert(&somes, &have[2]));
+    assert(min_heap_insert(&somes, &have[1]));
+    assert(min_heap_insert(&somes, &have[0]));
+    assert(min_heap_get(&somes) == &have[2]);
+    assert(min_heap_get(&somes) == &have[1]);
+    assert(min_heap_get(&somes) == &have[0]);
+    assert(somes.len == 0);
+    assert(min_heap_get(&somes) == NULL);
 
     for (size_t i=0; i<N; ++i)
         assert(min_heap_insert(&somes, &have[i]));

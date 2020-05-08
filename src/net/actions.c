@@ -37,7 +37,10 @@ bool node_handle_data(struct list_item *timers, int sock, struct kad_ctx *kctx)
         }
         return true;
     }
-    log_debug("Received %d bytes.", slen);
+
+    char addr_str[INET6_ADDRSTRLEN+INET_PORTSTRLEN];
+    sockaddr_storage_fmt(addr_str, &node_addr);
+    log_debug("Received %d bytes from %s.", slen, addr_str);
 
     struct iobuf *rsp = malloc(sizeof(struct iobuf));
     if (!rsp) {
@@ -378,7 +381,7 @@ bool kad_bootstrap(struct list_item *timers, const struct config *conf,
             log_error("Could not insert bootstrap node to routes.");
     }
 
-    return kad_lookup(kctx->routes->self_id, timers, kctx, sock);
+    return kad_lookup_progress(kctx->routes->self_id, timers, kctx, sock);
 }
 
 bool kad_query(struct kad_ctx *kctx, const int sock,
@@ -429,7 +432,7 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
 
     bool is_lookup_query = query->msg.meth == KAD_RPC_METH_FIND_NODE;
     if (is_lookup_query && !kad_lookup_par_add(&kctx->lookup, query))
-        log_error("Already %d find_node requests in-flight.", KAD_ALPHA_CONST);
+        log_error("Already %d find_node requests in-flight.", kctx->lookup.par_len);
 
     iobuf_reset(&qbuf);
     return true;
@@ -557,8 +560,8 @@ void kad_lookup_complete(struct kad_ctx *ctx)
     log_debug("Lookup complete.");
 }
 
-bool kad_lookup(const kad_guid target, struct list_item *timers,
-                struct kad_ctx *ctx, const int sock)
+bool kad_lookup_progress(const kad_guid target, struct list_item *timers,
+                         struct kad_ctx *ctx, const int sock)
 {
     log_debug("Lookup progress check, round=%d", ctx->lookup.round);
     struct kad_node_info next[KAD_K_CONST] = {0};
@@ -596,12 +599,15 @@ bool kad_lookup(const kad_guid target, struct list_item *timers,
         }
     }
     else {
+        if (!kad_lookup_par_is_empty(&ctx->lookup))
+            return true;
+
         next_len = routes_find_closest(ctx->routes, &ctx->routes->self_id,
-                                        next, NULL);
+                                       next, NULL);
         if (next_len > KAD_ALPHA_CONST)
             next_len = KAD_ALPHA_CONST;
 
-        for (size_t i = 0; i < KAD_ALPHA_CONST; ++i)
+        for (size_t i = 0; i < next_len; ++i)
             contact[i] = kad_lookup_new_from(&next[i], target);
     }
 

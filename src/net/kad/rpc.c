@@ -131,6 +131,50 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
 }
 
 static bool
+kad_lookup_recv(struct kad_ctx *ctx,
+                const struct kad_rpc_msg *msg,
+                const struct kad_rpc_query *query)
+{
+    if (!kad_lookup_par_remove(&ctx->lookup, query)) {
+        log_error("find_node response for unknown lookup query.");
+        return false;
+    }
+
+    for (size_t i = 0; i < msg->nodes_len; ++i) {
+        if (!msg->nodes[i].id.is_set) {
+            log_warning("Node id not set, routes not updated.");
+            continue;
+        }
+        if (!routes_insert(ctx->routes, &msg->nodes[i], 0)) {
+            log_warning("Ignoring failed routes insert.");
+            continue;
+        }
+
+        struct kad_node_lookup *nl = kad_lookup_new_from(&msg->nodes[i], query->msg.target);
+        if (!nl)
+            continue;
+        if (!node_heap_insert(&ctx->lookup.next, nl)) {
+            log_error("Failed insert into lookup next nodes.");
+            free_safer(nl);
+        }
+    }
+
+    if (ctx->lookup.next.items[0] && ctx->lookup.past.items[0]) {
+        int next_closer = node_heap_cmp(ctx->lookup.next.items[0],
+                                        ctx->lookup.past.items[0]);
+        if (next_closer == INT_MIN)
+            log_error("Comparing lookups for different targets.");
+        else
+            ctx->lookup.par_len = next_closer > 0 ? KAD_ALPHA_CONST : KAD_K_CONST;
+        log_debug("lookup.par_len=%d", ctx->lookup.par_len);
+    }
+
+    ctx->lookup.round += 1;
+    log_debug("Lookup round=%d.", ctx->lookup.round);
+    return true;
+}
+
+static bool
 kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 {
     LOG_FMT_HEX_DECL(tx_id, KAD_RPC_MSG_TX_ID_LEN);
@@ -164,43 +208,7 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
 
     case KAD_RPC_METH_FIND_NODE: {
         log_debug("Handling find_node response (id=%s).", tx_id);
-
-        if (!kad_lookup_par_remove(&ctx->lookup, query)) {
-            log_error("find_node response for unknown lookup query.");
-            break;
-        }
-
-        for (size_t i = 0; i < msg->nodes_len; ++i) {
-            if (!msg->nodes[i].id.is_set) {
-                log_warning("Node id not set, routes not updated.");
-                continue;
-            }
-            if (!routes_insert(ctx->routes, &msg->nodes[i], 0)) {
-                log_warning("Ignoring failed routes insert.");
-                continue;
-            }
-
-            struct kad_node_lookup *nl = kad_lookup_new_from(&msg->nodes[i], query->msg.target);
-            if (!nl)
-                continue;
-            if (!node_heap_insert(&ctx->lookup.next, nl)) {
-                log_error("Failed insert into lookup next nodes.");
-                free_safer(nl);
-            }
-        }
-
-        if (ctx->lookup.next.items[0] && ctx->lookup.past.items[0]) {
-            int next_closer = node_heap_cmp(ctx->lookup.next.items[0],
-                                            ctx->lookup.past.items[0]);
-            if (next_closer == INT_MIN)
-                log_error("Comparing lookups for different targets.");
-            else
-                ctx->lookup.par_len = next_closer > 0 ? KAD_ALPHA_CONST : KAD_K_CONST;
-            log_debug("lookup.par_len=%d", ctx->lookup.par_len);
-        }
-
-        ctx->lookup.round += 1;
-        log_debug("Lookup round=%d.", ctx->lookup.round);
+        kad_lookup_recv(ctx, msg, query);
         break;
     }
 

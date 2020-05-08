@@ -117,7 +117,7 @@ int main ()
         assert(routes_insert(routes, &peer->info, 0));
 
         struct kad_node_info bucket[KAD_K_CONST];
-        int bucket_len = kad_bucket_get_nodes(&routes->buckets[peer->bucket], bucket, 0, NULL);
+        int bucket_len = kad_bucket_get_nodes(&routes->buckets[peer->bucket], bucket, 0, KAD_K_CONST, NULL);
         /* printf("%s == %s\n", peer->info.addr_str, bucket[bucket_len-1].addr_str); */
         assert(sockaddr_storage_eq(&peer->info.addr, &bucket[bucket_len-1].addr));
 
