@@ -55,8 +55,8 @@ static const lookup_table_t log_severities[] = {
     { 0, NULL }
 };
 
-void (*log_msg)(int, const char *, ...);
-int (*log_setmask)(int);
+extern void (*log_msg)(int, const char *, ...);
+extern int (*log_setmask)(int);
 
 int log_stream_setlogmask(int mask);
 void log_stream_msg(int prio, const char *fmt, ...);

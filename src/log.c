@@ -16,6 +16,9 @@
 #define LOG_MSG_STOP       "##exit"
 #define LOG_MSG_PREFIX_LEN 56
 
+void (*log_msg)(int, const char *, ...);
+int (*log_setmask)(int);
+
 static char log_queue_name[NAME_MAX] = {0};
 static char log_pid[16] = {0};
 

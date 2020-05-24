@@ -106,9 +106,9 @@ struct event {
 
 void free_event(struct event *e);
 
-struct event event_node_data;
-struct event event_peer_conn;
-struct event event_kad_refresh;
+extern struct event event_node_data;
+extern struct event event_peer_conn;
+extern struct event event_kad_refresh;
 // event to be malloc'd
 bool event_kad_response_cb(struct event_args args);
 bool event_peer_data_cb(struct event_args args);
