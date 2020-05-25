@@ -93,6 +93,8 @@ struct kad_ctx {
     struct kad_routes *routes;
     struct req_lru    *reqs_out;
     struct kad_lookup  lookup;
+    struct list_item  *timers;
+    int                sock;
 };
 
 int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[]);

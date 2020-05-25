@@ -7,7 +7,62 @@
  *
  * This state is accessed by 2 unsynced events: kad_lookup_recv() and
  * kad_lookup_progress().
+ *
+ * See discussion in comments at the end of this file.
  */
+#include "net/kad/routes.h"
+#include "utils/heap.h"
+
+struct kad_node_lookup {
+    kad_guid                target;
+    kad_guid                id;
+    struct sockaddr_storage addr;
+};
+
+/**
+ * Compares the distance of 2 nodes to a given target.
+ *
+ * Returns a negative number if a > b, 0 if a == b, a positive int if
+ * a < b. Intended for min-heap.
+ */
+static inline
+int node_heap_cmp(const struct kad_node_lookup *a,
+                  const struct kad_node_lookup *b)
+{
+    if (memcmp(&a->target, &b->target, KAD_GUID_SPACE_IN_BYTES) != 0)
+        return INT_MIN; // convention
+
+    size_t i = 0;
+    unsigned char xa, xb;
+    while (i < KAD_GUID_SPACE_IN_BYTES) {
+        // avoid kad_guid_xor()
+        xa = a->id.bytes[i] ^ a->target.bytes[i];
+        xb = b->id.bytes[i] ^ b->target.bytes[i];
+        if (xa != xb)
+            break;
+        i++;
+    }
+    return i == KAD_GUID_SPACE_IN_BYTES ? 0 : xb - xa;
+}
+
+HEAP_GENERATE(node_heap, struct kad_node_lookup *)
+
+struct kad_lookup {
+    int                   round;
+    struct kad_rpc_query *par[KAD_K_CONST]; // aka in-flight
+    size_t                par_len;
+    struct node_heap      next;
+    struct node_heap      past;
+};
+
+void kad_lookup_init(struct kad_lookup *lookup);
+void kad_lookup_terminate(struct kad_lookup *lookup);
+void kad_lookup_reset(struct kad_lookup *lookup);
+bool kad_lookup_par_is_empty(struct kad_lookup *lookup);
+bool kad_lookup_par_add(struct kad_lookup *lookup, struct kad_rpc_query *query);
+bool kad_lookup_par_remove(struct kad_lookup *lookup, const struct kad_rpc_query *query);
+struct kad_node_lookup *kad_lookup_new_from(const struct kad_node_info *info, const kad_guid target);
+
 
 /*
   While node lookup is the most important procedure in kademlia, the paper
@@ -112,7 +167,67 @@
 
   - when lookup round >= k: stop timer; reset lookup round; reset lookup list.
 
-  Notes and references:
+  Q: How do we implement node lookups - part 2 ?
+
+  A: Design aspects of our implementation - part 2:
+
+  FIXME how about we chain: start with kad_lookup_send() then kad_lookup_recv()
+  would trigger kad_lookup_send() ? One possible drawback is that we wouldn't
+  detect if say all // queries are stuck. Then we'd need an additional timeout
+  timer for each round.
+
+  FIXME As each round should get us closer to the target, we discard find_node
+  responses from previous queries. We discard in the sense that we still add
+  learned nodes to the routes, but not to the list of next nodes to contact [but
+  then what's the benefit of increasing par_len?]. Also that answers the
+  question of handling get responses for queries of a previous round where
+  par_len was larger.
+
+  « This recursion can begin before all α of the previous RPCs have returned »
+  is a problematic statement which contradicts « If a round of FIND_NODES fails
+  to return a node any closer than the closest already seen, the initiator
+  resends the FIND_NODE to all of the k closest nodes it has not already
+  queried. »: if we start a new round before finishing the current one, what
+  should we do with pending queries, especially when we expand parallelism to k ?
+  These pending queries might well bring us closer nodes. Bruno Spori in
+  SA-2006-19.pdf answers: « When an answer was only delayed, then it shall be
+  considered nevertheless. »
+
+  Also this is obscure: « When α = 1, the lookup algorithm resembles Chord’s in
+  terms of message cost and the latency of detecting failed nodes. However,
+  Kademlia can route for lower latency because it has the flexibility of
+  choosing any one of k nodes to forward a request to. » What flexibility
+  exactly ? It doesn't "choose any one of k nodes", it picks between α and k
+  closest nodes at each step.
+
+  Note, in some interpretations, when no new nodes are learned, the process
+  terminates with an additional last step which is expanding to the k closest
+  nodes: https://www.syncfusion.com/ebooks/kademlia_protocol_succinctly
+  http://xlattice.sourceforge.net/components/protocol/kademlia/specs.html#lookup
+  https://github.com/libp2p/go-libp2p-kad-dht/issues/290
+
+  Would it make a difference if we handled all queries from different rounds
+  unordered ? If we process *all* the responses then no, not from an accuracy
+  perspective: we should end up with them same results. But this is also
+  inefficient because, while we get first results sooner, we cannot filter
+  responses round after round, so we need to process delayed responses anyway.
+
+  Ok so we need to come up with our own interpretation. Since the goal is to
+  query closer nodes as fast as possible, at each round, we will pick the first
+  available one among α *as soon as it provides closer nodes* and discard other
+  pending queries: we remove discarded queries from the in-flight list
+  (possibly also from the query list). If a query doesn't provides closer
+  nodes, we wait for the other queries of the same round, or timeout. If none
+  provide closer nodes, we can expand from α to k, and continue the iterative
+  process, setting back the concurrency parameter back to α on the next
+  iteration if we find closer nodes.
+
+  About the first α nodes we select from our buckets: buckets are ordered
+  oldest first. FIXME we should sort all k nodes by distance to target and then
+  take the first α ones.
+
+
+  NOTES AND REFERENCES:
 
   - « Alpha and Parallelism.  Kademlia uses a value of 3 for alpha, the degree
   of parallelism used. It appears that (see stutz06) this value is optimal.
@@ -132,58 +247,6 @@
 
   - https://pub.tik.ee.ethz.ch/students/2006-So/SA-2006-19.pdf
 */
-#include "net/kad/routes.h"
-#include "utils/heap.h"
-
-struct kad_node_lookup {
-    kad_guid                target;
-    kad_guid                id;
-    struct sockaddr_storage addr;
-};
-
-/**
- * Compares the distance of 2 nodes to a given target.
- *
- * Returns a negative number if a > b, 0 if a == b, a positive int if
- * a < b. Intended for min-heap.
- */
-static inline
-int node_heap_cmp(const struct kad_node_lookup *a,
-                  const struct kad_node_lookup *b)
-{
-    if (memcmp(&a->target, &b->target, KAD_GUID_SPACE_IN_BYTES) != 0)
-        return INT_MIN; // convention
-
-    size_t i = 0;
-    unsigned char xa, xb;
-    while (i < KAD_GUID_SPACE_IN_BYTES) {
-        // avoid kad_guid_xor()
-        xa = a->id.bytes[i] ^ a->target.bytes[i];
-        xb = b->id.bytes[i] ^ b->target.bytes[i];
-        if (xa != xb)
-            break;
-        i++;
-    }
-    return i == KAD_GUID_SPACE_IN_BYTES ? 0 : xb - xa;
-}
-
-HEAP_GENERATE(node_heap, struct kad_node_lookup *)
-
-struct kad_lookup {
-    int                   round;
-    struct kad_rpc_query *par[KAD_K_CONST]; // aka in-flight
-    size_t                par_len;
-    struct node_heap      next;
-    struct node_heap      past;
-};
-
-void kad_lookup_init(struct kad_lookup *lookup);
-void kad_lookup_terminate(struct kad_lookup *lookup);
-void kad_lookup_reset(struct kad_lookup *lookup);
-bool kad_lookup_par_is_empty(struct kad_lookup *lookup);
-bool kad_lookup_par_add(struct kad_lookup *lookup, struct kad_rpc_query *query);
-bool kad_lookup_par_remove(struct kad_lookup *lookup, const struct kad_rpc_query *query);
-struct kad_node_lookup *kad_lookup_new_from(const struct kad_node_info *info, const kad_guid target);
 
 
 #endif /* KAD_LOOKUP_H */

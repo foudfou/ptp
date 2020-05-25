@@ -18,11 +18,12 @@ import tempfile
 from contextlib import contextmanager
 
 
-DEBUG=False
+DEBUG = False
 
 def rand_node_id():
     return bytes([random.randint(0, 255) for _ in range(20)])
 
+NODES_LEN = 3
 NODES = [
     b"1234567890abcdefghij", # 0x3132, bootstrap node
     b"abcdefghij1234567890", # 0x6162
@@ -30,8 +31,7 @@ NODES = [
 ]
 # Increasing node count will fail tests because replacement cache is not
 # included into persisted routes.
-NODES.extend([rand_node_id() for _ in range(10 - len(NODES))])
-NODES_LEN = len(NODES)
+NODES.extend([rand_node_id() for _ in range(NODES_LEN - len(NODES))])
 
 SLEEP_BOOTSTRAP_NODE_READY = .01
 SLEEP_NODES_FINISH = .2

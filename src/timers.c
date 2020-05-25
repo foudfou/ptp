@@ -38,6 +38,22 @@ bool timer_init(struct list_item *timers, struct timer *t, long long time)
     return true;
 }
 
+bool timers_free_all(struct list_item *timers)
+{
+    log_debug("Freeing remaining timers and events.");
+    while (!list_is_empty(timers)) {
+        struct timer *t = cont(timers->prev, struct timer, item);
+        list_delete(timers->prev);
+        if (t->event && t->event->self) {
+            free_event(t->event->self);
+        }
+        if (t->self) {
+            free(t->self);
+        }
+    }
+    return true;
+}
+
 int timers_get_soonest(struct list_item *timers)
 {
     long long tick = now_millis();

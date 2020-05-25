@@ -40,22 +40,6 @@ static int pollfds_update(struct pollfd fds[], const int nlisten,
     return npeer;
 }
 
-static bool timers_free_all(struct list_item *timers)
-{
-    log_debug("Freeing remaining timers and events.");
-    while (!list_is_empty(timers)) {
-        struct timer *t = cont(timers->prev, struct timer, item);
-        list_delete(timers->prev);
-        if (t->event && t->event->self) {
-            free_event(t->event->self);
-        }
-        if (t->self) {
-            free(t->self);
-        }
-    }
-    return true;
-}
-
 /**
  * Main event loop
  *
@@ -106,6 +90,8 @@ bool server_run(const struct config *conf)
     timer_init(&timers, &timer_kad_refresh, tick_init);
 
     struct kad_ctx kctx = {0};
+    kctx.timers = &timers;
+    kctx.sock = sock_udp;
     struct req_lru reqs_out = {0};
     kctx.reqs_out = &reqs_out;
     int nodes_len = kad_rpc_init(&kctx, conf->conf_dir);
@@ -121,7 +107,7 @@ bool server_run(const struct config *conf)
         }
         *event_kad_bootstrap = (struct event){
             "kad-bootstrap", .cb=event_kad_bootstrap_cb,
-            .args.kad_bootstrap={.timers=&timers, .conf=conf, .kctx=&kctx, .sock=sock_udp},
+            .args.kad_bootstrap={.conf=conf, .kctx=&kctx},
             .fatal=false, .self=event_kad_bootstrap
         };
 
@@ -190,8 +176,6 @@ bool server_run(const struct config *conf)
             }
 
             if (fds[i].fd == sock_udp) {
-                event_node_data.args.node_data.timers = &timers;
-                event_node_data.args.node_data.sock = sock_udp;
                 event_node_data.args.node_data.kctx = &kctx;
                 if (!event_queue_put(&evq, &event_node_data)) {
                     log_error("Enqueue event '%s' failed.", event_node_data.name);
@@ -262,8 +246,6 @@ bool server_run(const struct config *conf)
     } /* End event loop */
 
   server_end:
-    timers_free_all(&timers);
-
     peer_conn_close_all(&peers);
 
     kad_rpc_terminate(&kctx, conf->conf_dir);

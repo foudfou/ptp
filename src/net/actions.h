@@ -33,7 +33,7 @@ struct peer {
     struct proto_msg_parser parser;
 };
 
-bool node_handle_data(struct list_item *timers, int sock, struct kad_ctx *kctx);
+bool node_handle_data(struct kad_ctx *kctx);
 bool kad_response(int sock, struct iobuf *rsp, struct sockaddr_storage addr);
 
 struct peer* peer_find_by_fd(struct list_item *peers, const int fd);
@@ -43,10 +43,11 @@ int peer_conn_handle_data(struct peer *peer, struct kad_ctx *kctx);
 bool peer_conn_close(struct peer *peer);
 int peer_conn_close_all(struct list_item *peers);
 
-bool kad_bootstrap(struct list_item *timers, const struct config *conf, struct kad_ctx *kctx, const int sock);
-bool kad_ping(struct kad_ctx *kctx, const int sock, const struct kad_node_info node);
-bool kad_find_node(struct kad_ctx *kctx, const int sock, const struct kad_node_info node, const kad_guid target);
-bool kad_lookup_progress(const kad_guid target, struct list_item *timers, struct kad_ctx *ctx, const int sock);
+bool kad_bootstrap(const struct config *conf, struct kad_ctx *kctx);
+bool kad_ping(struct kad_ctx *kctx, const struct kad_node_info node);
+bool kad_find_node(struct kad_ctx *kctx, const struct kad_node_info node, const kad_guid target);
+bool kad_lookup_next(const kad_guid target, struct kad_ctx *ctx);
+bool kad_lookup_timeout(const int round, struct kad_ctx *ctx);
 bool kad_refresh(void *data);
 
 #endif /* ACTIONS_H */

@@ -29,11 +29,8 @@ QUEUE_GENERATE(event_queue, struct event, EVENT_QUEUE_BIT_LEN)
 
 struct event_args {
     union {
-        // TODO use struct server_ctx to simplify
         struct node_data {
-            struct list_item *timers;
-            int               sock;
-            struct kad_ctx   *kctx;
+            struct kad_ctx *kctx;
         } node_data;
 
         struct kad_response {
@@ -60,32 +57,31 @@ struct event_args {
         } kad_refresh;
 
         struct kad_bootstrap {
-            struct list_item    *timers;
             const struct config *conf;
             // for subsequent node_ping
             struct kad_ctx      *kctx;
-            int                  sock;
         } kad_bootstrap;
 
         struct kad_ping {
             struct kad_ctx       *kctx;
-            int                   sock;
             struct kad_node_info  node;
         } kad_ping;
 
         struct kad_find_node {
             struct kad_ctx       *kctx;
-            int                   sock;
             struct kad_node_info  node;
             kad_guid              target;
         } kad_find_node;
 
         struct {
-            kad_guid              target;
-            struct list_item     *timers;
-            struct kad_ctx       *kctx;
-            int                   sock;
+            int             round;
+            struct kad_ctx *kctx;
         } kad_lookup;
+
+        struct {
+            kad_guid        target;
+            struct kad_ctx *kctx;
+        } kad_lookup_next;
     };
 };
 
@@ -116,5 +112,6 @@ bool event_kad_bootstrap_cb(struct event_args args);
 bool event_kad_ping_cb(struct event_args args);
 bool event_kad_find_node_cb(struct event_args args);
 bool event_kad_lookup_cb(struct event_args args);
+bool event_kad_lookup_next_cb(struct event_args args);
 
 #endif /* EVENTS_H */

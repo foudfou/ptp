@@ -10,6 +10,8 @@ int main ()
 {
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
     struct kad_ctx ctx = {0};
+    struct list_item timers = LIST_ITEM_INIT(timers);
+    ctx.timers = &timers;
     struct req_lru reqs_out = {0};
     ctx.reqs_out = &reqs_out;
     assert(kad_rpc_init(&ctx, NULL) == 0);
@@ -48,7 +50,7 @@ int main ()
 
     char buf[] = "d1:t2:aa1:y1:r1:rd2:id20:\x17""E\xc4\xed\xca\x16" \
         "3\xf0Q\x8e\x1f""6\n\xc7\xe1\xad'A\x86""3ee";
-    assert(!kad_rpc_handle(&ctx, &ss, buf, 47, &rsp));
+    assert(kad_rpc_handle(&ctx, &ss, buf, 47, &rsp));
     assert(rsp.pos == 0);
     iobuf_reset(&rsp);
 

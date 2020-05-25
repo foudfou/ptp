@@ -14,7 +14,7 @@ void free_event(struct event *e)
 
 static bool event_node_data_cb(struct event_args args)
 {
-    return node_handle_data(args.node_data.timers, args.node_data.sock, args.node_data.kctx);
+    return node_handle_data(args.node_data.kctx);
 }
 struct event event_node_data = {"node-data", .cb=event_node_data_cb, .args={{{0}}}, .fatal=false,};
 
@@ -58,24 +58,27 @@ struct event event_kad_refresh = {"kad-refresh", .cb=event_kad_refresh_cb, .args
 
 bool event_kad_bootstrap_cb(struct event_args args)
 {
-    return kad_bootstrap(args.kad_bootstrap.timers, args.kad_bootstrap.conf,
-                         args.kad_bootstrap.kctx, args.kad_bootstrap.sock);
+    return kad_bootstrap(args.kad_bootstrap.conf, args.kad_bootstrap.kctx);
 }
 
 // cppcheck-suppress unusedFunction
 bool event_kad_ping_cb(struct event_args args)
 {
-    return kad_ping(args.kad_ping.kctx, args.kad_ping.sock, args.kad_ping.node);
+    return kad_ping(args.kad_ping.kctx, args.kad_ping.node);
 }
 
 bool event_kad_find_node_cb(struct event_args args)
 {
-    return kad_find_node(args.kad_find_node.kctx, args.kad_find_node.sock,
-                         args.kad_find_node.node, args.kad_find_node.target);
+    return kad_find_node(args.kad_find_node.kctx, args.kad_find_node.node,
+                         args.kad_find_node.target);
 }
 
 bool event_kad_lookup_cb(struct event_args args)
 {
-    return kad_lookup_progress(args.kad_lookup.target, args.kad_lookup.timers,
-                               args.kad_lookup.kctx, args.kad_lookup.sock);
+    return kad_lookup_timeout(args.kad_lookup.round, args.kad_lookup.kctx);
+}
+
+bool event_kad_lookup_next_cb(struct event_args args)
+{
+    return kad_lookup_next(args.kad_lookup_next.target, args.kad_lookup_next.kctx);
 }

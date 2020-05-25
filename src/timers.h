@@ -49,6 +49,7 @@ struct timer {
 
 bool set_timeout(struct list_item *timers, long long delay, bool once, struct event *evt);
 bool timer_init(struct list_item *timers, struct timer *t, long long time);
+bool timers_free_all(struct list_item *timers);
 /** Right before poll() to calculate its `timeout` parameter. */
 int timers_get_soonest(struct list_item *timers);
 /** After poll() has returned. */

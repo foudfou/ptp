@@ -72,6 +72,8 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
 
     kad_lookup_terminate(&ctx->lookup);
 
+    timers_free_all(ctx->timers);
+
     struct list_item *reqs_out = &ctx->reqs_out->litems;
     list_free_all(reqs_out, struct kad_rpc_query, litem);
     log_debug("Routes terminated.");
@@ -135,6 +137,8 @@ kad_lookup_recv(struct kad_ctx *ctx,
                 const struct kad_rpc_msg *msg,
                 const struct kad_rpc_query *query)
 {
+    // FIXME what if round > KAD_K_CONST ?
+
     if (!kad_lookup_par_remove(&ctx->lookup, query)) {
         log_error("find_node response for unknown lookup query.");
         return false;
@@ -162,6 +166,7 @@ kad_lookup_recv(struct kad_ctx *ctx,
     if (ctx->lookup.next.items[0] && ctx->lookup.past.items[0]) {
         int next_closer = node_heap_cmp(ctx->lookup.next.items[0],
                                         ctx->lookup.past.items[0]);
+        // FIXME log_debug() node id's with corresponding distance to target.
         if (next_closer == INT_MIN)
             log_error("Comparing lookups for different targets.");
         else
@@ -171,7 +176,26 @@ kad_lookup_recv(struct kad_ctx *ctx,
 
     ctx->lookup.round += 1;
     log_debug("Lookup round=%d.", ctx->lookup.round);
+
+    struct event *evt = malloc(sizeof(struct event));
+    if (!evt) {
+        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+        return false;
+    }
+    *evt = (struct event){
+        "kad-lookup-next", .cb=event_kad_lookup_next_cb,
+        .args.kad_lookup_next={.target=query->msg.target, .kctx=ctx},
+        .fatal=false, .self=evt
+    };
+
+    if (!set_timeout(ctx->timers, 0, true, evt))
+        goto cleanup;
+
     return true;
+
+  cleanup:
+    free_safer(evt);
+    return false;
 }
 
 static bool
@@ -183,7 +207,7 @@ kad_rpc_handle_response(struct kad_ctx *ctx, const struct kad_rpc_msg *msg)
     struct kad_rpc_query *query = NULL;
     if (!req_lru_delete(ctx->reqs_out, msg->tx_id, &query)) {
         log_warning("Query for response (id=%s) not found.", tx_id);
-        return false;
+        return true;
     }
 
     if (!kad_guid_eq(&query->node.id, &msg->node_id)) {

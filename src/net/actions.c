@@ -17,10 +17,10 @@
 // FIXME: low for testing purpose.
 #define SERVER_TCP_BUFLEN 10
 #define SERVER_UDP_BUFLEN 1400
-#define KAD_LOOKUP_INTERVAL_MILLIS 50
+#define KAD_LOOKUP_TIMEOUT_MILLIS 250
 
 
-bool node_handle_data(struct list_item *timers, int sock, struct kad_ctx *kctx)
+bool node_handle_data(struct kad_ctx *kctx)
 {
     bool ret = true;
 
@@ -28,7 +28,7 @@ bool node_handle_data(struct list_item *timers, int sock, struct kad_ctx *kctx)
     memset(buf, 0, SERVER_UDP_BUFLEN);
     struct sockaddr_storage node_addr;
     socklen_t node_addr_len = sizeof(struct sockaddr_storage);
-    ssize_t slen = recvfrom(sock, buf, SERVER_UDP_BUFLEN, 0,
+    ssize_t slen = recvfrom(kctx->sock, buf, SERVER_UDP_BUFLEN, 0,
                             (struct sockaddr *)&node_addr, &node_addr_len);
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
@@ -67,12 +67,12 @@ bool node_handle_data(struct list_item *timers, int sock, struct kad_ctx *kctx)
     }
     *evt = (struct event){
         "kad-response", .cb=event_kad_response_cb,
-        .args.kad_response={.sock=sock, .buf=rsp, .addr=node_addr},
+        .args.kad_response={.sock=kctx->sock, .buf=rsp, .addr=node_addr},
         .fatal=false, .self=evt, .alloc_len=nsub
     };
     evt->alloc[0] = rsp;
 
-    if (!set_timeout(timers, 0, true, evt)) {
+    if (!set_timeout(kctx->timers, 0, true, evt)) {
         ret = false; goto cleanup2;
     }
 
@@ -337,9 +337,8 @@ int peer_conn_close_all(struct list_item *peers)
    are then ping'd and then added to the routes. In recent implementations,
    router nodes are handled differently than normal nodes.
 */
-bool kad_lookup(const kad_guid target, struct list_item *timers, struct kad_ctx *ctx, const int sock);
-bool kad_bootstrap(struct list_item *timers, const struct config *conf,
-                   struct kad_ctx *kctx, const int sock)
+static bool kad_lookup_start(const kad_guid target, struct kad_ctx *ctx);
+bool kad_bootstrap(const struct config *conf, struct kad_ctx *kctx)
 {
     char bootstrap_nodes_path[PATH_MAX];
     bool found = false;
@@ -381,10 +380,10 @@ bool kad_bootstrap(struct list_item *timers, const struct config *conf,
             log_error("Could not insert bootstrap node to routes.");
     }
 
-    return kad_lookup_progress(kctx->routes->self_id, timers, kctx, sock);
+    return kad_lookup_start(kctx->routes->self_id, kctx);
 }
 
-bool kad_query(struct kad_ctx *kctx, const int sock,
+bool kad_query(struct kad_ctx *kctx,
                const struct kad_node_info node,
                const struct kad_rpc_msg msg)
 {
@@ -406,7 +405,7 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
     log_info("Sending kad msg [%d] to %s (id=%s)", query->msg.meth, node.addr_str, tx_id);
 
     socklen_t addr_len = sizeof(struct sockaddr_storage);
-    ssize_t slen = sendto(sock, qbuf.buf, qbuf.pos, 0, (struct sockaddr *)&node.addr, addr_len);
+    ssize_t slen = sendto(kctx->sock, qbuf.buf, qbuf.pos, 0, (struct sockaddr *)&node.addr, addr_len);
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
             log_perror(LOG_ERR, "Failed sendto: %s", errno);
@@ -443,31 +442,29 @@ bool kad_query(struct kad_ctx *kctx, const int sock,
     return false;
 }
 
-bool kad_ping(struct kad_ctx *kctx, const int sock,
-             const struct kad_node_info node)
+bool kad_ping(struct kad_ctx *kctx, const struct kad_node_info node)
 {
     struct kad_rpc_msg msg = {
         .meth=KAD_RPC_METH_PING
     };
-    return kad_query(kctx, sock, node, msg);
+    return kad_query(kctx, node, msg);
 }
 
 
-bool kad_find_node(struct kad_ctx *kctx, const int sock,
-                   const struct kad_node_info node, const kad_guid target)
+bool kad_find_node(struct kad_ctx *kctx, const struct kad_node_info node,
+                   const kad_guid target)
 {
     struct kad_rpc_msg msg = {
         .meth=KAD_RPC_METH_FIND_NODE,
         .target=target
     };
-    return kad_query(kctx, sock, node, msg);
+    return kad_query(kctx, node, msg);
 }
 
 static bool kad_schedule_find_nodes(
     const kad_guid target,
     struct kad_node_info nodes[], size_t nodes_len,
-    struct list_item *timers, struct kad_ctx *kctx,
-    const int sock)
+    struct kad_ctx *kctx)
 {
     long long now = now_millis();
     if (now < 0)
@@ -486,7 +483,7 @@ static bool kad_schedule_find_nodes(
         }
         *events[i] = (struct event){
             "kad-find-node", .cb=event_kad_find_node_cb,
-            .args.kad_find_node={.target=target, .node=nodes[i], .kctx=kctx, .sock=sock},
+            .args.kad_find_node={.target=target, .node=nodes[i], .kctx=kctx},
             .fatal=false, .self=events[i]
         };
         sockaddr_storage_fmt(events[i]->args.kad_find_node.node.addr_str,
@@ -505,7 +502,7 @@ static bool kad_schedule_find_nodes(
         timer_init(&timers_tmp, timer, now);
     }
 
-    list_concat(timers, &timers_tmp);
+    list_concat(kctx->timers, &timers_tmp);
     return true;
 
   cleanup:
@@ -515,11 +512,7 @@ static bool kad_schedule_find_nodes(
     return false;
 }
 
-static bool kad_schedule_lookup(
-    const kad_guid target,
-    struct list_item *timers,
-    struct kad_ctx *ctx,
-    const int sock)
+static bool kad_schedule_timeout(const int round, struct kad_ctx *ctx)
 {
     long long now = now_millis();
     if (now < 0)
@@ -532,11 +525,11 @@ static bool kad_schedule_lookup(
     }
     *evt = (struct event){
         "kad-lookup", .cb=event_kad_lookup_cb,
-        .args.kad_lookup={.target=target, .timers=timers, .kctx=ctx, .sock=sock},
+        .args.kad_lookup={.round=round, .kctx=ctx},
         .fatal=false, .self=evt
     };
 
-    if (!set_timeout(timers, KAD_LOOKUP_INTERVAL_MILLIS, true, evt))
+    if (!set_timeout(ctx->timers, KAD_LOOKUP_TIMEOUT_MILLIS, true, evt))
         goto cleanup;
 
     return true;
@@ -561,55 +554,25 @@ void kad_lookup_complete(struct kad_ctx *ctx)
     log_debug("Lookup complete.");
 }
 
-bool kad_lookup_progress(const kad_guid target, struct list_item *timers,
-                         struct kad_ctx *ctx, const int sock)
+static void
+lookup_past_insert(struct kad_ctx *ctx,
+                   struct kad_node_lookup *contacted[], size_t contacted_len)
 {
-    log_debug("Lookup progress check, round=%d", ctx->lookup.round);
-    struct kad_node_info next[KAD_K_CONST] = {0};
-    size_t next_len = 0;
+    for (size_t i = 0; i < contacted_len; ++i)
+        if (!node_heap_insert(&ctx->lookup.past, contacted[i])) {
+            log_error("Failed insert into lookup past nodes.");
+            free_safer(contacted[i]);
+        }
+}
 
+static bool
+kad_lookup_send(struct kad_node_info next[], size_t next_len,
+                const kad_guid target, struct kad_ctx *ctx)
+{
+    // FIXME in kad_lookup_recv() ?
     if (ctx->lookup.round >= KAD_K_CONST) {
         kad_lookup_complete(ctx);
         return true;
-    }
-
-    struct kad_node_lookup *contact[KAD_K_CONST] = {0};
-    if (ctx->lookup.round > 0) {
-        for (size_t i = 0; i < ctx->lookup.par_len; ++i) {
-            struct kad_rpc_query *query = ctx->lookup.par[i];
-            if (query != NULL) {
-                long long now = now_millis();
-                if (now >= 0 && query->created + KAD_RPC_QUERY_TIMEOUT_MILLIS < now) {
-                    routes_mark_stale(ctx->routes, &query->node.id);
-                    free_safer(query);
-                    query = NULL;
-                }
-                continue;
-            }
-
-            struct kad_node_lookup *nl = node_heap_get(&ctx->lookup.next);
-            if (!nl)
-                continue;
-
-            next[next_len].id = nl->id;
-            next[next_len].addr = nl->addr;
-
-            contact[next_len] = nl;
-
-            next_len++;
-        }
-    }
-    else {
-        if (!kad_lookup_par_is_empty(&ctx->lookup))
-            return true;
-
-        next_len = routes_find_closest(ctx->routes, &ctx->routes->self_id,
-                                       next, NULL);
-        if (next_len > KAD_ALPHA_CONST)
-            next_len = KAD_ALPHA_CONST;
-
-        for (size_t i = 0; i < next_len; ++i)
-            contact[i] = kad_lookup_new_from(&next[i], target);
     }
 
     if (next_len == 0) {
@@ -619,17 +582,106 @@ bool kad_lookup_progress(const kad_guid target, struct list_item *timers,
     }
 
     log_debug("Scheduling %d find_node lookups.", next_len);
-    if (!kad_schedule_find_nodes(target, next, next_len, timers, ctx, sock))
+    if (!kad_schedule_find_nodes(target, next, next_len, ctx))
         return false;
 
-    for (size_t i = 0; i < ctx->lookup.par_len; ++i) {
-        if (!contact[i])
-            break;
-        if (!node_heap_insert(&ctx->lookup.past, contact[i])) {
-            log_error("Failed insert into lookup past nodes.");
-            free_safer(contact[i]);
-        }
+    return kad_schedule_timeout(ctx->lookup.round, ctx);
+}
+
+static bool kad_lookup_start(const kad_guid target, struct kad_ctx *ctx)
+{
+    log_debug("Lookup start, round=%d", ctx->lookup.round);
+    struct kad_node_info next[KAD_K_CONST] = {0};
+    size_t next_len = 0;
+
+    if (!kad_lookup_par_is_empty(&ctx->lookup)) {
+        log_error("Lookup start: in-flight list not empty.");
+        return false;
     }
 
-    return kad_schedule_lookup(target, timers, ctx, sock);
+    next_len = routes_find_closest(ctx->routes, &ctx->routes->self_id,
+                                   next, NULL);
+    if (next_len > KAD_ALPHA_CONST)
+        next_len = KAD_ALPHA_CONST;
+
+    struct kad_node_lookup *contacted[KAD_K_CONST] = {0};
+    for (size_t i = 0; i < next_len; ++i)
+        contacted[i] = kad_lookup_new_from(&next[i], target);
+
+    lookup_past_insert(ctx, contacted, next_len);
+
+    return kad_lookup_send(next, next_len, target, ctx);
+}
+
+bool kad_lookup_next(const kad_guid target, struct kad_ctx *ctx)
+{
+    log_debug("Lookup send, round=%d", ctx->lookup.round);
+    struct kad_node_info next[KAD_K_CONST] = {0};
+    size_t next_len = 0;
+
+    struct kad_node_lookup *contacted[KAD_K_CONST] = {0};
+    for (size_t i = 0; i < ctx->lookup.par_len; ++i) {
+        struct kad_rpc_query *query = ctx->lookup.par[i];
+        if (query != NULL) {
+            long long now = now_millis();
+            if (now >= 0 && query->created + KAD_RPC_QUERY_TIMEOUT_MILLIS < now) {
+                routes_mark_stale(ctx->routes, &query->node.id);
+                free_safer(query);
+                query = NULL;
+            }
+            continue;
+        }
+
+        struct kad_node_lookup *nl = node_heap_get(&ctx->lookup.next);
+        if (!nl)
+            continue;
+
+        next[next_len].id = nl->id;
+        next[next_len].addr = nl->addr;
+
+        contacted[next_len] = nl;
+
+        next_len++;
+    }
+
+    lookup_past_insert(ctx, contacted, next_len);
+
+    return kad_lookup_send(next, next_len, target, ctx);
+}
+
+static void lookup_par_discard(struct kad_ctx *ctx)
+{
+    for (size_t i = 0; i < KAD_K_CONST; ++i) {
+        struct kad_rpc_query *query = ctx->lookup.par[i];
+        if (!query)
+            continue;
+        if (!req_lru_delete(ctx->reqs_out, query->msg.tx_id, &query)) {
+            LOG_FMT_HEX_DECL(tx_id, KAD_RPC_MSG_TX_ID_LEN);
+            log_fmt_hex(tx_id, KAD_RPC_MSG_TX_ID_LEN, query->msg.tx_id.bytes);
+            log_error("In-flight query (tx_id=%s) not found in request list.", tx_id);
+        }
+        free_safer(query);
+        ctx->lookup.par[i] = NULL;
+    }
+}
+
+bool kad_lookup_timeout(const int round, struct kad_ctx *ctx)
+{
+    if (round < ctx->lookup.round)
+        return true;
+
+    if (round > ctx->lookup.round) {
+        log_error("Lookup timeout for round %d triggered during prior round %d.", round, ctx->lookup.round);
+        return false;
+    }
+
+    if (kad_lookup_par_is_empty(&ctx->lookup)) {
+        log_debug("Lookup timeout for round %d: no queries in flight.", round);
+        return true;
+    }
+
+    lookup_par_discard(ctx);
+
+    return kad_lookup_start(ctx->lookup.past.items[0]->target, ctx);
+
 }
