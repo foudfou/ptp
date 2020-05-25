@@ -7,6 +7,7 @@ void kad_lookup_init(struct kad_lookup *lookup)
 {
     node_heap_init(&lookup->next, 32);
     node_heap_init(&lookup->past, 32);
+    memset(lookup->par, 0, KAD_ALPHA_CONST);
     lookup->par_len = KAD_ALPHA_CONST;
 }
 
@@ -21,6 +22,7 @@ void kad_lookup_reset(struct kad_lookup *lookup)
 {
     lookup->round = 0;
     lookup->par_len = KAD_ALPHA_CONST;
+    memset(lookup->par, 0, KAD_ALPHA_CONST);
 
     while (lookup->next.len > 0) {
         // log_error("___lookup reset: next.len=%ld", lookup->next.len);
@@ -34,9 +36,6 @@ void kad_lookup_reset(struct kad_lookup *lookup)
         // log_error("___lookup reset: past nl=%p", nl);
         if (nl) free_safer(nl);
     }
-
-    for (int i = 0; i < KAD_K_CONST; ++i)
-        lookup->par[i] = NULL;
 }
 
 bool kad_lookup_par_is_empty(struct kad_lookup *lookup)

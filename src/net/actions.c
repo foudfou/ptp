@@ -546,6 +546,7 @@ static bool kad_schedule_lookup(
     return false;
 }
 
+/* https://blog.libtorrent.org/2014/11/dht-routing-table-maintenance/ */
 bool kad_refresh(void *data)
 {
     (void)data;

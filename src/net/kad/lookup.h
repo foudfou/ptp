@@ -38,7 +38,7 @@
     nodes it has not already queried.
 
   • The lookup could terminate when the initiator has queried and gotten
-    responses from the k closest nodesit has seen.
+    responses from the k closest nodes it has seen.
 
   Q: How does node lookup actually work ?
 
@@ -103,7 +103,7 @@
   lookup list; register requests to the request and in_flight lists. Iterate:
   goto previous.
 
-  + lookup timer checks how many requests are in-flight via list of in-flight
+  - lookup timer checks how many requests are in-flight via list of in-flight
   queries. When a request times out, remove it from in_flight and request
   lists.
 

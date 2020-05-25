@@ -187,7 +187,7 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
                 failures += 1
                 result = "\033[31mFAIL\033[0m"
                 data = routes[i]
-            print(f"{i}/{NODES_LEN} routes_{i} .. {result}")
+            print(f"{i+1}/{NODES_LEN} routes_{i} .. {result}")
             if data:
                 print(f"---\n   incorrect data {data}")
 

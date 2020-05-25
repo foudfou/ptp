@@ -44,7 +44,7 @@ foreach fname : tests_sources
                    # propagated for inclusion of .c files in tests.
                    c_args : lib_cargs,
                    dependencies : lib_deps,
-                   link_with : [libmain_a, libtest_so],
+                   link_with : [libtest_so],
                   )
   test(fname, exe, args : meson.source_root())
 endforeach

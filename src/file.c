@@ -112,7 +112,7 @@ bool file_write(const char path[], char buf[], size_t buf_len)
     }
 
   cleanup:
-    if (fclose(fp)) {
+    if (fp && fclose(fp)) {
         perror("Failed fclose");
         ret = false;
     }
