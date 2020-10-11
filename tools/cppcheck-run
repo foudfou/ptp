@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+# Can't upgrade to cppcheck-2 until https://trac.cppcheck.net/ticket/9790 is fixed.
+function check_cppcheck_version {
+  required_maj=1
+  required_min=90
+
+  version=$(cppcheck --version)
+  version=${version##Cppcheck }
+  version_maj=${version%.*}
+  version_min=${version##*.}
+
+  if [ "$version_maj" -ne "$required_maj" ]; then
+    >&2 printf "\nERROR: Wrong cppcheck major version: $version_maj. Required $required_maj.\n\n"
+    exit 1
+  fi
+
+  if [ "$version_min" -lt "$required_min" ]; then
+    >&2 printf "\nERROR: Wrong cppcheck minor version: $version_min. Required >= $required_min.\n\n"
+    exit 1
+  fi
+}
+
+check_cppcheck_version
+
+cppcheck --enable=all --std=c11 --inconclusive \
+  --template="{file}({line}): {severity} ({id}): {message}" \
+  --error-exitcode=1 --inline-suppr \
+  --suppress=assertWithSideEffect \
+  --suppress=ctunullpointer:$MESON_SOURCE_ROOT/tests/utils/bstree.c \
+  --suppress=ctunullpointer:$MESON_SOURCE_ROOT/tests/utils/heap.c \
+  --suppress=constArgument:$MESON_SOURCE_ROOT/tests/utils/bits.c \
+  -I$MESON_SOURCE_ROOT/src \
+  -I$MESON_SOURCE_ROOT/tests \
+  -I$MESON_BUILD_ROOT/src \
+  -I$MESON_BUILD_ROOT/src/net/kad/.full \
+  -I$MESON_BUILD_ROOT/src/net/kad/.tiny \
+  $MESON_SOURCE_ROOT/src \
+  $MESON_SOURCE_ROOT/tests
+  # --xml  # find error id to ignore
+  # --check-config
