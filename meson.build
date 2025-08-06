@@ -3,11 +3,11 @@
 
 project('ptp', 'c', version : '0.0.2', license : 'MIT',
         default_options : [
-          'c_std=c11',
+          'c_std=c23',
           'warning_level=3',
           'werror=true'
         ],
-        meson_version: '>=0.50')
+        meson_version: '>=0.56')
 
 proj_name = meson.project_name()
 
@@ -35,6 +35,6 @@ subdir('tools')
 subdir('man')
 
 sh = find_program('sh')
-run_command(sh, '-c', 'git config core.hooksPath tools/git-hooks')
+run_command(sh, '-c', 'git config core.hooksPath tools/git-hooks', check: true)
 
 install_data('data/nodes.dat', rename : 'nodes.dat')

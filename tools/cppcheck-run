@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 
-# Can't upgrade to cppcheck-2 until https://trac.cppcheck.net/ticket/9790 is fixed.
+# FIXME cppcheck-2.18 fails to parse: syntaxError, internalAstError.
+# Possibly still choking on https://trac.cppcheck.net/ticket/9790
 function check_cppcheck_version {
-  required_maj=1
-  required_min=90
+  required_maj=2
+  required_min=18
 
   version=$(cppcheck --version)
   version=${version##Cppcheck }
-  version_maj=${version%.*}
-  version_min=${version##*.}
+  version_maj=${version%%.*}
+  version=${version#*.}
+  version_min=${version%.*}
+  # printf "${version_maj}-${version_min}\n"
 
   if [ "$version_maj" -ne "$required_maj" ]; then
     >&2 printf "\nERROR: Wrong cppcheck major version: $version_maj. Required $required_maj.\n\n"
@@ -23,10 +26,12 @@ function check_cppcheck_version {
 
 check_cppcheck_version
 
-cppcheck --enable=all --std=c11 --inconclusive \
+cppcheck --enable=all --inconclusive \
+  --std=c23 --language=c \
   --template="{file}({line}): {severity} ({id}): {message}" \
   --error-exitcode=1 --inline-suppr \
   --suppress=assertWithSideEffect \
+  --suppress=missingIncludeSystem \
   --suppress=ctunullpointer:$MESON_SOURCE_ROOT/tests/utils/bstree.c \
   --suppress=ctunullpointer:$MESON_SOURCE_ROOT/tests/utils/heap.c \
   --suppress=constArgument:$MESON_SOURCE_ROOT/tests/utils/bits.c \
@@ -36,6 +41,9 @@ cppcheck --enable=all --std=c11 --inconclusive \
   -I$MESON_BUILD_ROOT/src/net/kad/.full \
   -I$MESON_BUILD_ROOT/src/net/kad/.tiny \
   $MESON_SOURCE_ROOT/src \
-  $MESON_SOURCE_ROOT/tests
+  $MESON_SOURCE_ROOT/tests \
+  --checkers-report=cppcheck-report.txt
   # --xml  # find error id to ignore
   # --check-config
+  # --force \
+  # --check-level=exhaustive \

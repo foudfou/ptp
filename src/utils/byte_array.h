@@ -9,7 +9,7 @@
  * themselves, ascending. For ex. changing bit 8 (starting from 0) actually
  * changes the MSB of byte 1.
  */
-#include <limits.h>
+#include <limits.h>   // CHAR_BIT
 #include <stdbool.h>
 #include <string.h>
 #include "utils/bits.h"
@@ -21,9 +21,15 @@
  */
 #define sizeof_field(type, field) sizeof(((type *)0)->field)
 
+#if defined(__clang__)
+#define __nonstring
+#elif defined(__GNUC__)
+#define __nonstring __attribute__((__nonstring__))
+#endif
+
 #define BYTE_ARRAY_GENERATE(name, len)           \
     typedef struct {                             \
-        unsigned char bytes[len];                \
+        unsigned char bytes[len] __nonstring;    \
         bool          is_set;                    \
     } name;                                      \
     BYTE_ARRAY_GENERATE_SET(name, len)           \
@@ -105,10 +111,12 @@ static inline unsigned cntl0(unsigned char x)
 
 /* Count leading zeros */
 static inline unsigned clz(unsigned char n) {
-#if defined(__GCC__) || defined(__clang__)
-    return n == 0
-        ? sizeof(n) * CHAR_BIT
-        : __builtin_clzs((unsigned short)n << sizeof(n) * CHAR_BIT);
+    if (n == 0)
+        return sizeof(n) * CHAR_BIT;
+#if defined(__clang__)
+    return __builtin_clzs((unsigned short)n << sizeof(n) * CHAR_BIT);
+#elif defined(__GNUC__)
+    return __builtin_clz((unsigned int)n << (sizeof(unsigned int) - 1) * CHAR_BIT);
 #else
     return cntl0(n);
 #endif

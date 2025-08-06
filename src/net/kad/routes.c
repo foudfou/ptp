@@ -1,7 +1,7 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 /**
- * In Kademelia, peers are virtually structured as leaves of a binary tree,
- * which can also be vizualized as a ring. Peers are placed in the tree by
+ * In Kademlia, nodes are virtually structured as leaves of a binary tree,
+ * which can also be vizualized as a ring. Nodes are placed in the tree by
  * their node ID, which is a N bits number. The distance(A, B) = A XOR B, which
  * can be interpreted as finding the most common bit prefix btw. 2 nodes. Ex:
  * 0x0100 ^ 0x0110 = 0x0010, common prefix "00". It thus really represents a
@@ -30,7 +30,8 @@ void rand_init()
     struct timespec time;
     if (clock_gettime(CLOCK_REALTIME, &time) < 0)
         log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
-    srandom(time.tv_sec * time.tv_nsec * getpid());
+    unsigned int seed = time.tv_sec ^ time.tv_nsec ^ getpid();
+    srandom(seed);
 }
 
 static void kad_generate_id(kad_guid *uid)
@@ -81,7 +82,7 @@ void routes_destroy(struct kad_routes *routes)
 }
 
 /**
- * Computes the bucket a peer falls into.
+ * Computes the bucket a remote node falls into.
  *
  * « For each 0 ≤ i < 160, every node keeps a list of (IP address, UDP port,
  * Node ID) triples for nodes of distance between 2^i and 2^i+1 from itself,
@@ -104,15 +105,15 @@ void routes_destroy(struct kad_routes *routes)
  * distances. See node_heap_cmp().
  */
 static inline int kad_bucket_hash(const kad_guid *self_id,
-                                  const kad_guid *peer_id)
+                                  const kad_guid *remote_id)
 {
-    if (!self_id || !peer_id || !self_id->is_set || !peer_id->is_set)
+    if (!self_id || !remote_id || !self_id->is_set || !remote_id->is_set)
         return -1;
 
     int diff = KAD_GUID_SPACE_IN_BITS;
     for (size_t i = 0; i < KAD_GUID_SPACE_IN_BYTES; ++i) {
         // avoid additional kad_guid_xor()
-        unsigned char xor = self_id->bytes[i] ^ peer_id->bytes[i];
+        unsigned char xor = self_id->bytes[i] ^ remote_id->bytes[i];
         unsigned lz = clz(xor);
         diff -= lz;
         if (lz != CHAR_BIT ||

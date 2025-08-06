@@ -9,4 +9,5 @@ exec 1>&2
 
 ninja test || exit 1
 
-ninja cppcheck || exit 1
+# FIXME cppcheck-2.18 fails to parse (see cppcheck-run)
+#ninja cppcheck || exit 1

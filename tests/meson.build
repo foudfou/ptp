@@ -46,7 +46,7 @@ foreach fname : tests_sources
                    dependencies : lib_deps,
                    link_with : [libtest_so],
                   )
-  test(fname, exe, args : meson.source_root())
+  test(fname, exe, args : meson.project_source_root())
 endforeach
 
 tests_alt_sources = [
