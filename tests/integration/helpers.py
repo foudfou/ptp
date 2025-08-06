@@ -10,7 +10,7 @@ def check_data(expect, data, ctx):
         failure += 1
         result = "\033[31mFAIL\033[0m"
         err = data
-    print("{}/{} {} .. {}".format(ctx['line'], ctx['len'], ctx['name'], result))
+    print(f"{ctx['line']}/{ctx['len']} {ctx['name']} .. {result}")
     if err:
-        print("---\n   data {} did not match expected {}".format(data, expect))
+        print(f"---\n   data {data} did not match expected {expect}")
     return failure

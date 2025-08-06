@@ -3,7 +3,6 @@
 
 """Script for single server integration tests."""
 
-
 import importlib
 import os
 import pty
@@ -13,7 +12,9 @@ import subprocess as sub
 import sys
 import tempfile
 
-SERVER_HOST = '::1'
+from helpers import check_data
+
+(SERVER_HOST, SERVER_AF) = ('::1', socket.AF_INET6)
 # SERVER_PORT is used by the server and the client. We thus can't simply bind
 # the server to 0 for some random available port. Because we'd have to guess
 # the port somehow for the client to connect. It's just easier to use a fixed
@@ -27,7 +28,8 @@ run = importlib.import_module("runs." + sys.argv[1])
 
 server_bin  = sys.argv[2]
 server_args = sys.argv[3:]
-server_cmd = [server_bin, "-l", "error", "-a", SERVER_HOST, "-p", str(SERVER_PORT)]  # pylint: disable=invalid-name
+server_cmd = [server_bin, "-l", "error", "-a", SERVER_HOST,
+              "-p", str(SERVER_PORT)]  # pylint: disable=invalid-name
 server_cmd.extend(server_args)
 
 def poll_data(sock, msg):
@@ -44,23 +46,6 @@ def poll_data(sock, msg):
         except socket.timeout:
             break
     return data_rx
-
-
-def check_data(expect, data, ctx):
-    failure = 0
-    patt = re.compile(expect, re.DOTALL)
-    if re.search(patt, data):
-        result = "OK"
-        err = None
-    else:
-        failure += 1
-        result = "\033[31mFAIL\033[0m"
-        err = data
-    print("{}/{} {} .. {}".format(ctx['line'], ctx['len'], ctx['name'], result))
-    if err:
-        print("---\n   data {} did not match expected {}".format(data, expect))
-    return failure
-
 
 
 try:
@@ -87,7 +72,7 @@ try:
     server = sub.Popen(server_cmd, stderr=sub.STDOUT, close_fds=True)
     os.close(slave_fd)
 
-    with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as s:
+    with socket.socket(SERVER_AF, socket.SOCK_DGRAM) as s:
         s.settimeout(TIMEOUT_IN_SEC)
         s.connect((SERVER_HOST, SERVER_PORT))
 

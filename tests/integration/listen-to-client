@@ -11,7 +11,7 @@ import tempfile
 
 from helpers import check_data
 
-SERVER_HOST = '::1'
+(SERVER_HOST, SERVER_AF) = ('::1', socket.AF_INET6)
 SERVER_PORT = 0
 SOCKET_TIMEOUT_SECONDS = 1
 
@@ -44,7 +44,7 @@ if config_idx > 0:
 
 
 with tempfile.TemporaryDirectory() as tmp_dir, \
-     socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as s:
+     socket.socket(SERVER_AF, socket.SOCK_DGRAM) as s:
     # print(tmp_dir)
     try:
         s.settimeout(SOCKET_TIMEOUT_SECONDS)
