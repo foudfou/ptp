@@ -155,9 +155,12 @@ bool socket_shutdown(int sock)
     return true;
 }
 
+/*
+ * @str expected to be of length INET6_ADDRSTRLEN + INET_PORTSTRLEN
+ *      FIXME best to pass len as parameter
+ */
 bool sockaddr_storage_fmt(char str[], const struct sockaddr_storage *ss)
 {
-    // FIXME check str size < INET6_ADDRSTRLEN + INET_PORTSTRLEN
     char hbuf[INET6_ADDRSTRLEN] = {0};
     char pbuf[INET_PORTSTRLEN] = {0};
     int rv = getnameinfo((struct sockaddr *)ss, sizeof(*ss),
@@ -167,7 +170,7 @@ bool sockaddr_storage_fmt(char str[], const struct sockaddr_storage *ss)
         log_error("Failed getnameinfo: %s.", gai_strerror(rv));
         return false;
     }
-    sprintf(str, "%s/%s", hbuf, pbuf);
+    snprintf(str, INET6_ADDRSTRLEN+INET_PORTSTRLEN, "%s/%s", hbuf, pbuf);
     return true;
 }
 

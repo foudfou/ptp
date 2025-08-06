@@ -2,8 +2,8 @@
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 libkad_sources = [
-  'bencode/routes.c',
   'bencode/parser.c',
+  'bencode/routes.c',
   'bencode/rpc_msg.c',
   'bencode/serde.c',
   'lookup.c',

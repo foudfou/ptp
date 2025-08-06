@@ -14,5 +14,5 @@ foreach t : integration_tests
   tname = t.get(0)
   texe = find_program(t.get(1))
   targs = t.get(2)
-  test(tname, texe, args : targs, is_parallel : false)
+  test('integration/'+tname, texe, args : targs, is_parallel : false)
 endforeach

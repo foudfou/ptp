@@ -14,6 +14,15 @@ libtest_so = shared_library(
 )
 
 tests_sources = [
+  'file.c',
+  'kad/bencode/parser.c',
+  'kad/bencode/routes.c',
+  'kad/bencode/rpc_msg.c',
+  'kad/req_lru.c',
+  'kad/routes.c',
+  'kad/rpc.c',
+  'timers_once.c',
+  'timers_periodic.c',
   'utils/aatree.c',
   'utils/bitfield.c',
   'utils/bits.c',
@@ -26,15 +35,6 @@ tests_sources = [
   'utils/queue.c',
   'utils/rbtree.c',
   'utils/u64.c',
-  'file.c',
-  'kad/bencode/routes.c',
-  'kad/bencode/parser.c',
-  'kad/bencode/rpc_msg.c',
-  'kad/routes.c',
-  'kad/req_lru.c',
-  'kad/rpc.c',
-  'timers_periodic.c',
-  'timers_once.c',
 ]
 
 foreach fname : tests_sources
@@ -46,7 +46,7 @@ foreach fname : tests_sources
                    dependencies : lib_deps,
                    link_with : [libtest_so],
                   )
-  test(fname, exe, args : meson.project_source_root())
+  test('unit/'+fname, exe, args : meson.project_source_root())
 endforeach
 
 tests_alt_sources = [
@@ -62,7 +62,7 @@ foreach fname : tests_alt_sources
                    dependencies : lib_deps,
                    link_with : libalt_so,
                   )
-  test(fname, exe)
+  test('unit/'+fname, exe)
 endforeach
 
 subdir('integration')

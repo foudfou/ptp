@@ -8,5 +8,6 @@ gcovr                                           \
   -j4                                           \
   --root $MESON_SOURCE_ROOT                     \
   --html-details                                \
+  --html-theme github.dark-green                \
   --output $OUTDIR/index.html                   \
   --exclude '.*/tests/.*'

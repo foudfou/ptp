@@ -33,8 +33,7 @@ subdir('src')
 subdir('tests')
 subdir('tools')
 subdir('man')
+subdir('data')
 
 sh = find_program('sh')
 run_command(sh, '-c', 'git config core.hooksPath tools/git-hooks', check: true)
-
-install_data('data/nodes.dat', rename : 'nodes.dat')
