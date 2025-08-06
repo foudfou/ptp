@@ -43,3 +43,14 @@ Then
 * [BitTorrent DHT Protocol specifications](http://www.bittorrent.org/beps/bep_0005.html) by
   Andrew Loewenstern and Arvid Norberg
 * [Kademlia's paper](http://www.scs.stanford.edu/~dm/home/papers/maymounkov:kademlia.ps.gz)
+
+## Roadmap
+
+- consolidate integration tests
+- fix cppcheck and git-hooks
+- proper bucket management (last_seen) + use replacements
+- save dht regularly
+- integration tests for say when there are multiple clients connecting to tcp sock
+- threadpool
+  http://people.clarkson.edu/~jmatthew/cs644.archive/cs644.fa2001/proj/locksmith/code/ExampleTest/threadpool.c
+- read bootstrap nodes from text file in background

@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "net/kad/rpc.h"
 #include "utils/hash.h"
+#include "utils/helpers.h"
 
 /**
  * We want to keep track of sent queries. For ex. during node lookup: « Nodes
@@ -46,6 +47,11 @@ struct req_lru {
 static inline void req_lru_init(struct req_lru *lru) {
     list_init(&lru->litems);
     hash_init(lru->hitems, HREQ_LRU_SIZE);
+}
+
+static inline void req_lru_terminate(struct req_lru *lru) {
+    struct list_item *items = &lru->litems;
+    list_free_all(items, struct kad_rpc_query, litem);
 }
 
 /**

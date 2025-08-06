@@ -53,7 +53,7 @@ int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
 
     kad_lookup_init(&ctx->lookup);
 
-    log_debug("Routes initialized.");
+    log_debug("Rpc state initialized.");
     return nodes_len;
 }
 
@@ -74,9 +74,9 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
 
     timers_free_all(ctx->timers);
 
-    struct list_item *reqs_out = &ctx->reqs_out->litems;
-    list_free_all(reqs_out, struct kad_rpc_query, litem);
-    log_debug("Routes terminated.");
+    req_lru_terminate(ctx->reqs_out);
+
+    log_debug("Rpc state terminated.");
 }
 
 static bool kad_rpc_handle_error(const struct kad_rpc_msg *msg)

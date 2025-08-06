@@ -11,3 +11,8 @@ ninja test || exit 1
 
 # FIXME cppcheck-2.18 fails to parse (see cppcheck-run)
 #ninja cppcheck || exit 1
+
+# Lots of false positive (Use-after-free, Double free, Dereference of null
+# pointer). Llvm Analyzer seems to struggle when mixing static inline functions
+# and macros.
+#ninja scan-build || exit 1

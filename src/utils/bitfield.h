@@ -11,7 +11,7 @@
  * Directly copied from https://stackoverflow.com/a/24753227/421846.
  * TODO our own implementation based on bits.h for consistency.
  */
-#include <inttypes.h>
+#include <stdint.h>
 
 typedef uint32_t bitfield;
 

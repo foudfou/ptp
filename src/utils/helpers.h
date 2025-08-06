@@ -1,6 +1,10 @@
 #ifndef HELPERS_H
 #define HELPERS_H
 
+#include "utils/cont.h"
+#include "utils/list.h"
+#include "utils/safer.h"
+
 #define list_free_all(itemp, type, field)                               \
     while (!list_is_empty(itemp)) {                                     \
         type *node = cont(itemp->prev, type, field);                    \

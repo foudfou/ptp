@@ -47,7 +47,8 @@ static int sock_setnonblock(int sock) {
         log_perror(LOG_ERR, "Failed get fcntl: %s.", errno);
         return errno;
     }
-    if (fcntl(sock, F_SETFL, flags |= O_NONBLOCK) == -1) {
+    flags |= O_NONBLOCK;
+    if (fcntl(sock, F_SETFL, flags) == -1) {
         log_perror(LOG_ERR, "Failed set fcntl: %s.", errno);
         return errno;
     }

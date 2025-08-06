@@ -84,8 +84,7 @@ int main ()
     assert(found->val == 1);
 
     /* Hash traversal */
-    // cppcheck-suppress unreadVariable
-    struct list_item* it = hash;
+    struct list_item* it = NULL;
     int values[2] = {0}; int j = 0;
     hash_for(hash, HASH_SIZE, it) {
         struct stoi* tmp = cont(it, struct stoi, item);

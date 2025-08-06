@@ -7,6 +7,7 @@
 #include "net/socket.h"
 #include "timers.h"
 #include "utils/array.h"
+#include "utils/helpers.h"
 #include "utils/safer.h"
 #include "utils/time.h"
 #include "net/actions.h"

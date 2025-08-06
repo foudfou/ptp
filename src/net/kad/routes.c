@@ -16,6 +16,7 @@
 #include "file.h"
 #include "utils/bitfield.h"
 #include "utils/bits.h"
+#include "utils/helpers.h"
 #include "utils/safer.h"
 #include "utils/time.h"
 #include "net/kad/bencode/routes.h"
