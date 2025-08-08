@@ -1,5 +1,6 @@
 /* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
+#include "log.h"
 #include "kad/test_util.h"
 #include "utils/time.h"
 #include "timers.h"

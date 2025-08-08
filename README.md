@@ -49,6 +49,7 @@ Then
 - fix cppcheck and git-hooks
 - single shared main lib
 - proper bucket management (last_seen) + use replacements
+- resource storage
 - save dht regularly
 - integration tests for say when there are multiple clients connecting to tcp sock
 - threadpool

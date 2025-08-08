@@ -2,10 +2,11 @@
 /**
  * In Kademlia, nodes are virtually structured as leaves of a binary tree,
  * which can also be vizualized as a ring. Nodes are placed in the tree by
- * their node ID, which is a N bits number. The distance(A, B) = A XOR B, which
- * can be interpreted as finding the most common bit prefix btw. 2 nodes. Ex:
- * 0x0100 ^ 0x0110 = 0x0010, common prefix "00". It thus really represents a
- * distance in the tree.
+ * their node ID, which is a N bits number. The distance between 2 nodes A and
+ * B is defined as: A XOR B.
+ *
+ * Each node keeps track of peers in a specialized hash table. Looking up a
+ * host consists in iteratively querying nodes closer to the target.
  */
 #include <limits.h>
 #include <stdio.h>
@@ -15,10 +16,8 @@
 #include "log.h"
 #include "file.h"
 #include "utils/bitfield.h"
-#include "utils/bits.h"
 #include "utils/helpers.h"
 #include "utils/safer.h"
-#include "utils/time.h"
 #include "net/kad/bencode/routes.h"
 #include "net/kad/routes.h"
 
@@ -89,7 +88,7 @@ void routes_destroy(struct kad_routes *routes)
  * Node ID) triples for nodes of distance between 2^i and 2^i+1 from itself,
  * sorted by time last seen (least-recently seen node at the head). We call
  * these lists k-buckets. » Ex: In a 4 bits space,for node 0 and k=3,
- *   bucket 0 has nodes of distance 0..2 = node 0001
+ *   bucket 0 has nodes of distance 0..2 = nodes 000x, actually only 0001
  *   bucket 1 has nodes of distance 2..4 = nodes 001x
  *   bucket 2 has nodes of distance 4..8 = nodes 01xx
  *   bucket 3 has nodes of distance 8..16 = nodes 1xxx
@@ -126,6 +125,10 @@ static inline int kad_bucket_hash(const kad_guid *self_id,
     return diff > 0 ? diff - 1 : 0;
 }
 
+/**
+ * Copy nodes @max nodes of @bucket, into @nodes, starting at position
+ * @nodes_pos, excluding @caller.
+ */
 static inline size_t
 kad_bucket_get_nodes(const struct list_item *bucket,
                      struct kad_node_info nodes[], size_t nodes_pos,
@@ -148,24 +151,23 @@ kad_bucket_get_nodes(const struct list_item *bucket,
 }
 
 /**
- * Fills the given `nodes` array with k nodes closest to the `target` node,
- * ignoring the `caller` node if known.
+ * Fills the given @nodes array with k nodes closest to the @target node,
+ * ignoring the @caller node if known.
  *
- * Traverse the routing table in ascending xor distance order relative to the
+ * Traverse the routing table in xor distance ascending order relative to the
  * target key. http://stackoverflow.com/a/30655403/421846
  */
 size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
-                        struct kad_node_info nodes[], const kad_guid *caller)
+                           struct kad_node_info nodes[], const kad_guid *caller)
 {
-    size_t nodes_pos = 0;
-    bitfield visited[BITFIELD_RESERVE_BITS(KAD_GUID_SPACE_IN_BITS)] = {0};
-
     int bucket_idx = kad_bucket_hash(&routes->self_id, target);
     const struct list_item *bucket = &routes->buckets[bucket_idx];
 
     int prefix_idx = KAD_GUID_SPACE_IN_BITS - bucket_idx;
     kad_guid prefix_mask, target_next;
     target_next.is_set = true;
+    size_t nodes_pos = 0;
+    bitfield visited[BITFIELD_RESERVE_BITS(KAD_GUID_SPACE_IN_BITS)] = {0};
     while (prefix_idx >= 0) {
         size_t max = KAD_K_CONST - nodes_pos;
         nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, max, caller);
@@ -202,6 +204,7 @@ size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
     return nodes_pos;
 }
 
+/** Count bucket length.  */
 static inline size_t kad_bucket_count(const struct list_item *bucket)
 {
     size_t count = 0;
@@ -211,6 +214,7 @@ static inline size_t kad_bucket_count(const struct list_item *bucket)
     return count;
 }
 
+/** Get node with @node_id from list (bucket) @list. */
 static inline struct kad_node*
 routes_get_from_list(const struct list_item *list, const kad_guid *node_id)
 {
@@ -224,9 +228,13 @@ routes_get_from_list(const struct list_item *list, const kad_guid *node_id)
     return NULL;
 }
 
-static struct kad_node *
+/**
+ * Get node with @node_id from route table @routes. Also set its bucket and
+ * bucket index.
+ */
+static struct kad_node*
 routes_get_with_bucket(struct kad_routes *routes, const kad_guid *node_id,
-                    struct list_item **bucket, size_t *bucket_idx)
+                       struct list_item **bucket, size_t *bucket_idx)
 {
     int bkt_idx = kad_bucket_hash(&routes->self_id, node_id);
     if (bucket_idx)
@@ -254,10 +262,10 @@ routes_get_with_bucket(struct kad_routes *routes, const kad_guid *node_id,
  * first). The replacement list is kept ordered by descending last_seen time
  * (most recent first).
  *
- * « When a Kademlia node receives any message (re- quest or reply) from
- * another node, it updates the appropriate k-bucket for the sender’s node ID.
- * [...] If the appropriate k-bucket is full, however, then the recipient pings
- * the k-bucket’s least-recently seen node to decide what to do. If the
+ * « When a Kademlia node receives any message (request or reply) from another
+ * node, it updates the appropriate k-bucket for the sender’s node ID.  [...]
+ * If the appropriate k-bucket is full, however, then the recipient pings the
+ * k-bucket’s least-recently seen node to decide what to do. If the
  * least-recently seen node fails to respond, it is evicted from the k-bucket *
  * and the new sender inserted at the tail. Otherwise, if the least-recently
  * seen node responds, it is moved to the tail of the list, and the new
@@ -378,7 +386,8 @@ bool routes_mark_stale(struct kad_routes *routes, const kad_guid *node_id)
     return true;
 }
 
-int routes_read(struct kad_routes **routes, const char state_path[])
+/** Populates @routes with routes info read from file @state_path. */
+int routes_read_file(struct kad_routes **routes, const char state_path[])
 {
     char buf[ROUTES_STATE_LEN_IN_BYTES];
     size_t buf_len = 0;
@@ -419,27 +428,7 @@ int routes_read(struct kad_routes **routes, const char state_path[])
     return -1;
 }
 
-int kad_read_bootstrap_nodes(struct kad_node_info nodes[], size_t nodes_len,
-                             const char state_path[])
-{
-    char buf[NODES_FILE_LEN_IN_BYTES];
-    size_t buf_len = 0;
-    if (!file_read(buf, &buf_len, state_path)) {
-        log_error("Failed to read bootsrap nodes file '%s'.", state_path);
-        return -1;
-    }
-    log_debug("Reading bootstrap nodes from file '%s'.", state_path);
-
-    // Since bootstrap file contains node id's, a binary file is fine.
-    int nnodes = benc_decode_bootstrap_nodes(nodes, nodes_len, buf, buf_len);
-    if (nnodes < 0) {
-        log_error("Decoding of bootsrap nodes file (%s) failed.", state_path);
-        return -1;
-    }
-
-    return nnodes;
-}
-
+/** Copy routes info into @encoded representation. */
 static size_t
 routes_encode(const struct kad_routes *routes, struct kad_routes_encoded *encoded)
 {
@@ -451,7 +440,8 @@ routes_encode(const struct kad_routes *routes, struct kad_routes_encoded *encode
     return encoded->nodes_len - start;
 }
 
-bool routes_write(const struct kad_routes *routes, const char state_path[]) {
+/** Serialize routes into file @state_path. */
+bool routes_write_file(const struct kad_routes *routes, const char state_path[]) {
     bool res = true;
 
     struct kad_routes_encoded encoded = {0};
@@ -472,4 +462,30 @@ bool routes_write(const struct kad_routes *routes, const char state_path[]) {
   cleanup:
     iobuf_reset(&buf);
     return res;
+}
+
+/**
+ * Populates @nodes with nodes read from file @state_path.
+ *
+ * Intended for bootstrap nodes.
+ */
+int routes_read_nodes_file(struct kad_node_info nodes[], size_t nodes_len,
+                           const char state_path[])
+{
+    char buf[NODES_FILE_LEN_IN_BYTES];
+    size_t buf_len = 0;
+    if (!file_read(buf, &buf_len, state_path)) {
+        log_error("Failed to read bootsrap nodes file '%s'.", state_path);
+        return -1;
+    }
+    log_debug("Reading bootstrap nodes from file '%s'.", state_path);
+
+    // Since bootstrap file contains node id's, a binary file is fine.
+    int nnodes = benc_decode_bootstrap_nodes(nodes, nodes_len, buf, buf_len);
+    if (nnodes < 0) {
+        log_error("Decoding of bootsrap nodes file (%s) failed.", state_path);
+        return -1;
+    }
+
+    return nnodes;
 }

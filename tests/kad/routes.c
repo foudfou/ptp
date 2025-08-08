@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
     path[255] = '\0';
     assert(access(path, R_OK) != -1 );
 
-    int nread = routes_read(&routes, path);
+    int nread = routes_read_file(&routes, path);
     assert(nread == ARRAY_LEN(kad_test_nodes));
     assert(routes);
     assert(memcmp(routes->self_id.bytes, "0123456789abcdefghij5", KAD_GUID_SPACE_IN_BYTES) == 0);
@@ -153,7 +153,7 @@ int main(int argc, char *argv[])
     char tpl[] = "/tmp/tmpXXXXXX";
     assert(mkdtemp(tpl));
     snprintf(path, 255, "%s/%s", tpl, "routes.dat");
-    assert(routes_write(routes, path));
+    assert(routes_write_file(routes, path));
     char ref[256];
     snprintf(ref, 255, "%s/%s", source_dir, "tests/kad/data/routes_sorted.dat");
     assert(files_eq(path, ref));

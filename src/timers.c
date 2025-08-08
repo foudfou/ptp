@@ -24,7 +24,7 @@ bool set_timeout(struct list_item *timers, long long delay, bool once,
 }
 
 /**
- * `now` optional: will be set to current time if 0.
+ * @time optional: will be set to current time if 0.
  */
 bool timer_init(struct list_item *timers, struct timer *t, long long time)
 {

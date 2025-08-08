@@ -126,7 +126,7 @@ bool server_run(const struct config *conf)
         timer_init(&timers, timer_kad_bootstrap, tick_init);
     }
     else {
-        log_debug("Loaded %d nodes from config.");
+        log_debug("Loaded %d nodes from config.", nodes_len);
     }
 
     int nlisten = 2;

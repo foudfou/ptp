@@ -365,7 +365,7 @@ bool kad_bootstrap(const struct config *conf, struct kad_ctx *kctx)
     }
 
     struct kad_node_info nodes[BOOTSTRAP_NODES_LEN];
-    int nodes_len = kad_read_bootstrap_nodes(nodes, ARRAY_LEN(nodes), bootstrap_nodes_path);
+    int nodes_len = routes_read_nodes_file(nodes, ARRAY_LEN(nodes), bootstrap_nodes_path);
     if (nodes_len < 0) {
         log_error("Failed to read bootstrap nodes.");
         return false;

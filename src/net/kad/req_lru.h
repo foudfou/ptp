@@ -57,7 +57,7 @@ static inline void req_lru_terminate(struct req_lru *lru) {
 /**
  * Exclusive insert.
  *
- * Returns false on duplicated. Sets `evicted` to evicted item.
+ * Returns false on duplicated. Sets @evicted to evicted item.
  */
 static inline bool
 req_lru_put(struct req_lru *lru, struct kad_rpc_query *q,
@@ -88,7 +88,7 @@ req_lru_get(struct req_lru *lru, const kad_rpc_msg_tx_id id) {
 }
 
 /**
- * Delete query with tx_id `id` from queries and return it in `out`.
+ * Delete query with tx_id @id from queries and return it in @out.
  */
 static inline bool
 req_lru_delete(struct req_lru *lru, const kad_rpc_msg_tx_id id, struct kad_rpc_query **out) {

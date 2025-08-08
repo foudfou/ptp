@@ -120,7 +120,21 @@ We don't have a minimum coverage target yet.
 
 `data/nodes.dat` contains the bootstrap nodes.
 
+## Code
 
+### Style
+
+- General rule: **look around and mimic the existing style**.
+- Docstrings / code documentation roughly follows
+  [doxygen](https://www.doxygen.nl/manual/docblocks.html). In particular:
+  - Function arguments are mentioned with `@` (ex: `@param1`).
+- Argument order: destination then source
+- Naming: from most generic to most specific; name then verb. So things, and
+  especially functions, are easily sorted.
+
+### Practices
+
+- Favor stack allocation to heap allocation.
 
 
 [^1]: We're proud to be pretty early adopters of meson, with `0.37.0.dev1`,

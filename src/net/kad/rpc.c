@@ -33,8 +33,8 @@ int kad_rpc_init(struct kad_ctx *ctx, const char conf_dir[])
             return false;
         }
         routes_state_path[PATH_MAX-1] = '\0';
-        if (access(routes_state_path, R_OK|W_OK) != -1 ) {
-            nodes_len = routes_read(&ctx->routes, routes_state_path);
+        if (access(routes_state_path, R_OK|W_OK) != -1) {
+            nodes_len = routes_read_file(&ctx->routes, routes_state_path);
         } else {
             log_info("Routes state file not readable and writable. Generating new routes.");
             ctx->routes = routes_create();
@@ -63,7 +63,7 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
         char routes_state_path[PATH_MAX];
         snprintf(routes_state_path, PATH_MAX-1, "%s/"ROUTES_STATE_FILENAME, conf_dir);
         routes_state_path[PATH_MAX-1] = '\0';
-        if (!routes_write(ctx->routes, routes_state_path)) {
+        if (!routes_write_file(ctx->routes, routes_state_path)) {
             log_error("Saving routes failed.");
         }
     }
@@ -267,8 +267,8 @@ kad_rpc_error(struct kad_rpc_msg *out, const enum kad_rpc_err err,
 }
 
 /**
- * Processes the incoming message in `buf` and places the response, if any,
- * into the provided `rsp` buffer.
+ * Processes the incoming message in @buf and places the response, if any,
+ * into the provided @rsp buffer.
  */
 bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
                     const char buf[], const size_t slen, struct iobuf *rsp)

@@ -6,7 +6,7 @@
  * Timers baked into the server's event loop.
  *
  * To handle timers in our event loop, we seem to have basically 2 options:
- * make timers write to some fd (in a self-pipe manner) or use the `timeout`
+ * make timers write to some fd (in a self-pipe manner) or use the @timeout
  * parameter of poll(). Since timers use signals and we favor to avoid them,
  * we'll go with the second approach.
  * Thx https://stackoverflow.com/a/20204081/421846!
@@ -18,7 +18,6 @@
  */
 #include <stdbool.h>
 #include "events.h"
-#include "options.h"
 #include "utils/list.h"
 
 #define TIMER_NAME_MAX 64
@@ -31,13 +30,13 @@
 struct timer {
     struct list_item   item;
     char               name[TIMER_NAME_MAX];
-    /* To compute `expire` for periodic timers. */
+    /* To compute @expire for periodic timers. */
     long long          delay;   // in ms,
     /* To compute when to trigger event (timeout). */
     long long          expire;  // timestamp for expiry
     bool               catch_up;
     bool               once;
-    /* Address to self when allocated. `once` timers are expected to be
+    /* Address to self when allocated. @once timers are expected to be
        allocated. Used in timers_apply to free. The variable holding the
        pointer to the allocated memory might be gone out of scope when we free,
        so we have no reliable way to null it ourselves. It's thus best to stick
@@ -50,7 +49,7 @@ struct timer {
 bool set_timeout(struct list_item *timers, long long delay, bool once, struct event *evt);
 bool timer_init(struct list_item *timers, struct timer *t, long long time);
 bool timers_free_all(struct list_item *timers);
-/** Right before poll() to calculate its `timeout` parameter. */
+/** Right before poll() to calculate its @timeout parameter. */
 int timers_get_soonest(struct list_item *timers);
 /** After poll() has returned. */
 bool timers_apply(struct list_item *timers, event_queue *evq);

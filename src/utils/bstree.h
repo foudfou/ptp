@@ -42,10 +42,10 @@ struct bstree_node {
 #define BSTREE_GENERATE_BASE(type)                          \
     BSTREE_GENERATE_IS_EMPTY(type)                          \
     BSTREE_GENERATE_LINK_NODE(type)                         \
-    BSTREE_GENERATE__END(type)                               \
+    BSTREE_GENERATE__END(type)                              \
     BSTREE_GENERATE_FIRST(type)                             \
     BSTREE_GENERATE_LAST(type)                              \
-    BSTREE_GENERATE__ITERATE(type)                           \
+    BSTREE_GENERATE__ITERATE(type)                          \
     BSTREE_GENERATE_NEXT(type)                              \
     BSTREE_GENERATE_PREV(type)                              \
     BSTREE_GENERATE_PARENT_LINK(type)

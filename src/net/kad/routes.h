@@ -90,12 +90,8 @@ static inline void kad_node_info_copy(struct kad_node_info *dst,
 
 void rand_init();
 
-int routes_read(struct kad_routes **routes, const char state_path[]);
-bool routes_write(const struct kad_routes *routes, const char state_path[]);
 struct kad_routes *routes_create();
 void routes_destroy(struct kad_routes * routes);
-
-int kad_read_bootstrap_nodes(struct kad_node_info nodes[], size_t nodes_len, const char state_path[]);
 
 /* routes_get() intentionally kept internal. */
 bool routes_update(struct kad_routes *routes, const struct kad_node_info *info, time_t time);
@@ -105,5 +101,9 @@ bool routes_delete(struct kad_routes *routes, const kad_guid *node_id);
 bool routes_mark_stale(struct kad_routes *routes, const kad_guid *node_id);
 size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
                            struct kad_node_info nodes[], const kad_guid *caller);
+
+int routes_read_file(struct kad_routes **routes, const char state_path[]);
+bool routes_write_file(const struct kad_routes *routes, const char state_path[]);
+int routes_read_nodes_file(struct kad_node_info nodes[], size_t nodes_len, const char state_path[]);
 
 #endif /* ROUTES_H */

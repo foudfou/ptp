@@ -76,7 +76,7 @@ static inline void type##_reset(type *ary)                              \
 
 #define BYTE_ARRAY_GENERATE_SETBIT(type, len)   \
 /**
- * Sets the `nth` bit of byte array. That's counting bits in same order as
+ * Sets the @nth bit of byte array. That's counting bits in same order as
  * bytes, "from left to right", _not_ from less to most significant bits. The
  * first bit is nth=0.
  */                                                                     \
@@ -92,7 +92,7 @@ static inline bool type##_setbit(type *ary, const size_t nth)           \
 
 #define BYTE_ARRAY_GENERATE_XOR(type, len)      \
 /**
- * Xor two byte arrays and put the result into `out`.
+ * Xor two byte arrays and put the result into @out.
  */                                                                     \
 static inline void type##_xor(type *out, const type *id1, const type *id2) \
 {                                                                       \
