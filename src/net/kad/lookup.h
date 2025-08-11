@@ -49,7 +49,7 @@ HEAP_GENERATE(node_heap, struct kad_node_lookup *)
 
 struct kad_lookup {
     int                   round;
-    struct kad_rpc_query *par[KAD_K_CONST]; // aka in-flight
+    struct kad_rpc_query *par[KAD_K_CONST]; // parallel aka in-flight
     size_t                par_len;
     struct node_heap      next;
     struct node_heap      past;

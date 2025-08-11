@@ -28,7 +28,7 @@ static inline void list_init(struct list_item* item) {
 /**
  * Test wether a list is empty.
  */
-static inline int list_is_empty(struct list_item* list)
+static inline int list_is_empty(const struct list_item* list)
 {
     return list->next == list;
 }

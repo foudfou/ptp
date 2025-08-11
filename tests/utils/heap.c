@@ -31,7 +31,7 @@ int main ()
     assert(memcmp(ints.items, (int[N]){0}, N) == 0);
 
     for (size_t i=0; i<N; ++i)
-        assert(int_heap_insert(&ints, i));
+        assert(int_heap_push(&ints, i));
 
     /*
       |         9
@@ -44,7 +44,7 @@ int main ()
     assert(memcmp(ints.items, expect_ints, N) == 0);
 
     for (size_t i=0; i<N; ++i)
-        assert(int_heap_get(&ints) == N - 1 - (int)i);
+        assert(int_heap_pop(&ints) == N - 1 - (int)i);
     assert(memcmp(ints.items, (int[N]){0}, N) == 0);
 
     free_safer(ints.items);
@@ -56,17 +56,17 @@ int main ()
 
     struct some have[N] = {{74},{73},{72},{71},{70},{69},{68},{67},{66},{65}};
 
-    assert(min_heap_insert(&somes, &have[2]));
-    assert(min_heap_insert(&somes, &have[1]));
-    assert(min_heap_insert(&somes, &have[0]));
-    assert(min_heap_get(&somes) == &have[2]);
-    assert(min_heap_get(&somes) == &have[1]);
-    assert(min_heap_get(&somes) == &have[0]);
+    assert(min_heap_push(&somes, &have[2]));
+    assert(min_heap_push(&somes, &have[1]));
+    assert(min_heap_push(&somes, &have[0]));
+    assert(min_heap_pop(&somes) == &have[2]);
+    assert(min_heap_pop(&somes) == &have[1]);
+    assert(min_heap_pop(&somes) == &have[0]);
     assert(somes.len == 0);
-    assert(min_heap_get(&somes) == NULL);
+    assert(min_heap_pop(&somes) == NULL);
 
     for (size_t i=0; i<N; ++i)
-        assert(min_heap_insert(&somes, &have[i]));
+        assert(min_heap_push(&somes, &have[i]));
     assert(somes.len == N);
 
     /*
@@ -82,7 +82,7 @@ int main ()
     }
 
     for (size_t i=0; i<N; ++i){
-        struct some *got = min_heap_get(&somes);
+        struct some *got = min_heap_pop(&somes);
         assert(got->c == have[N - 1 - (int)i].c);
     }
     assert(memcmp(somes.items, (int[N]){0}, N) == 0);

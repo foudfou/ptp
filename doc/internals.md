@@ -13,7 +13,7 @@ Distance(A, B) = A XOR B.
 The node ID `kad_guid` (`net/kad/id.h`) is a byte array of k = 20 bytes (1 in
 tests, 8 in libtorrent). Kad parameters are defined in `net/kad/defs.h.in`.
 
-> The **routing table** is implemented as hash table: an array of lists
+> The **routing table** is implemented as hash table[^1]: an array of lists
 > (buckets) of at most KAD\_K_CONST node entries [k = 8]. Instead of using a
 > generic hash table implementation, we build a specialized one for specific
 > operations on each list. Lists are sorted by design: depending on if we want
@@ -118,6 +118,16 @@ To store/find a resource with key K:
 2. then use `STORE` to place the value on those closest nodes, or
    `FIND_VALUE(K)` to retrieve it
 
+For example, bittorrent stores: key = info_hash, value = list of peers for that
+torrent. A node typically stores many key-value pairs.
+
 ## Kad lookup
 
 FIXME
+
+[^1]: The routing table is usually implemented in 2 flavors: a fixed-sized hash
+    table, where k-buckets represent the *distance* prefix; or a tree, where
+    tree nodes are *node ID* prefixes / "bit splits" (ex: `1xxx` → left:`10xx`,
+    right:`11xx`) leaf nodes buckets, i.e. a list of kad nodes. In this
+    version, buckets represent regions of the network space, a kind of node ID
+    *trie*.

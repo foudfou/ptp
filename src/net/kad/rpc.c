@@ -117,8 +117,8 @@ kad_rpc_handle_query(struct kad_ctx *ctx, const struct kad_rpc_msg *msg,
         resp.node_id = ctx->routes->self_id;
         resp.type = KAD_RPC_TYPE_RESPONSE;
         resp.meth = KAD_RPC_METH_FIND_NODE;
-        resp.nodes_len = routes_find_closest(ctx->routes, &msg->target, resp.nodes,
-                                             &msg->node_id);
+        resp.nodes_len = routes_find_closest(ctx->routes, resp.nodes,
+                                             &msg->target, &msg->node_id);
         if (!benc_encode_rpc_msg(rsp, &resp)) {
             log_error("Error while encoding find node response.");
             return false;
@@ -157,7 +157,7 @@ kad_lookup_recv(struct kad_ctx *ctx,
         struct kad_node_lookup *nl = kad_lookup_new_from(&msg->nodes[i], query->msg.target);
         if (!nl)
             continue;
-        if (!node_heap_insert(&ctx->lookup.next, nl)) {
+        if (!node_heap_push(&ctx->lookup.next, nl)) {
             log_error("Failed insert into lookup next nodes.");
             free_safer(nl);
         }

@@ -40,6 +40,7 @@
 
 #define BYTE_ARRAY_INIT(typ, ary) ary = (typ){.bytes = {0}, .is_set = false}
 #define BYTE_ARRAY_COPY(dst, src) dst = src
+#define BYTE_ARRAY_CMP(a, b, len) memcmp(&(a)->bytes, &(b)->bytes, len)
 
 #define BYTE_ARRAY_GENERATE_SET(type, len)      \
 /**

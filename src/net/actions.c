@@ -134,7 +134,7 @@ peer_register(struct list_item *peers, int conn, struct sockaddr_storage *addr)
  * Returns 0 on success, -1 on error, 1 when max_peers reached.
  */
 int peer_conn_accept_all(const int listenfd, struct list_item *peers,
-                                const int nfds, const struct config *conf)
+                         const int nfds, const struct config *conf)
 {
     struct sockaddr_storage peer_addr = {0};
     socklen_t peer_addr_len = sizeof(peer_addr);
@@ -560,7 +560,7 @@ lookup_past_insert(struct kad_ctx *ctx,
                    struct kad_node_lookup *contacted[], size_t contacted_len)
 {
     for (size_t i = 0; i < contacted_len; ++i)
-        if (!node_heap_insert(&ctx->lookup.past, contacted[i])) {
+        if (!node_heap_push(&ctx->lookup.past, contacted[i])) {
             log_error("Failed insert into lookup past nodes.");
             free_safer(contacted[i]);
         }
@@ -600,8 +600,8 @@ static bool kad_lookup_start(const kad_guid target, struct kad_ctx *ctx)
         return false;
     }
 
-    next_len = routes_find_closest(ctx->routes, &ctx->routes->self_id,
-                                   next, NULL);
+    next_len = routes_find_closest(ctx->routes, next,
+                                   &ctx->routes->self_id, NULL);
     if (next_len > KAD_ALPHA_CONST)
         next_len = KAD_ALPHA_CONST;
 
@@ -633,7 +633,7 @@ bool kad_lookup_next(const kad_guid target, struct kad_ctx *ctx)
             continue;
         }
 
-        struct kad_node_lookup *nl = node_heap_get(&ctx->lookup.next);
+        struct kad_node_lookup *nl = node_heap_pop(&ctx->lookup.next);
         if (!nl)
             continue;
 

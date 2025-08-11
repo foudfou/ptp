@@ -15,7 +15,6 @@
 #include <unistd.h>
 #include "log.h"
 #include "file.h"
-#include "utils/bitfield.h"
 #include "utils/helpers.h"
 #include "utils/safer.h"
 #include "net/kad/bencode/routes.h"
@@ -131,78 +130,133 @@ static inline int kad_bucket_hash(const kad_guid *self_id,
  */
 static inline size_t
 kad_bucket_get_nodes(const struct list_item *bucket,
-                     struct kad_node_info nodes[], size_t nodes_pos,
-                     size_t max, const kad_guid *caller) {
+                     struct kad_node_info nodes[],
+                     size_t start, size_t stop,
+                     const kad_guid *caller)
+{
     const struct list_item *it = bucket;
     struct kad_node *node;
     size_t bucket_pos = 0;
     list_for(it, bucket) {
-        if (bucket_pos >= max)
+        if (bucket_pos >= stop)
             break;
         node = cont(it, struct kad_node, item);
-        if (caller && kad_guid_eq(&node->info.id, caller)) {
+        if (kad_guid_eq(&node->info.id, caller)) {
             log_debug("%s: ignoring known caller", __func__);
             continue;
         }
-        kad_node_info_copy(&nodes[nodes_pos+bucket_pos], &node->info);
+        BYTE_ARRAY_COPY(nodes[start+bucket_pos], node->info);
         bucket_pos += 1;
     }
     return bucket_pos;
 }
 
+#include "utils/heap.h"
+
+struct candidate {
+    struct kad_node_info node;
+    kad_guid             dist;
+};
+
+int candidate_heap_cmp(const struct candidate *a, const struct candidate *b) {
+    return BYTE_ARRAY_CMP(&a->dist, &b->dist, KAD_GUID_SPACE_IN_BYTES);
+}
+HEAP_GENERATE(candidate_heap, struct candidate*)
+HEAP_GENERATE_REPLACE_TOP(candidate_heap, struct candidate*)  // Add this line
+
 /**
  * Fills the given @nodes array with k nodes closest to the @target node,
  * ignoring the @caller node if known.
  *
- * Traverse the routing table in xor distance ascending order relative to the
+ * Returns number of nodes found.
+ *
+ * @nodes MUST be of length KAD_K_CONST.
+ *
+ * Traverses the routing table in xor distance ascending order relative to the
  * target key. http://stackoverflow.com/a/30655403/421846
  */
-size_t routes_find_closest(struct kad_routes *routes, const kad_guid *target,
-                           struct kad_node_info nodes[], const kad_guid *caller)
-{
-    int bucket_idx = kad_bucket_hash(&routes->self_id, target);
-    const struct list_item *bucket = &routes->buckets[bucket_idx];
+size_t routes_find_closest(struct kad_routes *routes, struct kad_node_info nodes[],
+                           const kad_guid *target, const kad_guid *caller) {
+    size_t nodes_len = 0;
 
-    int prefix_idx = KAD_GUID_SPACE_IN_BITS - bucket_idx;
-    kad_guid prefix_mask, target_next;
-    target_next.is_set = true;
-    size_t nodes_pos = 0;
-    bitfield visited[BITFIELD_RESERVE_BITS(KAD_GUID_SPACE_IN_BITS)] = {0};
-    while (prefix_idx >= 0) {
-        size_t max = KAD_K_CONST - nodes_pos;
-        nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, max, caller);
-        BITFIELD_SET(visited, bucket_idx, 1);
-        // TODO generalize inclusion of __func__
-        // log_debug("%s: nodes added from bucket %d, total=%zu", __func__, bucket_idx, nodes_pos);
-        // log_debug("__bucket_idx=%zu, prefix=%zu, added=%zu", bucket_idx, prefix_idx, nodes_pos);
-        if (nodes_pos >= KAD_K_CONST)
-            goto filled;
-
-        prefix_idx -= 1;
-        kad_guid_reset(&prefix_mask);
-        kad_guid_setbit(&prefix_mask, prefix_idx);
-
-        kad_guid_xor(&target_next, target, &prefix_mask);
-        bucket_idx = kad_bucket_hash(&routes->self_id, &target_next);
-        bucket = &routes->buckets[bucket_idx];
+    if (!target || !target->is_set) {
+        LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES);
+        log_fmt_hex(id, KAD_GUID_SPACE_IN_BYTES, target->bytes);
+        log_error("find_closest: target %s not set.", id);
+        return nodes_len;
     }
 
-    for (int i = KAD_GUID_SPACE_IN_BITS - 1; i >= 0; i--) {
-        if (!BITFIELD_GET(visited, i)) {
-            bucket = &routes->buckets[i];
-            size_t max = KAD_K_CONST - nodes_pos;
-            nodes_pos += kad_bucket_get_nodes(bucket, nodes, nodes_pos, max, caller);
-            BITFIELD_SET(visited, i, 1);
-            // log_debug("%s: other nodes added from bucket %d, total=%zu", __func__, i, nodes_pos);
+    // k+1 to exclude caller afterwards
+    struct candidate candidates[KAD_K_CONST+1] = {0};
+    struct candidate *c = candidates;
+
+    struct candidate_heap sorted = {0};
+    candidate_heap_init(&sorted, KAD_K_CONST+1);
+
+    // traverse routes
+    for (int i = 0; i < KAD_GUID_SPACE_IN_BITS; ++i) {
+        struct list_item *bucket = &routes->buckets[i];
+
+        struct list_item *it = bucket;
+        list_for(it, bucket) {
+            struct kad_node *node = cont(it, struct kad_node, item);
+            /* log_debug("__i=%d, j=%d, bucket len=%d", i, j, list_count(it)); */
+
+            struct candidate tmp = {0};
+            tmp.node = node->info;
+            kad_guid_xor(&tmp.dist, &node->info.id, target);
+
+            /* LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES); */
+            /* log_fmt_hex(id, KAD_GUID_SPACE_IN_BYTES, tmp.node.id.bytes); */
+            /* LOG_FMT_HEX_DECL(dist, KAD_GUID_SPACE_IN_BYTES); */
+            /* log_fmt_hex(dist, KAD_GUID_SPACE_IN_BYTES, tmp.dist.bytes); */
+            /* log_debug("__tmp=%d, id=%s, dist=%s", nodes_len, id, dist); */
+
+            /* log_debug("__sorted.len=%d, K=%d", sorted.len, KAD_K_CONST+1); */
+            if (sorted.len < KAD_K_CONST+1) {
+                *c = tmp;
+                candidate_heap_push(&sorted, c);
+                c++;
+            }
+            else {
+                struct candidate *max = HEAP_PEEK(sorted);
+                // better than worst (of the best candidates) or watermark
+                if (candidate_heap_cmp(&tmp, max) < 0) {
+                    c = max;
+                    *c = tmp;
+                    candidate_heap_replace_top(&sorted, c);
+                }
+            }
+        }
+    }
+
+    // Looping over heap_pop() rather than candidates (faster) since order matters.
+    while ((c = candidate_heap_pop(&sorted))) {
+        if (kad_guid_eq(caller, &c->node.id)) {
+            log_debug("%s: ignoring known caller", __func__);
+            continue;
         }
 
-        if (nodes_pos >= KAD_K_CONST)
-            goto filled;
+        /* LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES); */
+        /* log_fmt_hex(id, KAD_GUID_SPACE_IN_BYTES, c->node.id.bytes); */
+        /* LOG_FMT_HEX_DECL(dist, KAD_GUID_SPACE_IN_BYTES); */
+        /* log_fmt_hex(dist, KAD_GUID_SPACE_IN_BYTES, c->dist.bytes); */
+        /* log_debug("__node=%d, id=%s, dist=%s", nodes_len, id, dist); */
+
+        if  (nodes_len < KAD_K_CONST) {
+            BYTE_ARRAY_COPY(nodes[nodes_len], c->node);
+            nodes_len++;
+        }
+        else {
+            BYTE_ARRAY_COPY(nodes[0], c->node);
+        }
     }
 
-  filled:
-    return nodes_pos;
+    free_safer(sorted.items);
+
+    return nodes_len;
 }
+
 
 /** Count bucket length.  */
 static inline size_t kad_bucket_count(const struct list_item *bucket)
@@ -306,7 +360,7 @@ routes_node_new(const struct kad_node_info *info, time_t time)
     memset(node, 0, sizeof(struct kad_node));
 
     list_init(&node->item);
-    kad_node_info_copy(&node->info, info);
+    node->info = *info;
     node->last_seen = time;
 
     return node;

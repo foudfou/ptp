@@ -21,15 +21,26 @@
 #define HEAP_SIZE_INITIAL 64
 #define HEAP_SIZE_FACTOR 2
 
+/*
+  « Heaps are usually implemented with an array, as follows:
+
+  - Each element in the array represents a node of the heap, and
+  - The parent/child relationship is defined implicitly by the elements'
+    indices in the array. »
+
+  https://en.wikipedia.org/wiki/Heap_(data_structure)
+*/
 #define LEFT(i)   (2*(i) + 1)
 #define RIGHT(i)  (2*(i) + 2)
 #define PARENT(i) (size_t)(((i) - 1)/2)
 
+#define HEAP_PEEK(h) h.items[0]
 
 #define HEAP_GENERATE(name, type)     \
     HEAP_GENERATE_BASE(name, type)    \
-    HEAP_GENERATE_INSERT(name, type)  \
-    HEAP_GENERATE_GET(name, type)
+    HEAP_GENERATE_PUSH(name, type)    \
+    HEAP_GENERATE_POP(name, type)
+//  HEAP_GENERATE_REPLACE_TOP(name, type) implement on demand
 
 #define HEAP_GENERATE_BASE(name, type)                                  \
     struct name {                                                       \
@@ -38,12 +49,18 @@
         type   *items;                                                  \
     };                                                                  \
                                                                         \
+/**
+ * Allocates the heap array.
+ *
+ * CAUTION: Consumers MUST free items after use.
+ */                                                                     \
 static inline                                                           \
 bool name##_init(struct name *h, size_t capa) {                         \
     h->items = calloc(capa, sizeof(type));                              \
     if (h->items == NULL)                                               \
         return false;                                                   \
     h->cap = capa;                                                      \
+    h->len = 0;                                                         \
     return true;                                                        \
 }                                                                       \
                                                                         \
@@ -59,46 +76,14 @@ bool name##_grow(struct name *h) {                                      \
     return true;                                                        \
 }                                                                       \
                                                                         \
-static inline void name##swap(type *a, type *b) {                       \
+static inline void name##_swap(type *a, type *b) {                      \
     type tmp = *b;                                                      \
     *b = *a;                                                            \
     *a = tmp;                                                           \
-}
-
-
-#define HEAP_GENERATE_INSERT(name, type)        \
-/**
- * Can fail if growing fails.
- */                                                                     \
-static inline bool name##_insert(struct name *h, type item)             \
+}                                                                       \
+                                                                        \
+static inline void name##_heapify_down(struct name *h, size_t i)        \
 {                                                                       \
-    if (h->len >= h->cap && !name##_grow(h))                            \
-        return false;                                                   \
-    h->items[h->len] = item;                                            \
-    h->len++;                                                           \
-                                                                        \
-    size_t i = h->len - 1;                                              \
-    while (i > 0 && name##_cmp(h->items[PARENT(i)], h->items[i]) < 0) { \
-        name##swap(&h->items[PARENT(i)], &h->items[i]);                 \
-        i = PARENT(i);                                                  \
-    }                                                                   \
-                                                                        \
-    return true;                                                        \
-}
-
-#define HEAP_GENERATE_GET(name, type)                                   \
-static inline type name##_get(struct name *h)                           \
-{                                                                       \
-    if (h->len == 0)                                                    \
-        /* FIXME ok for pointers, but not for other types */            \
-        return (type)0;                                                 \
-                                                                        \
-    type ret = h->items[0];                                             \
-    h->len--;                                                           \
-    h->items[0] = h->items[h->len];                                     \
-    h->items[h->len] = (type)0;                                         \
-                                                                        \
-    size_t i = 0;                                                       \
     while (i < h->len) {                                                \
         size_t largest = i;                                             \
         size_t l = LEFT(i);                                             \
@@ -109,11 +94,58 @@ static inline type name##_get(struct name *h)                           \
             largest = r;                                                \
         if (largest == i)                                               \
             break;                                                      \
-        name##swap(&h->items[i], &h->items[largest]);                   \
+        name##_swap(&h->items[i], &h->items[largest]);                  \
         i = largest;                                                    \
     }                                                                   \
+}
+
+#define HEAP_GENERATE_PUSH(name, type)                                  \
+/**
+ * Can fail if growing fails.
+ */                                                                     \
+static inline bool name##_push(struct name *h, type item)               \
+{                                                                       \
+    if (h->len >= h->cap && !name##_grow(h))                            \
+        return false;                                                   \
+    h->items[h->len] = item;                                            \
+    h->len++;                                                           \
+                                                                        \
+    size_t i = h->len - 1;                                              \
+    while (i > 0 && name##_cmp(h->items[PARENT(i)], h->items[i]) < 0) { \
+        name##_swap(&h->items[PARENT(i)], &h->items[i]);                \
+        i = PARENT(i);                                                  \
+    }                                                                   \
+                                                                        \
+    return true;                                                        \
+}
+
+#define HEAP_GENERATE_POP(name, type)                                   \
+static inline type name##_pop(struct name *h)                           \
+{                                                                       \
+    if (h->len == 0)                                                    \
+        /* FIXME ok for pointers, but not for other types */            \
+        return (type)0;                                                 \
+                                                                        \
+    type ret = h->items[0];                                             \
+    h->len--;                                                           \
+    h->items[0] = h->items[h->len];                                     \
+    h->items[h->len] = (type)0;                                         \
+                                                                        \
+    name##_heapify_down(h, 0);                                          \
                                                                         \
     return ret;                                                         \
+}
+
+#define HEAP_GENERATE_REPLACE_TOP(name, type)                           \
+static inline void name##_replace_top(struct name *h, type item)        \
+{                                                                       \
+    if (h->len == 0) {                                                  \
+        name##_push(h, item);                                           \
+        return;                                                         \
+    }                                                                   \
+                                                                        \
+    h->items[0] = item;                                                 \
+    name##_heapify_down(h, 0);                                          \
 }
 
 

@@ -26,13 +26,13 @@ void kad_lookup_reset(struct kad_lookup *lookup)
 
     while (lookup->next.len > 0) {
         // log_error("___lookup reset: next.len=%ld", lookup->next.len);
-        struct kad_node_lookup *nl = node_heap_get(&lookup->next);
+        struct kad_node_lookup *nl = node_heap_pop(&lookup->next);
         // log_error("___lookup reset: next nl=%p", nl);
         if (nl) free_safer(nl);
     }
 
     while (lookup->past.len > 0) {
-        struct kad_node_lookup *nl = node_heap_get(&lookup->past);
+        struct kad_node_lookup *nl = node_heap_pop(&lookup->past);
         // log_error("___lookup reset: past nl=%p", nl);
         if (nl) free_safer(nl);
     }
