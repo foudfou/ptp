@@ -36,6 +36,7 @@ static struct log_ctx_t {
     .mqr     = (mqd_t)-1,
 };
 
+// See also syslog.h(3)
 static const char *log_level_prefix(int level)
 {
     switch (level) {
@@ -125,6 +126,12 @@ bool log_fmt_hex(char dst[], const size_t len, const unsigned char *id)
     return true;
 }
 
+/**
+ * CONSUMER MUST FREE the allocated string.
+ *
+ * @prio must match the desired log level. For example, if the output string is
+ * used in LOG_DEBUG and LOG_ERR messages, then use @prio LOG_ERR.
+ */
 char *log_fmt_hex_dyn(const int prio, const unsigned char *id, const size_t len)
 {
     if (!(LOG_MASK(prio) & log_ctx.fmask))

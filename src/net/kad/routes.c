@@ -403,13 +403,15 @@ bool routes_upsert(struct kad_routes *routes, const struct kad_node_info *node, 
 {
     bool rv = true;
 
-    char *id = log_fmt_hex_dyn(LOG_DEBUG, node->id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex_dyn(LOG_ERR, node->id.bytes, KAD_GUID_SPACE_IN_BYTES);
     if ((rv = routes_update(routes, node, time)))
         log_debug("Routes update of %s (id=%s).", &node->addr_str, id);
     else if ((rv = routes_insert(routes, node, time)))
         log_debug("Routes insert of %s (id=%s).", &node->addr_str, id);
-    else
-        log_warning("Failed to upsert kad_node (id=%s)", id);
+    else {
+        log_error("Failed to upsert kad_node (id=%s)", id);
+        rv = false;
+    }
     free_safer(id);
 
     return rv;

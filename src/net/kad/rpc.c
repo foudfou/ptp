@@ -81,7 +81,7 @@ void kad_rpc_terminate(struct kad_ctx *ctx, const char conf_dir[])
 
 static bool kad_rpc_handle_error(const struct kad_rpc_msg *msg)
 {
-    char *id = log_fmt_hex_dyn(LOG_DEBUG, msg->node_id.bytes, KAD_GUID_SPACE_IN_BYTES);
+    char *id = log_fmt_hex_dyn(LOG_ERR, msg->node_id.bytes, KAD_GUID_SPACE_IN_BYTES);
     log_error("Received error message (%zull) from id(%s): %s.",
               msg->err_code, id, msg->err_msg);
     free_safer(id);

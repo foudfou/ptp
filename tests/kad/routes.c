@@ -130,6 +130,9 @@ int main(int argc, char *argv[])
     assert(routes_upsert(routes, &opp, 1504274391));
     assert(list_count(&routes->buckets[blk_idx]) == 8);
     assert(list_count(&routes->replacements[blk_idx]) == 2);
+    // failure - self
+    info.id = routes->self_id;
+    assert(!routes_upsert(routes, &info, 0));
 
     routes_destroy(routes);
 
