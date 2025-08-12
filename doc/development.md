@@ -91,6 +91,14 @@ In `tests/integratio/`. One python runner per test suite or use case.
 
 A test usually starts a ptp server and checks its interaction with it.
 
+#### Valgrind
+
+**Please run manually** from time to time.
+
+    meson test --wrapper='valgrind --tool=helgrind'
+    valgrind --leak-check=full --show-leak-kinds=all --trace-children=yes \
+        tests/integration/send-to-server routes_state build/src/ptp -c tests/kad/data
+
 ## Lint
 
 We use *cppcheck* (`tools/cppcheck-run`).

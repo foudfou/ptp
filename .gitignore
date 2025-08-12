@@ -28,8 +28,11 @@
 *.x86_64
 *.hex
 
-build*/
+GPATH
+GRTAGS
+GTAGS
 TAGS
+build*/
 /data/
 !/data/nodes.dat
 /doc/
@@ -39,3 +42,7 @@ TAGS
 __pycache__/
 meson-logs/
 meson-private/
+
+.cache/
+.dir-locals.el
+.mypy_cache/
