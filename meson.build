@@ -32,7 +32,7 @@ base_inc = include_directories(['src'])
 subdir('src')
 subdir('tests')
 subdir('tools')
-subdir('man')
+subdir('doc')
 subdir('data')
 
 sh = find_program('sh')

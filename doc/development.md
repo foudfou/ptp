@@ -144,6 +144,12 @@ We don't have a minimum coverage target yet.
 
 - Favor stack allocation to heap allocation.
 
+## Documentation
+
+* `doc/development.md`
+* `doc/internals.md`
+* `doc/man/ptp.1.in`
+
 
 [^1]: We're proud to be pretty early adopters of meson, with `0.37.0.dev1`,
     when it was not packaged on distros and the best was to embed it into the repo.

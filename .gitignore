@@ -35,9 +35,6 @@ TAGS
 build*/
 /data/
 !/data/nodes.dat
-/doc/
-!/doc/development.md
-!/doc/internals.md
 
 __pycache__/
 meson-logs/

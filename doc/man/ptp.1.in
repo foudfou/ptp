@@ -1,5 +1,5 @@
-.\" mdoc
-.Dd $Mdocdate$ \" March 9, 2019
+.\" Copyright (c) 2019 Foudil Brétel.  All rights reserved.
+.Dd March 9, 2019
 .Dt @PROJ_NAME_UPPER@ 1
 .Os \" Current operating system.
 .Sh NAME
@@ -33,7 +33,7 @@ Set log output file.
 .It Fl p Ns , Fl \-port Ns = Ns Ar port
 Set bind port for both tcp and upd sockets.
 .It Fl s Ns , Fl \-syslog
-Use syslog
+Use syslog.
 .It Fl h Ns , Fl \-help
 Print help and usage and exit.
 .It Fl v Ns , Fl \-version
