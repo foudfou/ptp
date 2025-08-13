@@ -16,7 +16,7 @@ Then
 
     mkdir build && cd build
     meson
-    ninja
+    meson compile
 
 ## Usage
 

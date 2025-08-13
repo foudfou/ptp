@@ -137,6 +137,11 @@ static inline type name##_pop(struct name *h)                           \
 }
 
 #define HEAP_GENERATE_REPLACE_TOP(name, type)                           \
+/**
+ * This is more efficient than pop-then-push, as it avoids a heapify_up.
+ *
+ * Use HEAP_PEEK() to identify the root item.
+ */                                                                     \
 static inline void name##_replace_top(struct name *h, type item)        \
 {                                                                       \
     if (h->len == 0) {                                                  \

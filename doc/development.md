@@ -85,7 +85,9 @@ See [meson doc](https://mesonbuild.com/Unit-tests.html) for more options.
 
 ### Integration tests
 
-In `tests/integratio/`. One python runner per test suite or use case.
+**2025-08 ipv6 is required**: `sysctl net.ipv6.conf.lo.disable_ipv6=0`
+
+In `tests/integration/`. One python runner per test suite or use case.
 
     meson test "integration/*"
 
@@ -95,7 +97,7 @@ A test usually starts a ptp server and checks its interaction with it.
 
 **Please run manually** from time to time.
 
-    meson test --wrapper='valgrind --tool=helgrind'
+    meson test --wrapper='valgrind --trace-children=yes'
     valgrind --leak-check=full --show-leak-kinds=all --trace-children=yes \
         tests/integration/send-to-server routes_state build/src/ptp -c tests/kad/data
 

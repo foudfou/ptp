@@ -20,6 +20,7 @@ static inline int min_heap_cmp(const struct some *a, const struct some *b)
     return b->c - a->c;
 }
 HEAP_GENERATE(min_heap, struct some *)
+HEAP_GENERATE_REPLACE_TOP(min_heap, struct some *)
 
 #define N 10
 
@@ -77,19 +78,36 @@ int main ()
      */
     struct some expect_some[N] = {{65},{66},{69},{68},{67},{73},{70},{74},{71},{72}};
     for (size_t i=0; i<N; ++i) {
-        /* printf("%d\n",somes.items[i]->c); */
+        /* printf("heap[%zu] -> %d; underlying[%zu]=%d\n", i, somes.items[i]->c, i, have[i].c); */
         assert(somes.items[i]->c == expect_some[i].c);
     }
 
+    // replace_top
+    struct some *min = HEAP_PEEK(somes);
+    min->c = 75;
+    min_heap_replace_top(&somes, min);
+    /*
+      |            66
+      |      67          69
+      |   68     72    73  70
+      | 74  71 75
+    */
+    struct some expect_some2[] = {{66},{67},{69},{68},{72},{73},{70},{74},{71},{75}};
+    for (size_t i=0; i<N; ++i) {
+        /* printf("heap[%zu] -> %d; underlying[%zu]=%d\n", i, somes.items[i]->c, i, have[i].c); */
+        assert(somes.items[i]->c == expect_some2[i].c);
+    }
+
+
+    struct some expect_pop[N] = {{66},{67},{68},{69},{70},{71},{72},{73},{74},{75}};
     for (size_t i=0; i<N; ++i){
         struct some *got = min_heap_pop(&somes);
-        assert(got->c == have[N - 1 - (int)i].c);
+        assert(got->c == expect_pop[(int)i].c);
     }
     assert(memcmp(somes.items, (int[N]){0}, N) == 0);
 
+
     free_safer(somes.items);
-
-
 
 
     return 0;

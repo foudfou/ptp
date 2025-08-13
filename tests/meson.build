@@ -46,7 +46,7 @@ foreach fname : tests_sources
                    dependencies : lib_deps,
                    link_with : [libtest_so],
                   )
-  test('unit/'+fname, exe, args : meson.project_source_root())
+  test('unit/'+test_name, exe, args : meson.project_source_root())
 endforeach
 
 tests_alt_sources = [
@@ -62,7 +62,7 @@ foreach fname : tests_alt_sources
                    dependencies : lib_deps,
                    link_with : libalt_so,
                   )
-  test('unit/'+fname, exe)
+  test('unit/'+test_name, exe)
 endforeach
 
 subdir('integration')
