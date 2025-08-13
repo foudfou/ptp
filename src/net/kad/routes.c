@@ -50,7 +50,7 @@ static void routes_init(struct kad_routes *routes)
     }
 }
 
-struct kad_routes *routes_create()
+static struct kad_routes *routes_new()
 {
     struct kad_routes *routes = malloc(sizeof(struct kad_routes));
     if (!routes) {
@@ -58,6 +58,14 @@ struct kad_routes *routes_create()
         return NULL;
     }
     routes_init(routes);
+    return routes;
+}
+
+struct kad_routes *routes_create()
+{
+    struct kad_routes *routes = NULL;
+    if ((routes = routes_new()) == NULL)
+        return NULL;
 
     /* « Node IDs are currently just random 160-bit identifiers, though they
        could equally well be constructed as in Chord. » */
@@ -458,12 +466,8 @@ int routes_read_file(struct kad_routes **routes, const char state_path[])
         goto fail;
     }
 
-    *routes = malloc(sizeof(struct kad_routes));
-    if (!*routes) {
-        log_perror(LOG_ERR, "Failed malloc: %s.", errno);
+    if ((*routes = routes_new()) == NULL)
         goto fail;
-    }
-    routes_init(*routes);
 
     (*routes)->self_id = encoded.self_id;
     char *id = log_fmt_hex_dyn(LOG_DEBUG, (*routes)->self_id.bytes, KAD_GUID_SPACE_IN_BYTES);
@@ -480,7 +484,8 @@ int routes_read_file(struct kad_routes **routes, const char state_path[])
     return encoded.nodes_len;
 
   fail:
-    *routes = NULL;
+    if (*routes != NULL)
+        free_safer(*routes);
     return -1;
 }
 
