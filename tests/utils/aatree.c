@@ -25,7 +25,7 @@ AATREE_GENERATE(foo, aatree, node, key)
 /* For debugging, recover the definition from the SCM. */
 extern void aatree_display_nodes(struct aatree_node *root);
 
-bool aatree_validate(struct aatree_node *root)
+static bool aatree_validate(struct aatree_node *root)
 {
     if (!root)
         return true;
@@ -63,7 +63,6 @@ int main ()
 
     /* Btree declaration */
     AATREE_DECL(aa1);
-    // cppcheck-suppress constArgument
     assert(!aa1);
     assert(aatree_is_empty(aa1));
 

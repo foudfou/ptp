@@ -109,7 +109,7 @@ bool kad_response(int sock, struct iobuf *rsp, struct sockaddr_storage addr)
 }
 
 static struct peer*
-peer_register(struct list_item *peers, int conn, struct sockaddr_storage *addr)
+peer_register(struct list_item *peers, int conn, const struct sockaddr_storage *addr)
 {
     struct peer *peer = calloc(1, sizeof(struct peer));
     if (!peer) {
@@ -180,7 +180,7 @@ int peer_conn_accept_all(const int listenfd, struct list_item *peers,
         log_info("Accepted connection from peer %s.", p->addr_str);
         npeer++;
 
-    } while (conn != -1);
+    } while (conn != -1); // cppcheck-suppress knownConditionTrueFalse
 
     if (fail)
         return -1;
@@ -384,9 +384,9 @@ bool kad_bootstrap(const struct config *conf, struct kad_ctx *kctx)
     return kad_lookup_start(kctx->routes->self_id, kctx);
 }
 
-bool kad_query(struct kad_ctx *kctx,
-               const struct kad_node_info node,
-               const struct kad_rpc_msg msg)
+static bool kad_query(struct kad_ctx *kctx,
+                      const struct kad_node_info node,
+                      const struct kad_rpc_msg msg)
 {
     struct kad_rpc_query *query = calloc(1, sizeof(struct kad_rpc_query));
     if (!query) {
@@ -464,7 +464,7 @@ bool kad_find_node(struct kad_ctx *kctx, const struct kad_node_info node,
 
 static bool kad_schedule_find_nodes(
     const kad_guid target,
-    struct kad_node_info nodes[], size_t nodes_len,
+    const struct kad_node_info nodes[], size_t nodes_len,
     struct kad_ctx *kctx)
 {
     long long now = now_millis();
@@ -548,7 +548,7 @@ bool kad_refresh(void *data)
     return true;
 }
 
-void kad_lookup_complete(struct kad_ctx *ctx)
+static void kad_lookup_complete(struct kad_ctx *ctx)
 {
     // TODO return the k closest nodes to target from lookup.past
     kad_lookup_reset(&ctx->lookup);

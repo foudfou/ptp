@@ -38,7 +38,7 @@ void kad_lookup_reset(struct kad_lookup *lookup)
     }
 }
 
-bool kad_lookup_par_is_empty(struct kad_lookup *lookup)
+bool kad_lookup_par_is_empty(const struct kad_lookup *lookup)
 {
     // Consider the whole par[], not its dynamic portion lookup->par_len.
     size_t par_len = KAD_K_CONST;

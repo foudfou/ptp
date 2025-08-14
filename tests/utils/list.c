@@ -71,8 +71,8 @@ int main ()
     assert(i == -1);
 
     /* List delete/remove/pop */
-    struct list_item * first = list.next;
-    struct list_item * second = list.next->next;
+    const struct list_item * first = list.next;
+    const struct list_item * second = list.next->next;
     list_delete_first(&list);
     assert(first == first->prev && first->prev == first->next);
     assert(list.next == second);

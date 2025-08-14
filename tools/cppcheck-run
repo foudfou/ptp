@@ -26,15 +26,22 @@ function check_cppcheck_version {
 
 check_cppcheck_version
 
-cppcheck --enable=all --inconclusive \
-  --std=c23 --language=c \
+
+cppcheck --std=c23 --language=c \
+  --enable=all \
+  --safety \
+  --inconclusive \
   --template="{file}({line}): {severity} ({id}): {message}" \
-  --error-exitcode=1 --inline-suppr \
+  --error-exitcode=1 \
+  --inline-suppr \
   --suppress=assertWithSideEffect \
   --suppress=missingIncludeSystem \
   --suppress=ctunullpointer:$MESON_SOURCE_ROOT/tests/utils/bstree.c \
   --suppress=ctunullpointer:$MESON_SOURCE_ROOT/tests/utils/heap.c \
-  --suppress=constArgument:$MESON_SOURCE_ROOT/tests/utils/bits.c \
+  --suppress=unusedFunction:$MESON_SOURCE_ROOT/src/net/kad/id.h \
+  --suppress=unusedFunction:$MESON_SOURCE_ROOT/src/utils/aatree.h \
+  --suppress=unusedFunction:$MESON_SOURCE_ROOT/src/utils/byte_array.h \
+  --suppress=unusedFunction:$MESON_SOURCE_ROOT/src/utils/list.h \
   -I$MESON_SOURCE_ROOT/src \
   -I$MESON_SOURCE_ROOT/tests \
   -I$MESON_BUILD_ROOT/src \
@@ -42,8 +49,9 @@ cppcheck --enable=all --inconclusive \
   -I$MESON_BUILD_ROOT/src/net/kad/.tiny \
   $MESON_SOURCE_ROOT/src \
   $MESON_SOURCE_ROOT/tests \
+  --check-level=exhaustive \
   --checkers-report=cppcheck-report.txt
   # --xml  # find error id to ignore
   # --check-config
   # --force \
-  # --check-level=exhaustive \
+  # -j8  # confuses cppcheck

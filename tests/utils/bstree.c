@@ -27,7 +27,6 @@ int main ()
 {
     /* Btree declaration */
     BSTREE_DECL(tree);
-    // cppcheck-suppress constArgument
     assert(!tree);
     assert(bstree_is_empty(tree));
     assert(!foo_search(tree, "hello"));
@@ -260,7 +259,7 @@ int main ()
 
     /* Traversal */
     struct bstree_node *it = bstree_first(digits);
-    char *expected = "0123456789"; int i = 0;
+    const char *expected = "0123456789"; int i = 0;
     while (it) {
         assert((cont(it, struct foo, node)->key)[0] == expected[i]);
         it = bstree_next(it); i++;

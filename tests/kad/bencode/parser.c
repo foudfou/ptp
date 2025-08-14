@@ -50,12 +50,7 @@ int main ()
 
     assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
 
-    struct benc_literal literals[16] = {0};
-    struct benc_node nodes[16] = {0};
-    struct benc_repr repr = {
-        .lit=literals, .lit_len=16, .lit_off=0,
-        .n=nodes, .n_len=16, .n_off=0
-    };
+    benc_repr_init();
 
     // {d:["a",1,{v:"none"}],i:42}
     strcpy(buf,"d1:dl1:ai1ed1:v4:noneee1:ii42ee");
@@ -79,7 +74,7 @@ int main ()
     p = p->chd[0];
     struct benc_node *d = NULL;
     for (size_t i = 0; i < p->chd_off; ++i) {
-        struct benc_node *n = p->chd[i];
+        const struct benc_node *n = p->chd[i];
         if (n->typ == BENC_NODE_TYPE_DICT) {
             d = benc_node_find_key(n, "v", 1);
             if (d) {

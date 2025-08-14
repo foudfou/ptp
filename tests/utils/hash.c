@@ -73,7 +73,7 @@ int main ()
     struct stoi * found = stoi_get(hash, "two");
     assert(!strncmp(found->key, "two", 3));
     assert(found->val == 2);
-    struct stoi * notfound = stoi_get(hash, "three");
+    const struct stoi * notfound = stoi_get(hash, "three");
     assert(!notfound);
 
     /* Hash deletion */
@@ -91,7 +91,7 @@ int main ()
         assert(tmp);
         values[j++] = tmp->val;
     }
-    int rule1[] = {2, 1}; int rule2[] = {1, 2};
+    const int rule1[] = {2, 1}; const int rule2[] = {1, 2};
     assert(!memcmp(values, rule1, 2*sizeof(int)) ||
            !memcmp(values, rule2, 2*sizeof(int)));
 
@@ -101,7 +101,7 @@ int main ()
     HASH_DECL(phone_book, HASH_SIZE);
     hash_init(phone_book, HASH_SIZE);
     person_by_key_insert(phone_book, bob.key, &(bob.item));
-    struct person * someone = person_by_key_get(phone_book, 0xad00fe00);
+    const struct person * someone = person_by_key_get(phone_book, 0xad00fe00);
     assert(!strncmp(someone->val.name, "bob", 3));
 
 

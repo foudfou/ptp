@@ -25,7 +25,7 @@ static int pollfds_update(struct pollfd fds[], const int nlisten,
     struct list_item * it = peers;
     int npeer = nlisten;
     list_for(it, peers) {
-        struct peer *p = cont(it, struct peer, item);
+        const struct peer *p = cont(it, struct peer, item);
         if (!p) {
             log_error("Undefined container in list.");
             return npeer;
@@ -75,7 +75,8 @@ bool server_run(const struct config *conf)
     }
     log_info("Server started.");
 
-    event_queue evq = {0};
+    event_queue evq;
+    event_queue_init(&evq);
 
     long long tick_init = now_millis();
     if (tick_init < 0)

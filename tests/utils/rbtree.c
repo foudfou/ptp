@@ -25,7 +25,7 @@ extern void rbtree_display_nodes(struct rbtree_node *root);
 #define IS_RED(node) (node != NULL && (node)->color == RB_RED)
 
 /* http://www.eternallyconfuzzled.com/tuts/datastructures/jsw_tut_rbtree.aspx */
-int rbtree_validate(struct rbtree_node *root)
+static int rbtree_validate(struct rbtree_node *root)
 {
     if (!root)
         return 1;
@@ -118,7 +118,6 @@ int main ()
 
     /* Btree declaration */
     RBTREE_DECL(tree);
-    // cppcheck-suppress constArgument
     assert(!tree);
     assert(rbtree_is_empty(tree));
 

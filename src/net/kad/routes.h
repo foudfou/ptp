@@ -83,7 +83,6 @@ struct kad_routes *routes_create();
 void routes_destroy(struct kad_routes * routes);
 
 /* routes_get() intentionally kept internal. */
-bool routes_update(struct kad_routes *routes, const struct kad_node_info *info, time_t time);
 bool routes_insert(struct kad_routes *routes, const struct kad_node_info *info, time_t time);
 bool routes_upsert(struct kad_routes *routes, const struct kad_node_info *node, time_t time);
 bool routes_delete(struct kad_routes *routes, const kad_guid *node_id);

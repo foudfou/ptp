@@ -56,7 +56,7 @@ struct bstree_node {
 /**
  * Test wether a tree is empty.
  */                                                                 \
-static inline bool type##_is_empty(BSTREE_NODE(type) *tree)         \
+static inline bool type##_is_empty(const BSTREE_NODE(type) *tree)   \
 {                                                                   \
     return !tree;                                                   \
 }

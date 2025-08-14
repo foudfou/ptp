@@ -267,6 +267,36 @@ kad_rpc_error(struct kad_rpc_msg *out, const enum kad_rpc_err err,
 }
 
 /**
+ * For debugging only !
+ */
+static void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
+{
+    char *tx_id = log_fmt_hex_dyn(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
+    char *node_id = log_fmt_hex_dyn(LOG_DEBUG, msg->node_id.bytes,
+                                    KAD_GUID_SPACE_IN_BYTES);
+    log_debug(
+        "msg={\n  tx_id=0x%s\n  node_id=0x%s\n  type=%d\n  err_code=%lld\n"
+        "  err_msg=%s\n  meth=%d",
+        tx_id, node_id, msg->type, msg->err_code, msg->err_msg,
+        msg->meth, msg->target);
+    free_safer(tx_id);
+    free_safer(node_id);
+
+    node_id = log_fmt_hex_dyn(LOG_DEBUG, msg->target.bytes,
+                              msg->target.is_set ? KAD_GUID_SPACE_IN_BYTES : 0);
+    log_debug("  target=0x%s", node_id);
+    free_safer(node_id);
+
+    for (size_t i = 0; i < msg->nodes_len; i++) {
+        node_id = log_fmt_hex_dyn(LOG_DEBUG, msg->nodes[i].id.bytes,
+                                  KAD_GUID_SPACE_IN_BYTES);
+        log_debug("  nodes[%zu]=0x%s %s", i, node_id, msg->nodes[i].addr_str);
+        free_safer(node_id);
+    }
+    log_debug("}");
+}
+
+/**
  * Processes the incoming message in @buf and places the response, if any,
  * into the provided @rsp buffer.
  */
@@ -315,36 +345,6 @@ bool kad_rpc_handle(struct kad_ctx *ctx, const struct sockaddr_storage *addr,
         log_error("Unknown msg type.");
         return false;
     }
-}
-
-/**
- * For debugging only !
- */
-void kad_rpc_msg_log(const struct kad_rpc_msg *msg)
-{
-    char *tx_id = log_fmt_hex_dyn(LOG_DEBUG, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
-    char *node_id = log_fmt_hex_dyn(LOG_DEBUG, msg->node_id.bytes,
-                                    KAD_GUID_SPACE_IN_BYTES);
-    log_debug(
-        "msg={\n  tx_id=0x%s\n  node_id=0x%s\n  type=%d\n  err_code=%lld\n"
-        "  err_msg=%s\n  meth=%d",
-        tx_id, node_id, msg->type, msg->err_code, msg->err_msg,
-        msg->meth, msg->target);
-    free_safer(tx_id);
-    free_safer(node_id);
-
-    node_id = log_fmt_hex_dyn(LOG_DEBUG, msg->target.bytes,
-                              msg->target.is_set ? KAD_GUID_SPACE_IN_BYTES : 0);
-    log_debug("  target=0x%s", node_id);
-    free_safer(node_id);
-
-    for (size_t i = 0; i < msg->nodes_len; i++) {
-        node_id = log_fmt_hex_dyn(LOG_DEBUG, msg->nodes[i].id.bytes,
-                                  KAD_GUID_SPACE_IN_BYTES);
-        log_debug("  nodes[%zu]=0x%s %s", i, node_id, msg->nodes[i].addr_str);
-        free_safer(node_id);
-    }
-    log_debug("}");
 }
 
 bool kad_rpc_query_create(struct iobuf *buf,

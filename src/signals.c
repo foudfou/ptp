@@ -6,7 +6,7 @@
 
 volatile sig_atomic_t sig_events = 0;
 
-void sig_handler(int signo)
+static void sig_handler(int signo)
 {
     switch (signo) {
     case SIGALRM:

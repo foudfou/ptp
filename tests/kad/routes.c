@@ -3,13 +3,12 @@
 #include "file.h"
 #include "net/socket.h"
 #include "utils/array.h"
-#include "utils/safer.h"
 #include "kad/test_util.h"
 #include "net/kad/routes.c"      // testing static functions
 
 KAD_TEST_NODES_DECL;
 
-bool files_eq(const char f1[], const char f2[]) {
+static bool files_eq(const char f1[], const char f2[]) {
     char buf1[256];
     size_t buf1_len = 0;
     if (!file_read(buf1, &buf1_len, f1)) return false;
@@ -19,13 +18,13 @@ bool files_eq(const char f1[], const char f2[]) {
     return buf1_len == buf2_len && memcmp(buf1, buf2, buf1_len) == 0;
 }
 
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
     if (argc < 2) {
         fprintf(stdout, "Missing SOURCE_DIR argument\n");
         exit(1);
     }
-    char *source_dir = argv[1];
+    const char *source_dir = argv[1];
 
 
     assert(kad_bucket_hash(&(kad_guid){.bytes = {0}}, &(kad_guid){.bytes = {0}})
@@ -61,9 +60,10 @@ int main(int argc, char *argv[])
         &(kad_guid){.bytes = {[0]=0x7f, [1]=0x0}, .is_set = true});
     assert(bkt_idx == KAD_GUID_SPACE_IN_BITS-1);
 
-    assert(!kad_guid_eq(
-        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}},
-        &(kad_guid){.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}}));
+    // taking it slow for cppcheck
+    kad_guid id1 = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x0}};
+    kad_guid id2 = {.bytes = {[KAD_GUID_SPACE_IN_BYTES-1]=0x1}};
+    assert(!kad_guid_eq(&id1, &id2));
     assert(!kad_guid_eq(
         &(kad_guid){.bytes = "abcdefghij0123456789"},
         &(kad_guid){.bytes = "\x00""bcdefghij0123456789"}));

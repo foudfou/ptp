@@ -37,7 +37,7 @@ static void usage(void)
            " -v, --version           Print version of the server\n");
 }
 
-bool init_conf_dir(struct config *conf) {
+static bool init_conf_dir(struct config *conf) {
     char abspath[PATH_MAX] = "\0";
     if (!resolve_path(conf->conf_dir, abspath, sizeof(conf->conf_dir))) {
         fprintf(stderr, "Cannot resolve path %s.\n", conf->conf_dir);
@@ -66,7 +66,7 @@ bool init_conf_dir(struct config *conf) {
 }
 
 
-bool init_config(struct config *conf) {
+static bool init_config(struct config *conf) {
     if (!init_conf_dir(conf)) {
         return false;
     }

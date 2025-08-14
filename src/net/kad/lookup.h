@@ -45,6 +45,7 @@ int node_heap_cmp(const struct kad_node_lookup *a,
     return i == KAD_GUID_SPACE_IN_BYTES ? 0 : xb - xa;
 }
 
+// cppcheck-suppress ctunullpointer
 HEAP_GENERATE(node_heap, struct kad_node_lookup *)
 
 struct kad_lookup {
@@ -58,7 +59,7 @@ struct kad_lookup {
 void kad_lookup_init(struct kad_lookup *lookup);
 void kad_lookup_terminate(struct kad_lookup *lookup);
 void kad_lookup_reset(struct kad_lookup *lookup);
-bool kad_lookup_par_is_empty(struct kad_lookup *lookup);
+bool kad_lookup_par_is_empty(const struct kad_lookup *lookup);
 bool kad_lookup_par_add(struct kad_lookup *lookup, struct kad_rpc_query *query);
 bool kad_lookup_par_remove(struct kad_lookup *lookup, const struct kad_rpc_query *query);
 struct kad_node_lookup *kad_lookup_new_from(const struct kad_node_info *info, const kad_guid target);

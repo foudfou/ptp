@@ -40,7 +40,7 @@ int main ()
       |   6   7   1   4
       |  0 3 2
      */
-    int expect_ints[N] = {9,8,5,6,7,1,4,0,3,2};
+    const int expect_ints[N] = {9,8,5,6,7,1,4,0,3,2};
     assert(ints.len == N);
     assert(memcmp(ints.items, expect_ints, N) == 0);
 
@@ -101,7 +101,7 @@ int main ()
 
     struct some expect_pop[N] = {{66},{67},{68},{69},{70},{71},{72},{73},{74},{75}};
     for (size_t i=0; i<N; ++i){
-        struct some *got = min_heap_pop(&somes);
+        const struct some *got = min_heap_pop(&somes);
         assert(got->c == expect_pop[(int)i].c);
     }
     assert(memcmp(somes.items, (int[N]){0}, N) == 0);

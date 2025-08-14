@@ -65,7 +65,7 @@ int timers_get_soonest(struct list_item *timers)
 
     struct list_item * it = timers;
     list_for(it, timers) {
-        struct timer *t = cont(it, struct timer, item);
+        const struct timer *t = cont(it, struct timer, item);
         if (!t) {
             log_error("Undefined container in list.");
             return -2;

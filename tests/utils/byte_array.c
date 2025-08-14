@@ -3,6 +3,7 @@
 #include "utils/byte_array.h"
 
 #define SOME_ID_LEN_IN_BYTES 4
+// cppcheck-suppress [ctunullpointer]
 BYTE_ARRAY_GENERATE(some_id, SOME_ID_LEN_IN_BYTES)
 
 int main ()

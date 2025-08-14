@@ -255,7 +255,7 @@ benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
         // dict key
         if (lit->t == BENC_LITERAL_TYPE_STR &&
             stack_top && stack_top->typ == BENC_NODE_TYPE_DICT) {
-            struct benc_node *dup = benc_node_find_key(stack_top, lit->s.p, lit->s.len);
+            const struct benc_node *dup = benc_node_find_key(stack_top, lit->s.p, lit->s.len);
             if (dup) {
                 log_error("Duplicate dict_entry");
                 return false;

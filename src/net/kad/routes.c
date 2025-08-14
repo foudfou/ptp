@@ -29,7 +29,7 @@ void rand_init()
 {
     struct timespec time;
     if (clock_gettime(CLOCK_REALTIME, &time) < 0)
-        log_perror(LOG_ERR, "Failed clock_gettime(): %s", errno);
+        log_perror(LOG_ERR, "Failed clock_gettime(): %s.", errno);
     unsigned int seed = time.tv_sec ^ time.tv_nsec ^ getpid();
     srandom(seed);
 }
@@ -167,10 +167,10 @@ struct candidate {
     kad_guid             dist;
 };
 
-int candidate_heap_cmp(const struct candidate *a, const struct candidate *b) {
+static int candidate_heap_cmp(const struct candidate *a, const struct candidate *b) {
     return BYTE_ARRAY_CMP(&a->dist, &b->dist, KAD_GUID_SPACE_IN_BYTES);
 }
-HEAP_GENERATE(candidate_heap, struct candidate*)
+HEAP_GENERATE(candidate_heap, struct candidate*) // cppcheck-suppress ctunullpointer
 HEAP_GENERATE_REPLACE_TOP(candidate_heap, struct candidate*)  // Add this line
 
 /**
@@ -188,7 +188,11 @@ size_t routes_find_closest(struct kad_routes *routes, struct kad_node_info nodes
                            const kad_guid *target, const kad_guid *caller) {
     size_t nodes_len = 0;
 
-    if (!target || !target->is_set) {
+    if (!target) {
+        log_error("find_closest: null target.");
+        return nodes_len;
+    }
+    if (!target->is_set) {
         LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES);
         log_fmt_hex(id, KAD_GUID_SPACE_IN_BYTES, target->bytes);
         log_error("find_closest: target %s not set.", id);
@@ -212,7 +216,7 @@ size_t routes_find_closest(struct kad_routes *routes, struct kad_node_info nodes
             /* log_debug("__i=%d, j=%d, bucket len=%d", i, j, list_count(it)); */
 
             struct candidate tmp = {0};
-            tmp.node = node->info;
+            tmp.node = node->info; // cppcheck-suppress nullPointer
             kad_guid_xor(&tmp.dist, &node->info.id, target);
 
             /* LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES); */
@@ -334,7 +338,7 @@ routes_get_with_bucket(struct kad_routes *routes, const kad_guid *node_id,
  * seen node responds, it is moved to the tail of the list, and the new
  * sender’s contact is discarded. »
  */
-bool routes_update(struct kad_routes *routes, const struct kad_node_info *info, time_t time)
+static bool routes_update(struct kad_routes *routes, const struct kad_node_info *info, time_t time)
 {
     struct list_item *bucket = NULL;
     struct kad_node *node = routes_get_with_bucket(routes, &info->id, &bucket, NULL);
@@ -418,7 +422,7 @@ bool routes_upsert(struct kad_routes *routes, const struct kad_node_info *node, 
     else if ((rv = routes_insert(routes, node, time)))
         log_debug("Routes insert of %s (id=%s).", &node->addr_str, id);
     else {
-        log_error("Failed to upsert kad_node (id=%s)", id);
+        log_error("Failed to upsert kad_node (id=%s).", id);
         rv = false;
     }
     free_safer(id);

@@ -9,7 +9,7 @@
 
 bool get_home_dir(char out[], const size_t len)
 {
-    char *home = getenv("HOME");
+    const char *home = getenv("HOME");
     if (home) {
         return strcpy_safer(out, home, len);
     }
@@ -21,7 +21,7 @@ bool get_home_dir(char out[], const size_t len)
         return false;
     }
 
-    struct passwd *pw_result = getpwnam(login);
+    const struct passwd *pw_result = getpwnam(login);
     if (!pw_result) {
         errno = 0;
         perror("Failed getpwnam");
@@ -95,7 +95,7 @@ bool file_read(char buf[], size_t *buf_len, const char path[])
     return ret;
 }
 
-bool file_write(const char path[], char buf[], size_t buf_len)
+bool file_write(const char path[], const char buf[], size_t buf_len)
 {
     bool ret = true;
 

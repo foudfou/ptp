@@ -63,7 +63,7 @@ benc_node_navigate_to_key(const struct benc_node *dict,
     return n;
 }
 
-bool benc_read_single_addr(struct sockaddr_storage *addr, char *p, size_t len)
+static bool benc_read_single_addr(struct sockaddr_storage *addr, char *p, size_t len)
 {
     switch (len) {
     case BENC_IP4_ADDR_LEN_IN_BYTES + 2: {

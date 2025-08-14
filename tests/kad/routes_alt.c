@@ -113,7 +113,7 @@ int main ()
     sa->sin_addr.s_addr=htonl(0x01010203); peers[4].info.addr = ss;
 
     struct peer_test *peer = peers;
-    struct peer_test *peer_end = peers + ARRAY_LEN(peers);
+    const struct peer_test *peer_end = peers + ARRAY_LEN(peers);
     while (peer < peer_end) {
         assert(sockaddr_storage_fmt(peer->info.addr_str, &peer->info.addr));
 
@@ -182,7 +182,7 @@ int main ()
 
     memcpy(peer_order, (int[]){7, 2, 3, 5, 4, 6}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
-        LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES);
+        LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES); // cppcheck-suppress shadowVariable
         log_fmt_hex(id, KAD_GUID_SPACE_IN_BYTES, nodes[i].id.bytes);
         log_debug("nodes[%d], id=%s", i, id);
         assert(kad_guid_eq(&nodes[i].id, &peers8[peer_order[i]].id));
@@ -195,7 +195,7 @@ int main ()
 
     memcpy(peer_order, (int[]){1, 2, 3, 5, 6, 7}, sizeof(peer_order));
     for (size_t i = 0; i < added; ++i) {
-        LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES);
+        LOG_FMT_HEX_DECL(id, KAD_GUID_SPACE_IN_BYTES); // cppcheck-suppress shadowVariable
         log_fmt_hex(id, KAD_GUID_SPACE_IN_BYTES, nodes[i].id.bytes);
         log_debug("nodes[%d], id=%s", i, id);
         assert(kad_guid_eq(&nodes[i].id, &peers8[peer_order[i]].id));

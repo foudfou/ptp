@@ -62,7 +62,7 @@ static inline void req_lru_terminate(struct req_lru *lru) {
 static inline bool
 req_lru_put(struct req_lru *lru, struct kad_rpc_query *q,
             struct kad_rpc_query **evicted) {
-    struct kad_rpc_query *dup = hreq_lru_get(lru->hitems, q->msg.tx_id);
+    const struct kad_rpc_query *dup = hreq_lru_get(lru->hitems, q->msg.tx_id);
     if (dup)
         return false;
 

@@ -40,7 +40,7 @@ int main()
     }
     assert(reqs_out.len == REQ_LRU_CAPACITY && list_count(&reqs_out.litems) == REQ_LRU_CAPACITY);
 
-    struct kad_rpc_query *oldest = cont(reqs_out.litems.prev, struct kad_rpc_query, litem);
+    const struct kad_rpc_query *oldest = cont(reqs_out.litems.prev, struct kad_rpc_query, litem);
     q = calloc(1, sizeof(struct kad_rpc_query));
     assert(q);
     assert(query_init(q));

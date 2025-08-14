@@ -71,7 +71,7 @@ static void log_time(char tstr[])
 }
 */
 
-int log_stream_setlogmask(int mask)
+static int log_stream_setlogmask(int mask)
 {
   int oldmask = log_ctx.fmask;
   if(mask == 0)
@@ -83,7 +83,7 @@ int log_stream_setlogmask(int mask)
 /**
  * Messages larger than LOG_MSG_LEN are truncated.
  */
-void log_stream_msg(int prio, const char *fmt, ...)
+static void log_stream_msg(int prio, const char *fmt, ...)
 {
   if (!(LOG_MASK(prio) & log_ctx.fmask))
     return;
@@ -138,13 +138,16 @@ char *log_fmt_hex_dyn(const int prio, const unsigned char *id, const size_t len)
         return NULL;
 
     char *str = malloc(2*len+1);
+    if (!str)
+        return NULL;
+
     for (size_t i = 0; i < len; i++)
         sprintf(str + 2*i, "%02X", *(id + i)); // no format string vuln
     str[2*len] = '\0';
     return str;
 }
 
-void *log_queue_consumer(void *data)
+static void *log_queue_consumer(void *data)
 {
     (void)data;
 
@@ -175,7 +178,7 @@ void *log_queue_consumer(void *data)
     pthread_exit(NULL);
 }
 
-bool log_queue_shutdown()
+static bool log_queue_shutdown()
 {
     bool ret = true;
 
@@ -194,7 +197,7 @@ bool log_queue_shutdown()
     return ret;
 }
 
-bool log_queue_init(void)
+static bool log_queue_init(void)
 {
     snprintf(log_queue_name, NAME_MAX, "/%s_log-%d", PACKAGE_NAME, getpid());
 
