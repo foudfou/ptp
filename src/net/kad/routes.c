@@ -461,7 +461,7 @@ int routes_read_file(struct kad_routes **routes, const char state_path[])
         goto fail;
     }
 
-    struct kad_routes_encoded encoded;
+    struct kad_routes_encoded encoded = {0};
     if (!benc_decode_routes(&encoded, buf, buf_len)) {
         log_error("Decoding of routes state file (%s) failed.", state_path);
         goto fail;

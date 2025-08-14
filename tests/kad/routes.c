@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
     assert(!routes_insert(routes, &info, 0));
 
     // bucket full
-    struct kad_node_info opp;
+    struct kad_node_info opp = {0};
     opp.id = routes->self_id;
     opp.id.bytes[0] ^= 0x80;
     opp.id.bytes[KAD_GUID_SPACE_IN_BYTES-1] = 0;

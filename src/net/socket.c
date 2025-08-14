@@ -174,31 +174,31 @@ bool sockaddr_storage_fmt(char str[], const struct sockaddr_storage *ss)
     return true;
 }
 
-bool sockaddr_storage_eq_addr4(const struct sockaddr_storage *a,
-                               const struct sockaddr_storage *b)
+static bool sockaddr_storage_eq_addr4(const struct sockaddr_storage *a,
+                                      const struct sockaddr_storage *b)
 {
     return
         ((struct sockaddr_in*)a)->sin_addr.s_addr ==
         ((struct sockaddr_in*)b)->sin_addr.s_addr;
 }
 
-bool sockaddr_storage_eq4(const struct sockaddr_storage *a,
-                           const struct sockaddr_storage *b)
+static bool sockaddr_storage_eq4(const struct sockaddr_storage *a,
+                                 const struct sockaddr_storage *b)
 {
     return sockaddr_storage_eq_addr4(a, b) &&
         ((struct sockaddr_in*)a)->sin_port ==
         ((struct sockaddr_in*)b)->sin_port;
 }
 
-bool sockaddr_storage_eq_addr6(const struct sockaddr_storage *a,
-                                const struct sockaddr_storage *b)
+static bool sockaddr_storage_eq_addr6(const struct sockaddr_storage *a,
+                                      const struct sockaddr_storage *b)
 {
     return 0 == memcmp(&((struct sockaddr_in6*)a)->sin6_addr.s6_addr,
                        &((struct sockaddr_in6*)b)->sin6_addr.s6_addr, 16);
 }
 
-bool sockaddr_storage_eq6(const struct sockaddr_storage *a,
-                           const struct sockaddr_storage *b)
+static bool sockaddr_storage_eq6(const struct sockaddr_storage *a,
+                                 const struct sockaddr_storage *b)
 {
     return sockaddr_storage_eq_addr6(a, b) &&
         ((struct sockaddr_in6*)a)->sin6_port ==
