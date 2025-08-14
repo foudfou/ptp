@@ -95,7 +95,7 @@ benc_read_guid_from_key(kad_guid *guid,
  * network byte order))".
  */
 bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t slen) {
-    BENC_REPR_DECL_INIT(repr, KAD_RPC_MSG_LITERAL_MAX, KAD_RPC_MSG_NODES_MAX);
+    benc_repr_init();
 
     if (!benc_parse(&repr, buf, slen)) {
         return false;

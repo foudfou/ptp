@@ -15,6 +15,7 @@
 #include <unistd.h>
 #include "log.h"
 #include "file.h"
+#include "utils/cont.h"
 #include "utils/helpers.h"
 #include "utils/safer.h"
 #include "net/kad/bencode/routes.h"

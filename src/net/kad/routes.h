@@ -16,10 +16,7 @@
 #include "kad_defs.h"
 #include "net/kad/id.h"
 #include "net/socket.h"
-#include "utils/cont.h"
 #include "utils/list.h"
-#include "utils/safer.h"
-#include "utils/helpers.h"
 
 #define ADDR_STR_LEN INET6_ADDRSTRLEN+INET_PORTSTRLEN
 

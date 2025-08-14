@@ -5,9 +5,6 @@
 #include "utils/array.h"
 #include "net/kad/bencode/routes.h"
 
-#define KAD_ROUTES_ENCODED_LITERAL_MAX KAD_GUID_SPACE_IN_BITS * KAD_K_CONST + 10
-#define KAD_ROUTES_ENCODED_NODES_MAX   KAD_GUID_SPACE_IN_BITS * KAD_K_CONST + 32
-
 enum kad_routes_encoded_key {
     KAD_ROUTES_ENCODED_KEY_NONE,
     KAD_ROUTES_ENCODED_KEY_NODE_ID,
@@ -33,7 +30,7 @@ static const lookup_entry kad_routes_encoded_key_names[] = {
  * all in network byte order))".
  */
 bool benc_decode_routes(struct kad_routes_encoded *routes, const char buf[], const size_t slen) {
-    BENC_REPR_DECL_INIT(repr, KAD_ROUTES_ENCODED_LITERAL_MAX, KAD_ROUTES_ENCODED_NODES_MAX);
+    benc_repr_init();
 
     if (!benc_parse(&repr, buf, slen)) {
         return false;
@@ -105,7 +102,7 @@ int benc_decode_bootstrap_nodes(struct kad_node_info nodes[],
                                 const size_t nodes_len,
                                 const char buf[], const size_t slen)
 {
-    BENC_REPR_DECL_INIT(repr, KAD_ROUTES_ENCODED_LITERAL_MAX, KAD_ROUTES_ENCODED_NODES_MAX);
+    benc_repr_init();
 
     if (!benc_parse(&repr, buf, slen)) {
         return -1;

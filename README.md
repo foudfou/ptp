@@ -48,6 +48,7 @@ Then
 - consolidate integration tests
 - fix cppcheck and git-hooks
 - single shared main lib
+- optimize memory during bencode parsing
 - proper bucket management (last_seen) + use replacements
 - resource storage
 - save dht regularly

@@ -4,6 +4,11 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <string.h>
+#include "kad_defs.h"
+
+#define BENC_ROUTES_LITERAL_MAX KAD_GUID_SPACE_IN_BITS * KAD_K_CONST + 10
+#define BENC_ROUTES_NODES_MAX   KAD_GUID_SPACE_IN_BITS * KAD_K_CONST + 32
 
 #define BENC_PARSER_STACK_MAX   32
 #define BENC_PARSER_STR_LEN_MAX 256
@@ -78,14 +83,6 @@ enum benc_tok {
     BENC_TOK_END,
 };
 
-#define BENC_REPR_DECL_INIT(name, max_literals, max_nodes)              \
-    struct benc_literal name##_literals[max_literals] = {0};            \
-    struct benc_node name##_nodes[max_nodes] = {0};                     \
-    struct benc_repr name = {                                           \
-        .lit=name##_literals, .lit_len=(max_literals), .lit_off=0,      \
-        .n=name##_nodes,      .n_len=(max_nodes),      .n_off=0         \
-    };
-
 struct benc_repr {
     struct benc_literal *lit;
     size_t               lit_len;
@@ -94,6 +91,23 @@ struct benc_repr {
     size_t               n_len;
     size_t               n_off;
 };
+
+// Global representations for parser. Static as quite large and might blow the
+// stack.
+extern struct benc_literal repr_literals[];
+extern struct benc_node repr_nodes[];
+extern struct benc_repr repr;
+
+static inline void benc_repr_init() {
+    memset(repr_literals, 0, sizeof(struct benc_literal) * BENC_ROUTES_LITERAL_MAX);
+    memset(repr_nodes, 0, sizeof(struct benc_node) * BENC_ROUTES_NODES_MAX);
+    repr.lit = repr_literals;
+    repr.lit_len = (BENC_ROUTES_LITERAL_MAX);
+    repr.lit_off = 0;
+    repr.n = repr_nodes;
+    repr.n_len = (BENC_ROUTES_NODES_MAX);
+    repr.n_off = 0;
+}
 
 struct benc_parser {
     const char       *beg;      /* pointer to begin of buffer */

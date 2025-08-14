@@ -40,6 +40,7 @@ int main ()
 
     struct kad_rpc_msg msg = {0};
 
+    /* log_info("__struct benc_literal: %zu, struct benc_node: %zu", sizeof(struct benc_literal), sizeof(struct benc_node)); */
     strcpy(buf, KAD_TEST_ERROR);
     memset(&msg, 0, sizeof(msg));
     assert(benc_decode_rpc_msg(&msg, buf, strlen(buf)));
