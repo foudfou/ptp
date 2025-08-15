@@ -88,7 +88,7 @@ bool file_read(char buf[], size_t *buf_len, const char path[])
     }
 
   cleanup:
-    if (fclose(fp)) {
+    if (fp && fclose(fp)) {
         perror("Failed fclose");
         ret = false;
     }

@@ -74,6 +74,9 @@ arguments. The event type points to a callback, ex:
 the actual callback function, ex: `kad_refresh()`. Server callback functions
 are grouped as *actions* (`net/actions.c`).
 
+By convention, we set the `self` field of (m)allocated events and timers, so
+they can be freed later. `self` should be null if allocated on the stack.
+
 ## Protocols
 
 ### TCP Dummy

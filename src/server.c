@@ -86,7 +86,8 @@ bool server_run(const struct config *conf)
 
     struct timer timer_kad_refresh = {
         .name="kad-refresh", .delay=TIMER_KAD_REFRESH_MILLIS,
-        .event=&event_kad_refresh, .item=LIST_ITEM_INIT(timer_kad_refresh.item)
+        .event=&event_kad_refresh, .item=LIST_ITEM_INIT(timer_kad_refresh.item),
+        // All other fields automatically zeroed
     };
     timer_init(&timers, &timer_kad_refresh, tick_init);
 
