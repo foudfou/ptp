@@ -31,9 +31,6 @@ EXPECTED_MESSAGES: List[Tuple[str, bytes]] = [
     )
 ]
 
-
-
-
 config_idx: int = c.find_config_option(server_cmd)
 if config_idx > 0:
     print("--config option not allowed", file=sys.stderr)
@@ -47,19 +44,10 @@ with tempfile.TemporaryDirectory() as tmp_dir, \
     s.bind((SERVER_HOST, 0))
     port: int = s.getsockname()[1]
     # print(port)
-    port_bytes: bytes = c.port_to_bigendian_bytes(port)
-
     # Create bootstrap entry with correct address format for detected IP version
-    bootstrap_bin: bytes
-    if SERVER_AF == socket.AF_INET6:
-        # IPv6 format: 38 bytes (20 byte ID + 16 byte IPv6 + 2 byte port)
-        bootstrap_bin = (
-            b"l38:iam-thebootstrapnode\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" +
-            port_bytes + b"e"
-        )
-    else:
-        # IPv4 format: 26 bytes (20 byte ID + 4 byte IPv4 + 2 byte port)
-        bootstrap_bin = b"l26:iam-thebootstrapnode\x7f\0\0\1" + port_bytes + b"e"
+    bootstrap_bin: bytes = c.create_bootstrap_entry(
+        b"iam-thebootstrapnode", port, SERVER_AF
+    )
     bootstrap_path: str = os.path.join(tmp_dir, "nodes.dat")
     with open(bootstrap_path, 'wb') as f:
         f.write(bootstrap_bin)

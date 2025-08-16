@@ -1,12 +1,17 @@
 # Copyright (c) 2025 Foudil Brétel.  All rights reserved.
 
 from typing import Dict, Tuple
+import common as c
+
+# Test node IDs for routes state testing
+QUERY_SENDER_ID = b'jihgfedcba0123456789'
+FIND_TARGET_ID = b'mnopqrstuvwxyz123456'
 
 # name -> (message send, expected response)
 MESSAGES: Dict[str, Dict[str, Tuple[bytes, bytes]]] = {
   'ip4': {
     "find_node request":
-    (b'd1:ad2:id20:jihgfedcba01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe',
+    (c.create_kad_msg_find_node(QUERY_SENDER_ID, FIND_TARGET_ID),
      b'^d1:t2:aa1:y1:r1:rd5:nodesl' +
      b'26:654321zyxwvutsrqponm\x7f\x00\x00\x01\x03\x04' +
      b'26:9876543210jihgfedcba\x7f\x00\x00\x01\x02\x03' +
@@ -17,7 +22,7 @@ MESSAGES: Dict[str, Dict[str, Tuple[bytes, bytes]]] = {
   },
   'ip6': {
     "find_node request":
-    (b'd1:ad2:id20:jihgfedcba01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe',
+    (c.create_kad_msg_find_node(QUERY_SENDER_ID, FIND_TARGET_ID),
      b'^d1:t2:aa1:y1:r1:rd5:nodesl' +
      b'38:654321zyxwvutsrqponm\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\xaa\x03\x04' +
      b'38:9876543210jihgfedcba\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x02\x03' +

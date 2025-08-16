@@ -8,7 +8,6 @@ One bootstrap and 2 agents.
 """
 
 import os
-import random
 import time
 import socket
 import subprocess as sub
@@ -22,18 +21,9 @@ import common as c
 
 DEBUG: bool = False
 
-def rand_node_id() -> bytes:
-    return bytes([random.randint(0, 255) for _ in range(20)])
-
 NODES_LEN: int = 3
-NODES: List[bytes] = [
-    b"1234567890abcdefghij", # 0x3132, bootstrap node
-    b"abcdefghij1234567890", # 0x6162
-    b"mnopqrstuv0987654321", # 0x6D6E
-]
-# Increasing node count will fail tests because replacement cache is not
-# included into persisted routes.
-NODES.extend([rand_node_id() for _ in range(NODES_LEN - len(NODES))])
+# Use standard test node IDs from common module
+NODES: List[bytes] = [c.get_test_node_id(i) for i in range(NODES_LEN)]
 
 SLEEP_BOOTSTRAP_NODE_READY: float = .01
 SLEEP_NODES_FINISH: float = .2
@@ -71,24 +61,16 @@ def create_node(
     nodeid: bytes,
     bootstrap: Optional[int] = None
 ) -> Tuple[sub.Popen[bytes], int]:
-    routes_bin: bytes = b"d2:id20:" + nodeid + b"5:nodeslee"
+    routes_bin: bytes = c.create_empty_routing_table(nodeid)
     routes_path: str = os.path.join(tmp_dir, "routes.dat")
     with open(routes_path, 'wb') as f:
         f.write(routes_bin)
 
     if bootstrap is not None:
-        port_bytes: bytes = c.port_to_bigendian_bytes(bootstrap)
         # Create bootstrap entry with correct address format for detected IP version
-        bootstrap_bin: bytes
-        if SERVER_AF == socket.AF_INET6:
-            # IPv6 format: 38 bytes (20 byte ID + 16 byte IPv6 + 2 byte port)
-            bootstrap_bin = (
-                b"l38:1234567890abcdefghij\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" +
-                port_bytes + b"e"
-            )
-        else:
-            # IPv4 format: 26 bytes (20 byte ID + 4 byte IPv4 + 2 byte port)
-            bootstrap_bin = b"l26:1234567890abcdefghij\x7f\0\0\1" + port_bytes + b"e"
+        bootstrap_bin: bytes = c.create_bootstrap_entry(
+            c.get_test_node_id(0), bootstrap, SERVER_AF  # Use bootstrap node ID
+        )
         bootstrap_path: str = os.path.join(tmp_dir, "nodes.dat")
         with open(bootstrap_path, 'wb') as f:
             f.write(bootstrap_bin)

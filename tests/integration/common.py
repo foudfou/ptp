@@ -83,6 +83,58 @@ def check_data(expect: bytes, data: Optional[bytes], ctx: Dict[str, Union[int, s
     return failure
 
 
+# Standard test node IDs used across tests
+TEST_NODE_IDS = [
+    b"1234567890abcdefghij",  # 0x3132, bootstrap node
+    b"abcdefghij1234567890",  # 0x6162
+    b"mnopqrstuv0987654321",  # 0x6D6E
+]
+
+def get_test_node_id(index: int) -> bytes:
+    """Get standard test node ID by index."""
+    if index < len(TEST_NODE_IDS):
+        return TEST_NODE_IDS[index]
+    # Generate deterministic IDs for indices beyond predefined
+    import hashlib
+    return hashlib.sha1(f"test_node_{index}".encode()).digest()
+
+def create_empty_routing_table(node_id: bytes) -> bytes:
+    """Create empty routing table for given node."""
+    return b"d2:id20:" + node_id + b"5:nodeslee"
+
+
+def create_bootstrap_entry(node_id: bytes, port: int, ip_version: int) -> bytes:
+    """Create a bootstrap nodes.dat entry for given node ID and port."""
+    port_bytes: bytes = port_to_bigendian_bytes(port)
+
+    if ip_version == socket.AF_INET6:
+        # IPv6 format: 38 bytes (20 byte ID + 16 byte IPv6 + 2 byte port)
+        return (
+            b"l38:" + node_id + b"\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" +
+            port_bytes + b"e"
+        )
+    else:
+        # IPv4 format: 26 bytes (20 byte ID + 4 byte IPv4 + 2 byte port)
+        return b"l26:" + node_id + b"\x7f\0\0\1" + port_bytes + b"e"
+
+def create_kad_msg_ping(node_id: bytes, tx_id: bytes = b"aa") -> bytes:
+    """Create a Kademlia ping RPC message."""
+    return (
+        b'd1:ad2:id20:' + node_id + b'e1:q4:ping1:t2:' + tx_id + b'1:y1:qe'
+    )
+
+def create_kad_msg_find_node(node_id: bytes, target: bytes, tx_id: bytes = b"aa") -> bytes:
+    """Create a Kademlia find_node RPC message."""
+    return (
+        b'd1:ad2:id20:' + node_id + b'6:target20:' + target +
+        b'e1:q9:find_node1:t2:' + tx_id + b'1:y1:qe'
+    )
+
+def create_kad_msg_ping_bogus_missing_id(tx_id: bytes = b"XX") -> bytes:
+    """Create a malformed ping message missing the node ID for error testing."""
+    return b'd1:ade1:q4:ping1:t2:' + tx_id + b'1:y1:qe'
+
+
 @contextmanager
 def managed_process(cmd: List[str], **kwargs) -> Generator[sub.Popen[bytes], None, None]:
     """Context manager for subprocess.Popen with proper cleanup."""
