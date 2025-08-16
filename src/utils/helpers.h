@@ -1,3 +1,5 @@
+/* Copyright (c) 2025 Foudil Brétel.  All rights reserved. */
+
 #ifndef HELPERS_H
 #define HELPERS_H
 

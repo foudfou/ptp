@@ -1,3 +1,5 @@
+/* Copyright (c) 2025 Foudil Brétel.  All rights reserved. */
+
 #ifndef TIME_H
 #define TIME_H
 

@@ -1,3 +1,5 @@
+/* Copyright (c) 2025 Foudil Brétel.  All rights reserved. */
+
 #ifndef HEAP_H
 #define HEAP_H
 

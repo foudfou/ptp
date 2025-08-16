@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Foudil Brétel.  All rights reserved.
+
 # name -> (message send, expected response)
 MESSAGES = {
   'ip4': {
