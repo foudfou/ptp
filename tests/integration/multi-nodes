@@ -16,6 +16,7 @@ import sys
 import tempfile
 
 from contextlib import contextmanager
+import common as c
 
 
 DEBUG = False
@@ -36,7 +37,7 @@ NODES.extend([rand_node_id() for _ in range(NODES_LEN - len(NODES))])
 SLEEP_BOOTSTRAP_NODE_READY = .01
 SLEEP_NODES_FINISH = .2
 
-SERVER_HOST = '::1'
+SERVER_HOST = c.DEFAULT_SERVER_HOST
 SOCKET_TIMEOUT_SECONDS = 1
 
 path = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
@@ -61,8 +62,6 @@ def free_port():
     free_socket.close()
     return port
 
-def port_to_bigendian_bytes(port):
-    return port.to_bytes((port.bit_length() + 7) // 8, 'big') or b'\0'
 
 def create_node(cmd, tmp_dir=None, bootstrap=None, nodeid=None):
     routes_bin = b"d2:id20:" + nodeid + b"5:nodeslee"
@@ -71,7 +70,7 @@ def create_node(cmd, tmp_dir=None, bootstrap=None, nodeid=None):
         f.write(routes_bin)
 
     if bootstrap is not None:
-        port_bytes = port_to_bigendian_bytes(bootstrap)
+        port_bytes = c.port_to_bigendian_bytes(bootstrap)
         bootstrap_bin = b"l38:1234567890abcdefghij\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
         bootstrap_path = os.path.join(tmp_dir, "nodes.dat")
         with open(bootstrap_path, 'wb') as f:
@@ -94,13 +93,7 @@ def tmpdirs(count):
 
 
 
-try:
-    config_idx = server_cmd.index('-c')
-except ValueError:
-    try:
-        config_idx = server_cmd.index('--config')
-    except ValueError:
-        config_idx = -1
+config_idx = c.find_config_option(server_cmd)
 if config_idx > 0:
     print("--config option not allowed", file=sys.stderr)
     sys.exit(1)
@@ -125,6 +118,7 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
                 server_cmd.copy(), tmp_dir=dirs[i], bootstrap=bootnode_port,
                 nodeid=NODES[i]
             ))
+#            time.sleep(SLEEP_BOOTSTRAP_NODE_READY)
 
         time.sleep(SLEEP_NODES_FINISH)
 
@@ -155,20 +149,20 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
         def extract_routes(me, data):
             ret = {}
 
-            if data[0:36] != b'd2:id20:' + me + b'5:nodesl' or \
-               data[-2:] != b'ee':
+            if data[0:c.BENCODE_HEADER_SIZE] != b'd2:id20:' + me + b'5:nodesl' or \
+               data[-c.BENCODE_FOOTER_SIZE:] != b'ee':
                 return ret
 
-            nodes = data[36:-2]
+            nodes = data[c.BENCODE_HEADER_SIZE:-c.BENCODE_FOOTER_SIZE]
 
             node_ids = []
             i = 0
-            while len(nodes) - 26 > i:
+            while len(nodes) - c.NODE_ENTRY_COMPACT_SIZE > i:
                 length = nodes[i:i+3]
                 if length == b'26:':
-                    j = 26
+                    j = c.NODE_ENTRY_COMPACT_SIZE
                 elif length == b'38:':
-                    j = 38
+                    j = c.NODE_ENTRY_FULL_SIZE
                 else:
                     return ret
                 i += 3
