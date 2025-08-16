@@ -6,7 +6,9 @@
 import os
 import re
 import socket
-from typing import Dict, List, Optional, Tuple, Union
+import subprocess as sub
+from contextlib import contextmanager
+from typing import Dict, Generator, List, Optional, Tuple, Union
 
 # Bencode parsing constants
 BENCODE_HEADER_SIZE = 36
@@ -77,5 +79,16 @@ def check_data(expect: bytes, data: Optional[bytes], ctx: Dict[str, Union[int, s
         err = data
     print(f"{ctx['line']}/{ctx['len']} {ctx['name']} .. {result}")
     if err:
-        print(f"---\n   data {data} did not match expected {expect}")
+        print(f"---\n   data {data!r} did not match expected {expect!r}")
     return failure
+
+
+@contextmanager
+def managed_process(cmd: List[str], **kwargs) -> Generator[sub.Popen[bytes], None, None]:
+    """Context manager for subprocess.Popen with proper cleanup."""
+    process: sub.Popen[bytes] = sub.Popen(cmd, **kwargs)
+    try:
+        yield process
+    finally:
+        process.terminate()
+        process.wait(timeout=5)

@@ -6,12 +6,12 @@
 import importlib
 import os
 import pty
-import re
 import socket
 import subprocess as sub
 import sys
 import tempfile
-from typing import Dict, List, Optional, Tuple
+from contextlib import contextmanager
+from typing import Dict, Generator, List, Optional, Tuple
 
 import common as c
 
@@ -29,9 +29,23 @@ MESSAGES: Dict[str, Tuple[bytes, bytes]] = run.MESSAGES[c.get_ip_version_suffix(
 
 server_bin: str = sys.argv[2]
 server_args: List[str] = sys.argv[3:]
-server_cmd: List[str] = [server_bin, "-l", "error", "-a", SERVER_HOST,
-                         "-p", str(SERVER_PORT)]  # pylint: disable=invalid-name
+server_cmd: List[str] = [
+    server_bin, "-l", "error", "-a", SERVER_HOST, "-p", str(SERVER_PORT)
+]  # pylint: disable=invalid-name
 server_cmd.extend(server_args)
+
+@contextmanager
+def pty_pair() -> Generator[Tuple[int, int], None, None]:
+    """Context manager for PTY file descriptor pairs."""
+    master_fd: int
+    slave_fd: int
+    master_fd, slave_fd = pty.openpty()
+    try:
+        yield master_fd, slave_fd
+    finally:
+        os.close(master_fd)
+        os.close(slave_fd)
+
 
 def poll_data(sock: socket.socket, msg: bytes) -> Optional[bytes]:
     data_rx: Optional[bytes] = None
@@ -58,33 +72,25 @@ if config_idx > 0:
         copy_tree(conf_dir, conf_tmp.name)
     server_cmd[config_idx+1] = conf_tmp.name
 
-try:
-    # It's generally hard to get the live output of a running subprocess in
-    # python. One trick is to use an intermediary fd, and use `os.read(master_fd,
-    # 512)`. But we want to avoid checking the logs and test server error handling
-    # in unit tests.
-    master_fd: int
-    slave_fd: int
-    master_fd, slave_fd = pty.openpty()
-    server: sub.Popen[bytes] = sub.Popen(server_cmd, stderr=sub.STDOUT, close_fds=True)
-    os.close(slave_fd)
+# It's generally hard to get the live output of a running subprocess in
+# python. One trick is to use an intermediary fd, and use `os.read(master_fd,
+# 512)`. But we want to avoid checking the logs and test server error handling
+# in unit tests.
+with pty_pair() as (master_fd, slave_fd), \
+     c.managed_process(server_cmd, stderr=sub.STDOUT, close_fds=True) as server, \
+     socket.socket(SERVER_AF, socket.SOCK_DGRAM) as s:
 
-    with socket.socket(SERVER_AF, socket.SOCK_DGRAM) as s:
-        s.settimeout(TIMEOUT_IN_SEC)
-        s.connect((SERVER_HOST, SERVER_PORT))
+    s.settimeout(TIMEOUT_IN_SEC)
+    s.connect((SERVER_HOST, SERVER_PORT))
 
-        failures: int = 0
-        messages_len: int = len(MESSAGES)
-        i: int = 0
-        for name, (msg, expect) in MESSAGES.items():
-            i += 1
-            data: Optional[bytes] = poll_data(s, msg)
-            ctx: Dict[str, int | str] = {"line": i, "len": messages_len, "name": name}
-            failures += c.check_data(expect, data, ctx)
-
-finally:
-    os.close(master_fd)
-    server.terminate()
+    failures: int = 0
+    messages_len: int = len(MESSAGES)
+    i: int = 0
+    for name, (msg, expect) in MESSAGES.items():
+        i += 1
+        data: Optional[bytes] = poll_data(s, msg)
+        ctx: Dict[str, int | str] = {"line": i, "len": messages_len, "name": name}
+        failures += c.check_data(expect, data, ctx)
 
 retcode: int = 1 if failures else 0
 sys.exit(retcode)

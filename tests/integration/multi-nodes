@@ -45,11 +45,13 @@ path: str = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: 
 
 server_bin: str = sys.argv[1]
 server_args: List[str] = sys.argv[2:]
-server_cmd: List[str] = [server_bin, "-l", "debug" if DEBUG else "error", "-a", SERVER_HOST]  # pylint: disable=invalid-name
+server_cmd: List[str] = [
+    server_bin, "-l", "debug" if DEBUG else "error", "-a", SERVER_HOST
+]  # pylint: disable=invalid-name
 server_cmd.extend(server_args)
 
 
-def free_port() -> int:
+def get_free_port() -> int:
     """
     Determines a free port using sockets.
 
@@ -57,14 +59,18 @@ def free_port() -> int:
     https://eklitzke.org/binding-on-port-zero
     Works as long as set SO_REUSEADDR in server.
     """
-    free_socket: socket.socket = socket.socket(SERVER_AF, socket.SOCK_DGRAM)
-    free_socket.bind((SERVER_HOST, 0))
-    port: int = free_socket.getsockname()[1]
-    free_socket.close()
-    return port
+    with socket.socket(SERVER_AF, socket.SOCK_DGRAM) as free_socket:
+        free_socket.bind((SERVER_HOST, 0))
+        port: int = free_socket.getsockname()[1]
+        return port
 
 
-def create_node(cmd: List[str], tmp_dir: Optional[str] = None, bootstrap: Optional[int] = None, nodeid: Optional[bytes] = None) -> Tuple[sub.Popen[bytes], int]:
+def create_node(
+    cmd: List[str],
+    tmp_dir: str,
+    nodeid: bytes,
+    bootstrap: Optional[int] = None
+) -> Tuple[sub.Popen[bytes], int]:
     routes_bin: bytes = b"d2:id20:" + nodeid + b"5:nodeslee"
     routes_path: str = os.path.join(tmp_dir, "routes.dat")
     with open(routes_path, 'wb') as f:
@@ -76,7 +82,10 @@ def create_node(cmd: List[str], tmp_dir: Optional[str] = None, bootstrap: Option
         bootstrap_bin: bytes
         if SERVER_AF == socket.AF_INET6:
             # IPv6 format: 38 bytes (20 byte ID + 16 byte IPv6 + 2 byte port)
-            bootstrap_bin = b"l38:1234567890abcdefghij\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
+            bootstrap_bin = (
+                b"l38:1234567890abcdefghij\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" +
+                port_bytes + b"e"
+            )
         else:
             # IPv4 format: 26 bytes (20 byte ID + 4 byte IPv4 + 2 byte port)
             bootstrap_bin = b"l26:1234567890abcdefghij\x7f\0\0\1" + port_bytes + b"e"
@@ -84,15 +93,19 @@ def create_node(cmd: List[str], tmp_dir: Optional[str] = None, bootstrap: Option
         with open(bootstrap_path, 'wb') as f:
             f.write(bootstrap_bin)
 
-    port: int = free_port()
+    port: int = get_free_port()
     cmd.extend(["-p", str(port), "-c", tmp_dir])
 
-    server: sub.Popen[bytes] = sub.Popen(cmd, stderr=sub.STDOUT, close_fds=True, stdout=sub.PIPE)
+    server: sub.Popen[bytes] = sub.Popen(
+        cmd, stderr=sub.STDOUT, close_fds=True, stdout=sub.PIPE)
     return (server, port)
+
 
 @contextmanager
 def tmpdirs(count: int) -> Generator[List[tempfile.TemporaryDirectory[str]], None, None]:
-    dirs: List[tempfile.TemporaryDirectory[str]] = [tempfile.TemporaryDirectory() for i in range(count)]
+    dirs: List[tempfile.TemporaryDirectory[str]] = [
+        tempfile.TemporaryDirectory() for i in range(count)
+    ]
     try:
         yield dirs
     finally:
@@ -109,10 +122,9 @@ if config_idx > 0:
 
 with tmpdirs(NODES_LEN) as tmp_dirs:
     dirs: List[str] = [d.name for d in tmp_dirs]
+    instances: List[Tuple[sub.Popen[bytes], int]] = []
 
     try:
-        instances: List[Tuple[sub.Popen[bytes], int]] = []
-
         bootnode: sub.Popen[bytes]
         bootnode_port: int
         (bootnode, bootnode_port) = create_node(
@@ -128,78 +140,67 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
                 server_cmd.copy(), tmp_dir=dirs[i], bootstrap=bootnode_port,
                 nodeid=NODES[i]
             ))
-#            time.sleep(SLEEP_BOOTSTRAP_NODE_READY)
 
         time.sleep(SLEEP_NODES_FINISH)
 
     finally:
-        for s in [server for server, port in list(reversed(instances))]:
-            s.terminate()
-            if DEBUG:
-                outs: Optional[bytes]
-                errs: Optional[bytes]
-                outs, errs = s.communicate(timeout=15)
-            s.wait(1)
-            if DEBUG:
-                if outs:
-                    with open(f'/tmp/{str(s.pid)}.out', 'wb') as fd:
-                        fd.write(outs)
-                if errs:
-                    with open(f'/tmp/{str(s.pid)}.err', 'wb') as fd:
-                        fd.write(errs)
+        # Clean up processes
+        for server, port in reversed(instances):
+            server.terminate()
+            server.wait(timeout=5)
 
-        # import shutil
-        # shutil.copyfile(tmp_dir1 + "/routes.dat", "/tmp/routes1.dat")
+    # Read routes after processes have been terminated
+    routes: List[bytes] = []
+    for i in range(NODES_LEN):
+        with open(dirs[i] + "/routes.dat", 'rb') as fd:
+            routes.append(fd.read())
 
-        routes: List[bytes] = []
-        for i in range(NODES_LEN):
-            with open(dirs[i] + "/routes.dat", 'rb') as fd:
-                routes.append(fd.read())
+    # import shutil
+    # shutil.copyfile(tmp_dir1 + "/routes.dat", "/tmp/routes1.dat")
 
-        failures: int = 0
+    failures: int = 0
 
-        def extract_routes(me: bytes, data: bytes) -> set[bytes]:
-            ret: set[bytes] = set()
+    def extract_routes(me: bytes, data: bytes) -> set[bytes]:
+        ret: set[bytes] = set()
 
-            if data[0:c.BENCODE_HEADER_SIZE] != b'd2:id20:' + me + b'5:nodesl' or \
-               data[-c.BENCODE_FOOTER_SIZE:] != b'ee':
-                return ret
+        if data[0:c.BENCODE_HEADER_SIZE] != b'd2:id20:' + me + b'5:nodesl' or \
+           data[-c.BENCODE_FOOTER_SIZE:] != b'ee':
+            return ret
 
-            nodes: bytes = data[c.BENCODE_HEADER_SIZE:-c.BENCODE_FOOTER_SIZE]
+        nodes: bytes = data[c.BENCODE_HEADER_SIZE:-c.BENCODE_FOOTER_SIZE]
 
-            node_ids: List[bytes] = []
-            i: int = 0
-            while len(nodes) - c.NODE_ENTRY_COMPACT_SIZE > i:
-                length: bytes = nodes[i:i+3]
-                j: int
-                if length == b'26:':
-                    j = c.NODE_ENTRY_COMPACT_SIZE
-                elif length == b'38:':
-                    j = c.NODE_ENTRY_FULL_SIZE
-                else:
-                    return ret
-                i += 3
-                node_ids.append(nodes[i:i+20])
-                i += j
-
-            return set(node_ids)
-
-        nodes_set: set[bytes] = set(NODES)
-        for i in range(NODES_LEN):
-            node_routes: set[bytes] = extract_routes(NODES[i], routes[i])
-            result: str
-            data: Optional[bytes]
-            if node_routes == nodes_set - {NODES[i]}:
-                result = "OK"
-                data = None
+        node_ids: List[bytes] = []
+        i: int = 0
+        while len(nodes) - c.NODE_ENTRY_COMPACT_SIZE > i:
+            length: bytes = nodes[i:i+3]
+            j: int
+            if length == b'26:':
+                j = c.NODE_ENTRY_COMPACT_SIZE
+            elif length == b'38:':
+                j = c.NODE_ENTRY_FULL_SIZE
             else:
-                failures += 1
-                result = "\033[31mFAIL\033[0m"
-                data = routes[i]
-            print(f"{i+1}/{NODES_LEN} routes_{i} .. {result}")
-            if data:
-                print(f"---\n   incorrect data {data}")
+                return ret
+            i += 3
+            node_ids.append(nodes[i:i+20])
+            i += j
 
+        return set(node_ids)
+
+    nodes_set: set[bytes] = set(NODES)
+    for i in range(NODES_LEN):
+        node_routes: set[bytes] = extract_routes(NODES[i], routes[i])
+        result: str
+        data: Optional[bytes]
+        if node_routes == nodes_set - {NODES[i]}:
+            result = "OK"
+            data = None
+        else:
+            failures += 1
+            result = "\033[31mFAIL\033[0m"
+            data = routes[i]
+        print(f"{i+1}/{NODES_LEN} routes_{i} .. {result}")
+        if data:
+            print(f"---\n   incorrect data {data!r}")
 
 retcode: int = 1 if failures else 0
 sys.exit(retcode)
