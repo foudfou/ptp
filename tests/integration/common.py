@@ -3,8 +3,9 @@
 
 """Common utilities and constants for integration tests."""
 
+import os
+import re
 import socket
-import sys
 
 # Bencode parsing constants
 BENCODE_HEADER_SIZE = 36
@@ -23,29 +24,57 @@ def detect_ip_version():
     Returns tuple: (host, address_family)
     Prefers IPv6 if available, falls back to IPv4.
     """
-    # Test IPv6 availability
     try:
         with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as s:
             s.bind(('::1', 0))
             return ('::1', socket.AF_INET6)
     except (socket.error, OSError):
-        # IPv6 not available, use IPv4
         return ('127.0.0.1', socket.AF_INET)
+
+def get_ip_version_suffix():
+    _, af = detect_ip_version()
+    return 'ip6' if af == socket.AF_INET6 else 'ip4'
 
 def port_to_bigendian_bytes(port):
     """Convert port number to big-endian bytes representation."""
     return port.to_bytes((port.bit_length() + 7) // 8, 'big') or b'\0'
 
-def find_config_option(server_cmd):
+def find_config_option(cmd: list):
     """
     Find config option in server command.
 
     Returns index of config option, or -1 if not found.
     """
     try:
-        return server_cmd.index('-c')
+        return cmd.index('-c')
     except ValueError:
         try:
-            return server_cmd.index('--config')
+            return cmd.index('--config')
         except ValueError:
             return -1
+
+def check_data(expect, data, ctx):
+    """
+    Check if data matches expected pattern and print test result.
+
+    Args:
+        expect: Expected pattern (regex bytes)
+        data: Actual data received (bytes)
+        ctx: Test context dict with 'line', 'len', 'name' keys
+
+    Returns:
+        Number of failures (0 or 1)
+    """
+    failure = 0
+    patt = re.compile(expect, re.DOTALL)
+    if re.search(patt, data):
+        result = "OK"
+        err = None
+    else:
+        failure += 1
+        result = "\033[31mFAIL\033[0m"
+        err = data
+    print(f"{ctx['line']}/{ctx['len']} {ctx['name']} .. {result}")
+    if err:
+        print(f"---\n   data {data} did not match expected {expect}")
+    return failure

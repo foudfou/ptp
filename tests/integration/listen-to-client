@@ -9,14 +9,11 @@ import subprocess as sub
 import sys
 import tempfile
 
-from helpers import check_data
 import common as c
 
 SERVER_HOST, SERVER_AF = c.detect_ip_version()
 SERVER_PORT = 0
 SOCKET_TIMEOUT_SECONDS = c.DEFAULT_SOCKET_TIMEOUT
-
-path = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
 
 server_bin  = sys.argv[1]
 server_args = sys.argv[2:]
@@ -69,7 +66,7 @@ with tempfile.TemporaryDirectory() as tmp_dir, \
             data, addr = s.recvfrom(BUFFER_SIZE)
             # print("received message: ", data)
             ctx = {"line": msg_count, "len": messages_len, "name": EXPECTED_MESSAGES[msg_count][0]}
-            failures += check_data(EXPECTED_MESSAGES[msg_count][1], data, ctx)
+            failures += c.check_data(EXPECTED_MESSAGES[msg_count][1], data, ctx)
             msg_count += 1
 
     finally:

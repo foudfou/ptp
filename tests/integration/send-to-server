@@ -12,7 +12,6 @@ import subprocess as sub
 import sys
 import tempfile
 
-from helpers import check_data
 import common as c
 
 SERVER_HOST, SERVER_AF = c.detect_ip_version()
@@ -23,9 +22,9 @@ SERVER_HOST, SERVER_AF = c.detect_ip_version()
 SERVER_PORT = 22220
 TIMEOUT_IN_SEC = 1
 
-path = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
-
 run = importlib.import_module("runs." + sys.argv[1])
+
+MESSAGES = run.MESSAGES[c.get_ip_version_suffix()]
 
 server_bin  = sys.argv[2]
 server_args = sys.argv[3:]
@@ -51,11 +50,11 @@ def poll_data(sock, msg):
 
 config_idx = c.find_config_option(server_cmd)
 if config_idx > 0:
-    conf_orig = server_cmd[config_idx+1]
+    conf_dir = os.path.join(server_cmd[config_idx+1], c.get_ip_version_suffix())
     conf_tmp = tempfile.TemporaryDirectory()
-    if os.path.isdir(conf_orig):
+    if os.path.isdir(conf_dir):
         from distutils.dir_util import copy_tree
-        copy_tree(conf_orig, conf_tmp.name)
+        copy_tree(conf_dir, conf_tmp.name)
     server_cmd[config_idx+1] = conf_tmp.name
 
 try:
@@ -72,13 +71,13 @@ try:
         s.connect((SERVER_HOST, SERVER_PORT))
 
         failures = 0
-        messages_len = len(run.MESSAGES)
+        messages_len = len(MESSAGES)
         i = 0
-        for name, (msg, expect) in run.MESSAGES.items():
+        for name, (msg, expect) in MESSAGES.items():
             i += 1
             data = poll_data(s, msg)
             ctx = {"line": i, "len": messages_len, "name": name}
-            failures += check_data(expect, data, ctx)
+            failures += c.check_data(expect, data, ctx)
 
 finally:
     os.close(master_fd)
