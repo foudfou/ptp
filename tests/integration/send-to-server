@@ -15,7 +15,7 @@ import tempfile
 from helpers import check_data
 import common as c
 
-(SERVER_HOST, SERVER_AF) = (c.DEFAULT_SERVER_HOST, c.DEFAULT_SERVER_AF)
+SERVER_HOST, SERVER_AF = c.detect_ip_version()
 # SERVER_PORT is used by the server and the client. We thus can't simply bind
 # the server to 0 for some random available port. Because we'd have to guess
 # the port somehow for the client to connect. It's just easier to use a fixed

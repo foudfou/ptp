@@ -37,8 +37,8 @@ NODES.extend([rand_node_id() for _ in range(NODES_LEN - len(NODES))])
 SLEEP_BOOTSTRAP_NODE_READY = .01
 SLEEP_NODES_FINISH = .2
 
-SERVER_HOST = c.DEFAULT_SERVER_HOST
-SOCKET_TIMEOUT_SECONDS = 1
+SERVER_HOST, SERVER_AF = c.detect_ip_version()
+SOCKET_TIMEOUT_SECONDS = c.DEFAULT_SOCKET_TIMEOUT
 
 path = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
 
@@ -56,7 +56,7 @@ def free_port():
     https://eklitzke.org/binding-on-port-zero
     Works as long as set SO_REUSEADDR in server.
     """
-    free_socket = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+    free_socket = socket.socket(SERVER_AF, socket.SOCK_DGRAM)
     free_socket.bind((SERVER_HOST, 0))
     port = free_socket.getsockname()[1]
     free_socket.close()
@@ -71,7 +71,13 @@ def create_node(cmd, tmp_dir=None, bootstrap=None, nodeid=None):
 
     if bootstrap is not None:
         port_bytes = c.port_to_bigendian_bytes(bootstrap)
-        bootstrap_bin = b"l38:1234567890abcdefghij\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
+        # Create bootstrap entry with correct address format for detected IP version
+        if SERVER_AF == socket.AF_INET6:
+            # IPv6 format: 38 bytes (20 byte ID + 16 byte IPv6 + 2 byte port)
+            bootstrap_bin = b"l38:1234567890abcdefghij\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
+        else:
+            # IPv4 format: 26 bytes (20 byte ID + 4 byte IPv4 + 2 byte port)
+            bootstrap_bin = b"l26:1234567890abcdefghij\x7f\0\0\1" + port_bytes + b"e"
         bootstrap_path = os.path.join(tmp_dir, "nodes.dat")
         with open(bootstrap_path, 'wb') as f:
             f.write(bootstrap_bin)

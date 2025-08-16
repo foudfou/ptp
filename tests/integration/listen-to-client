@@ -12,7 +12,7 @@ import tempfile
 from helpers import check_data
 import common as c
 
-(SERVER_HOST, SERVER_AF) = (c.DEFAULT_SERVER_HOST, c.DEFAULT_SERVER_AF)
+SERVER_HOST, SERVER_AF = c.detect_ip_version()
 SERVER_PORT = 0
 SOCKET_TIMEOUT_SECONDS = c.DEFAULT_SOCKET_TIMEOUT
 
@@ -46,7 +46,13 @@ with tempfile.TemporaryDirectory() as tmp_dir, \
         # print(port)
         port_bytes = c.port_to_bigendian_bytes(port)
 
-        bootstrap_bin = b"l38:iam-thebootstrapnode\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
+        # Create bootstrap entry with correct address format for detected IP version
+        if SERVER_AF == socket.AF_INET6:
+            # IPv6 format: 38 bytes (20 byte ID + 16 byte IPv6 + 2 byte port)
+            bootstrap_bin = b"l38:iam-thebootstrapnode\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
+        else:
+            # IPv4 format: 26 bytes (20 byte ID + 4 byte IPv4 + 2 byte port)
+            bootstrap_bin = b"l26:iam-thebootstrapnode\x7f\0\0\1" + port_bytes + b"e"
         bootstrap_path = os.path.join(tmp_dir, "nodes.dat")
         with open(bootstrap_path, 'wb') as f:
             f.write(bootstrap_bin)
