@@ -2,12 +2,12 @@
 # Copyright (c) 2017 Foudil Brétel.  All rights reserved.
 
 integration_tests = [
-  ['send-to-server defaults', 'send-to-server',
+  ['send_to_server.py defaults', 'send_to_server.py',
    ['defaults', main_exe, '-c', '/NONEXISTENT_FOR_DEFAULTS']],
-  ['send-to-server routes state', 'send-to-server',
+  ['send_to_server.py routes state', 'send_to_server.py',
    ['routes_state', main_exe, '-c', join_paths(meson.current_source_dir(), 'data')]],
-  ['listen-to-client bootstrap', 'listen-to-client', [main_exe]],
-  ['multi-nodes bootstrap', 'multi-nodes', [main_exe]],
+  ['listen_to_client.py bootstrap', 'listen_to_client.py', [main_exe]],
+  ['multi_nodes.py bootstrap', 'multi_nodes.py', [main_exe]],
 ]
 
 foreach t : integration_tests

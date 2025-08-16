@@ -155,9 +155,6 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
         with open(dirs[i] + "/routes.dat", 'rb') as fd:
             routes.append(fd.read())
 
-    # import shutil
-    # shutil.copyfile(tmp_dir1 + "/routes.dat", "/tmp/routes1.dat")
-
     failures: int = 0
 
     def extract_routes(me: bytes, data: bytes) -> set[bytes]:
