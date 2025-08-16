@@ -1,7 +1,9 @@
 # Copyright (c) 2025 Foudil Brétel.  All rights reserved.
 
+from typing import Dict, Tuple
+
 # name -> (message send, expected response)
-MESSAGES = {
+MESSAGES: Dict[str, Dict[str, Tuple[bytes, bytes]]] = {
   'ip4': {
     "find_node request":
     (b'd1:ad2:id20:jihgfedcba01234567896:target20:mnopqrstuvwxyz123456e1:q9:find_node1:t2:aa1:y1:qe',

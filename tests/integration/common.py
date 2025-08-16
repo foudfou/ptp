@@ -6,6 +6,7 @@
 import os
 import re
 import socket
+from typing import Dict, List, Optional, Tuple, Union
 
 # Bencode parsing constants
 BENCODE_HEADER_SIZE = 36
@@ -17,7 +18,7 @@ NODE_ENTRY_FULL_SIZE = 38
 DEFAULT_SOCKET_TIMEOUT = 1.0
 DEFAULT_BUFFER_SIZE = 1024
 
-def detect_ip_version():
+def detect_ip_version() -> Tuple[str, int]:
     """
     Detect available IP version and return appropriate host/family.
 
@@ -31,15 +32,15 @@ def detect_ip_version():
     except (socket.error, OSError):
         return ('127.0.0.1', socket.AF_INET)
 
-def get_ip_version_suffix():
+def get_ip_version_suffix() -> str:
     _, af = detect_ip_version()
     return 'ip6' if af == socket.AF_INET6 else 'ip4'
 
-def port_to_bigendian_bytes(port):
+def port_to_bigendian_bytes(port: int) -> bytes:
     """Convert port number to big-endian bytes representation."""
     return port.to_bytes((port.bit_length() + 7) // 8, 'big') or b'\0'
 
-def find_config_option(cmd: list):
+def find_config_option(cmd: List[str]) -> int:
     """
     Find config option in server command.
 
@@ -53,13 +54,13 @@ def find_config_option(cmd: list):
         except ValueError:
             return -1
 
-def check_data(expect, data, ctx):
+def check_data(expect: bytes, data: Optional[bytes], ctx: Dict[str, Union[int, str]]) -> int:
     """
     Check if data matches expected pattern and print test result.
 
     Args:
         expect: Expected pattern (regex bytes)
-        data: Actual data received (bytes)
+        data: Actual data received (bytes or None)
         ctx: Test context dict with 'line', 'len', 'name' keys
 
     Returns:
@@ -67,7 +68,7 @@ def check_data(expect, data, ctx):
     """
     failure = 0
     patt = re.compile(expect, re.DOTALL)
-    if re.search(patt, data):
+    if data is not None and re.search(patt, data):
         result = "OK"
         err = None
     else:

@@ -14,18 +14,19 @@ import socket
 import subprocess as sub
 import sys
 import tempfile
+from typing import Generator, List, Optional, Tuple
 
 from contextlib import contextmanager
 import common as c
 
 
-DEBUG = False
+DEBUG: bool = False
 
-def rand_node_id():
+def rand_node_id() -> bytes:
     return bytes([random.randint(0, 255) for _ in range(20)])
 
-NODES_LEN = 3
-NODES = [
+NODES_LEN: int = 3
+NODES: List[bytes] = [
     b"1234567890abcdefghij", # 0x3132, bootstrap node
     b"abcdefghij1234567890", # 0x6162
     b"mnopqrstuv0987654321", # 0x6D6E
@@ -34,21 +35,21 @@ NODES = [
 # included into persisted routes.
 NODES.extend([rand_node_id() for _ in range(NODES_LEN - len(NODES))])
 
-SLEEP_BOOTSTRAP_NODE_READY = .01
-SLEEP_NODES_FINISH = .2
+SLEEP_BOOTSTRAP_NODE_READY: float = .01
+SLEEP_NODES_FINISH: float = .2
 
 SERVER_HOST, SERVER_AF = c.detect_ip_version()
-SOCKET_TIMEOUT_SECONDS = c.DEFAULT_SOCKET_TIMEOUT
+SOCKET_TIMEOUT_SECONDS: float = c.DEFAULT_SOCKET_TIMEOUT
 
-path = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
+path: str = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
 
-server_bin  = sys.argv[1]
-server_args = sys.argv[2:]
-server_cmd = [server_bin, "-l", "debug" if DEBUG else "error", "-a", SERVER_HOST]  # pylint: disable=invalid-name
+server_bin: str = sys.argv[1]
+server_args: List[str] = sys.argv[2:]
+server_cmd: List[str] = [server_bin, "-l", "debug" if DEBUG else "error", "-a", SERVER_HOST]  # pylint: disable=invalid-name
 server_cmd.extend(server_args)
 
 
-def free_port():
+def free_port() -> int:
     """
     Determines a free port using sockets.
 
@@ -56,41 +57,42 @@ def free_port():
     https://eklitzke.org/binding-on-port-zero
     Works as long as set SO_REUSEADDR in server.
     """
-    free_socket = socket.socket(SERVER_AF, socket.SOCK_DGRAM)
+    free_socket: socket.socket = socket.socket(SERVER_AF, socket.SOCK_DGRAM)
     free_socket.bind((SERVER_HOST, 0))
-    port = free_socket.getsockname()[1]
+    port: int = free_socket.getsockname()[1]
     free_socket.close()
     return port
 
 
-def create_node(cmd, tmp_dir=None, bootstrap=None, nodeid=None):
-    routes_bin = b"d2:id20:" + nodeid + b"5:nodeslee"
-    routes_path = os.path.join(tmp_dir, "routes.dat")
+def create_node(cmd: List[str], tmp_dir: Optional[str] = None, bootstrap: Optional[int] = None, nodeid: Optional[bytes] = None) -> Tuple[sub.Popen[bytes], int]:
+    routes_bin: bytes = b"d2:id20:" + nodeid + b"5:nodeslee"
+    routes_path: str = os.path.join(tmp_dir, "routes.dat")
     with open(routes_path, 'wb') as f:
         f.write(routes_bin)
 
     if bootstrap is not None:
-        port_bytes = c.port_to_bigendian_bytes(bootstrap)
+        port_bytes: bytes = c.port_to_bigendian_bytes(bootstrap)
         # Create bootstrap entry with correct address format for detected IP version
+        bootstrap_bin: bytes
         if SERVER_AF == socket.AF_INET6:
             # IPv6 format: 38 bytes (20 byte ID + 16 byte IPv6 + 2 byte port)
             bootstrap_bin = b"l38:1234567890abcdefghij\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\1" + port_bytes + b"e"
         else:
             # IPv4 format: 26 bytes (20 byte ID + 4 byte IPv4 + 2 byte port)
             bootstrap_bin = b"l26:1234567890abcdefghij\x7f\0\0\1" + port_bytes + b"e"
-        bootstrap_path = os.path.join(tmp_dir, "nodes.dat")
+        bootstrap_path: str = os.path.join(tmp_dir, "nodes.dat")
         with open(bootstrap_path, 'wb') as f:
             f.write(bootstrap_bin)
 
-    port = free_port()
+    port: int = free_port()
     cmd.extend(["-p", str(port), "-c", tmp_dir])
 
-    server = sub.Popen(cmd, stderr=sub.STDOUT, close_fds=True, stdout=sub.PIPE)
+    server: sub.Popen[bytes] = sub.Popen(cmd, stderr=sub.STDOUT, close_fds=True, stdout=sub.PIPE)
     return (server, port)
 
 @contextmanager
-def tmpdirs(count):
-    dirs = [tempfile.TemporaryDirectory() for i in range(count)]
+def tmpdirs(count: int) -> Generator[List[tempfile.TemporaryDirectory[str]], None, None]:
+    dirs: List[tempfile.TemporaryDirectory[str]] = [tempfile.TemporaryDirectory() for i in range(count)]
     try:
         yield dirs
     finally:
@@ -99,18 +101,20 @@ def tmpdirs(count):
 
 
 
-config_idx = c.find_config_option(server_cmd)
+config_idx: int = c.find_config_option(server_cmd)
 if config_idx > 0:
     print("--config option not allowed", file=sys.stderr)
     sys.exit(1)
 
 
 with tmpdirs(NODES_LEN) as tmp_dirs:
-    dirs = [d.name for d in tmp_dirs]
+    dirs: List[str] = [d.name for d in tmp_dirs]
 
     try:
-        instances = []
+        instances: List[Tuple[sub.Popen[bytes], int]] = []
 
+        bootnode: sub.Popen[bytes]
+        bootnode_port: int
         (bootnode, bootnode_port) = create_node(
             server_cmd.copy(), tmp_dir=dirs[0],
             nodeid=NODES[0]
@@ -132,6 +136,8 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
         for s in [server for server, port in list(reversed(instances))]:
             s.terminate()
             if DEBUG:
+                outs: Optional[bytes]
+                errs: Optional[bytes]
                 outs, errs = s.communicate(timeout=15)
             s.wait(1)
             if DEBUG:
@@ -145,26 +151,27 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
         # import shutil
         # shutil.copyfile(tmp_dir1 + "/routes.dat", "/tmp/routes1.dat")
 
-        routes = []
+        routes: List[bytes] = []
         for i in range(NODES_LEN):
             with open(dirs[i] + "/routes.dat", 'rb') as fd:
                 routes.append(fd.read())
 
-        failures = 0
+        failures: int = 0
 
-        def extract_routes(me, data):
-            ret = {}
+        def extract_routes(me: bytes, data: bytes) -> set[bytes]:
+            ret: set[bytes] = set()
 
             if data[0:c.BENCODE_HEADER_SIZE] != b'd2:id20:' + me + b'5:nodesl' or \
                data[-c.BENCODE_FOOTER_SIZE:] != b'ee':
                 return ret
 
-            nodes = data[c.BENCODE_HEADER_SIZE:-c.BENCODE_FOOTER_SIZE]
+            nodes: bytes = data[c.BENCODE_HEADER_SIZE:-c.BENCODE_FOOTER_SIZE]
 
-            node_ids = []
-            i = 0
+            node_ids: List[bytes] = []
+            i: int = 0
             while len(nodes) - c.NODE_ENTRY_COMPACT_SIZE > i:
-                length = nodes[i:i+3]
+                length: bytes = nodes[i:i+3]
+                j: int
                 if length == b'26:':
                     j = c.NODE_ENTRY_COMPACT_SIZE
                 elif length == b'38:':
@@ -177,9 +184,11 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
 
             return set(node_ids)
 
-        nodes_set = set(NODES)
+        nodes_set: set[bytes] = set(NODES)
         for i in range(NODES_LEN):
-            node_routes = extract_routes(NODES[i], routes[i])
+            node_routes: set[bytes] = extract_routes(NODES[i], routes[i])
+            result: str
+            data: Optional[bytes]
             if node_routes == nodes_set - {NODES[i]}:
                 result = "OK"
                 data = None
@@ -192,5 +201,5 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
                 print(f"---\n   incorrect data {data}")
 
 
-retcode = 1 if failures else 0
+retcode: int = 1 if failures else 0
 sys.exit(retcode)
