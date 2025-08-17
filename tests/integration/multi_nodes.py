@@ -4,7 +4,8 @@
 """
 Script for multiple agents integration tests.
 
-One bootstrap and 2 agents.
+Accepts a configuration name from runs/x.py
+Usage: multi_nodes.py <config_name> <binary> [args...]
 """
 
 import os
@@ -13,28 +14,34 @@ import socket
 import subprocess as sub
 import sys
 import tempfile
-from typing import Generator, List, Optional, Tuple
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from contextlib import contextmanager
+
 import common as c
+from runs.multi_nodes import CONFIGS
 
 
 DEBUG: bool = False
 
-NODES_LEN: int = 3
+run = sys.argv[1]
+if run in ["scale_5", "scale_10"]: # SKIPPED for performance
+    sys.exit(77)
+CONFIG: Dict[str, Any] = CONFIGS[run]
+NODES_LEN: int = CONFIG['nodes_len']
+SLEEP_BOOTSTRAP_NODE_READY: float = CONFIG['sleep_bootstrap_ready']
+SLEEP_NODES_FINISH: float = CONFIG['sleep_nodes_finish']
+
 # Use standard test node IDs from common module
 NODES: List[bytes] = [c.get_test_node_id(i) for i in range(NODES_LEN)]
-
-SLEEP_BOOTSTRAP_NODE_READY: float = .01
-SLEEP_NODES_FINISH: float = .2
 
 SERVER_HOST, SERVER_AF = c.detect_ip_version()
 SOCKET_TIMEOUT_SECONDS: float = c.DEFAULT_SOCKET_TIMEOUT
 
 path: str = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
 
-server_bin: str = sys.argv[1]
-server_args: List[str] = sys.argv[2:]
+server_bin: str = sys.argv[2]
+server_args: List[str] = sys.argv[3:]
 server_cmd: List[str] = [
     server_bin, "-l", "debug" if DEBUG else "error", "-a", SERVER_HOST
 ]  # pylint: disable=invalid-name
