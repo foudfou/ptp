@@ -10,6 +10,11 @@ import subprocess as sub
 from contextlib import contextmanager
 from typing import Dict, Generator, List, Optional, Tuple, Union
 
+# Meson test convention https://mesonbuild.com/Unit-tests.html
+TEST_OK   = 0
+TEST_FAIL = 1
+TEST_SKIP = 77
+
 # Bencode parsing constants
 BENCODE_HEADER_SIZE = 36
 BENCODE_FOOTER_SIZE = 2

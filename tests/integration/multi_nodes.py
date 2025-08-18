@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 # Copyright (c) 2020 Foudil Brétel.  All rights reserved.
 
-"""
-Script for multiple agents integration tests.
+"""Script for multiple agents integration tests.
 
-Accepts a configuration name from runs/x.py
-Usage: multi_nodes.py <config_name> <binary> [args...]
+Starts a bootstrap node then multiple other nodes. Let their DHT converge and
+assess the results.
 """
 
 import os
@@ -114,6 +113,7 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
     instances: List[Tuple[sub.Popen[bytes], int]] = []
 
     try:
+        # Start bootstrap node
         bootnode: sub.Popen[bytes]
         bootnode_port: int
         (bootnode, bootnode_port) = create_node(
@@ -124,6 +124,7 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
 
         time.sleep(SLEEP_BOOTSTRAP_NODE_READY)
 
+        # Start N other nodes
         for i in range(1, NODES_LEN):
             instances.append(create_node(
                 server_cmd.copy(), tmp_dir=dirs[i], bootstrap=bootnode_port,
@@ -172,6 +173,7 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
 
         return set(node_ids)
 
+    # Expect each know all
     nodes_set: set[bytes] = set(NODES)
     for i in range(NODES_LEN):
         node_routes: set[bytes] = extract_routes(NODES[i], routes[i])

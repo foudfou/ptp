@@ -34,6 +34,10 @@ server_cmd: List[str] = [
 ]  # pylint: disable=invalid-name
 server_cmd.extend(server_args)
 
+# It's generally hard to get the live output of a running subprocess in
+# python. One trick is to use an intermediary fd, and use `os.read(master_fd,
+# 512)`. But we want to avoid checking the logs and test server error handling
+# in unit tests.
 @contextmanager
 def pty_pair() -> Generator[Tuple[int, int], None, None]:
     """Context manager for PTY file descriptor pairs."""
@@ -72,10 +76,6 @@ if config_idx > 0:
         copy_tree(conf_dir, conf_tmp.name)
     server_cmd[config_idx+1] = conf_tmp.name
 
-# It's generally hard to get the live output of a running subprocess in
-# python. One trick is to use an intermediary fd, and use `os.read(master_fd,
-# 512)`. But we want to avoid checking the logs and test server error handling
-# in unit tests.
 with pty_pair() as (master_fd, slave_fd), \
      c.managed_process(server_cmd, stderr=sub.STDOUT, close_fds=True) as server, \
      socket.socket(SERVER_AF, socket.SOCK_DGRAM) as s:
@@ -92,5 +92,5 @@ with pty_pair() as (master_fd, slave_fd), \
         ctx: Dict[str, int | str] = {"line": i, "len": messages_len, "name": name}
         failures += c.check_data(expect, data, ctx)
 
-retcode: int = 1 if failures else 0
+retcode: int = c.TEST_FAIL if failures else c.TEST_OK
 sys.exit(retcode)
