@@ -21,23 +21,21 @@ import common as c
 from runs.multi_nodes import CONFIGS
 
 
-DEBUG: bool = False
+DEBUG: bool = True
 
 run = sys.argv[1]
-if run in ["scale_5", "scale_10"]: # SKIPPED for performance
-    sys.exit(77)
+if run in ["scale_5", "scale_10"]: # skipped for performance
+    sys.exit(c.TEST_SKIP)
 CONFIG: Dict[str, Any] = CONFIGS[run]
 NODES_LEN: int = CONFIG['nodes_len']
 SLEEP_BOOTSTRAP_NODE_READY: float = CONFIG['sleep_bootstrap_ready']
 SLEEP_NODES_FINISH: float = CONFIG['sleep_nodes_finish']
 
-# Use standard test node IDs from common module
-NODES: List[bytes] = [c.get_test_node_id(i) for i in range(NODES_LEN)]
-
 SERVER_HOST, SERVER_AF = c.detect_ip_version()
 SOCKET_TIMEOUT_SECONDS: float = c.DEFAULT_SOCKET_TIMEOUT
 
-path: str = os.path.abspath(os.path.join(os.path.dirname(__file__)))  # pylint: disable=invalid-name
+# Use standard test node IDs from common module
+nodes: List[bytes] = [c.get_test_node_id(i) for i in range(NODES_LEN)]
 
 server_bin: str = sys.argv[2]
 server_args: List[str] = sys.argv[3:]
@@ -65,7 +63,7 @@ def create_node(
     cmd: List[str],
     tmp_dir: str,
     nodeid: bytes,
-    bootstrap: Optional[int] = None
+    bootstrap: Optional[int] = None,
 ) -> Tuple[sub.Popen[bytes], int]:
     routes_bin: bytes = c.create_empty_routing_table(nodeid)
     routes_path: str = os.path.join(tmp_dir, "routes.dat")
@@ -84,9 +82,40 @@ def create_node(
     port: int = get_free_port()
     cmd.extend(["-p", str(port), "-c", tmp_dir])
 
-    server: sub.Popen[bytes] = sub.Popen(
-        cmd, stderr=sub.STDOUT, close_fds=True, stdout=sub.PIPE)
+    out_path: str = os.path.join(tmp_dir, "stdout")
+    err_path: str = os.path.join(tmp_dir, "stderr")
+    server: sub.Popen[bytes]
+    with open(out_path, 'w') as out_file, open(err_path, 'w') as err_file:
+        server = sub.Popen(
+            cmd, close_fds=True, stderr=err_file, stdout=out_file, text=True)
     return (server, port)
+
+
+def extract_routes(me: bytes, data: bytes) -> set[bytes]:
+    ret: set[bytes] = set()
+
+    if data[0:c.BENCODE_HEADER_SIZE] != b'd2:id20:' + me + b'5:nodesl' or \
+       data[-c.BENCODE_FOOTER_SIZE:] != b'ee':
+        return ret
+
+    nodes: bytes = data[c.BENCODE_HEADER_SIZE:-c.BENCODE_FOOTER_SIZE]
+
+    node_ids: List[bytes] = []
+    i: int = 0
+    while len(nodes) - c.NODE_ENTRY_COMPACT_SIZE > i:
+        length: bytes = nodes[i:i+3]
+        j: int
+        if length == b'26:':
+            j = c.NODE_ENTRY_COMPACT_SIZE
+        elif length == b'38:':
+            j = c.NODE_ENTRY_FULL_SIZE
+        else:
+            return ret
+        i += 3
+        node_ids.append(nodes[i:i+20])
+        i += j
+
+    return set(node_ids)
 
 
 @contextmanager
@@ -107,19 +136,19 @@ if config_idx > 0:
     print("--config option not allowed", file=sys.stderr)
     sys.exit(1)
 
-
 with tmpdirs(NODES_LEN) as tmp_dirs:
     dirs: List[str] = [d.name for d in tmp_dirs]
     instances: List[Tuple[sub.Popen[bytes], int]] = []
 
+    import datetime
     try:
         # Start bootstrap node
         bootnode: sub.Popen[bytes]
-        bootnode_port: int
         (bootnode, bootnode_port) = create_node(
             server_cmd.copy(), tmp_dir=dirs[0],
-            nodeid=NODES[0]
+            nodeid=nodes[0],
         )
+        print(f"__{datetime.datetime.now()} → bootstrap launched")
         instances.append((bootnode, bootnode_port))
 
         time.sleep(SLEEP_BOOTSTRAP_NODE_READY)
@@ -128,16 +157,46 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
         for i in range(1, NODES_LEN):
             instances.append(create_node(
                 server_cmd.copy(), tmp_dir=dirs[i], bootstrap=bootnode_port,
-                nodeid=NODES[i]
+                nodeid=nodes[i]
             ))
+            print(f"__{datetime.datetime.now()} → node({nodes[i].hex()}) launched")
 
         time.sleep(SLEEP_NODES_FINISH)
 
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+
     finally:
-        # Clean up processes
-        for server, port in reversed(instances):
+        # Clean up processes - terminate all and wait for them to finish
+        for i, (server, port) in enumerate(instances):
             server.terminate()
+            print(f"__{datetime.datetime.now()} → {'bootstrap' if i == 0 else f'node[{i}]'} terminated")
             server.wait(timeout=5)
+
+    # Give a moment for file buffers to flush
+    time.sleep(0.1)
+
+    # Print output from last node (which tends to have issues)
+    K: int = NODES_LEN - 2
+
+    out_path: str = os.path.join(dirs[K], "stdout")
+    err_path: str = os.path.join(dirs[K], "stderr")
+
+    try:
+        with open(out_path, 'r') as f:
+            print(f"\n--- node[{K}] stdout ---")
+            print(f.read())
+            print(f"--- End node[{K}] stdout ---\n")
+    except FileNotFoundError:
+        print(f"\n--- node[{K}] stdout file not found ---\n")
+
+    try:
+        with open(err_path, 'r') as f:
+            print(f"\n--- node[{K}] stderr ---")
+            print(f.read())
+            print(f"--- End node[{K}] stderr ---\n")
+    except FileNotFoundError:
+        print(f"\n--- node[{K}] stderr file not found ---\n")
 
     # Read routes after processes have been terminated
     routes: List[bytes] = []
@@ -145,50 +204,27 @@ with tmpdirs(NODES_LEN) as tmp_dirs:
         with open(dirs[i] + "/routes.dat", 'rb') as fd:
             routes.append(fd.read())
 
+    print(f"__node[{K}] routes")
+    print(extract_routes(nodes[K], routes[K]))
+    print(f"__End node[{K}] routes")
+
     failures: int = 0
 
-    def extract_routes(me: bytes, data: bytes) -> set[bytes]:
-        ret: set[bytes] = set()
-
-        if data[0:c.BENCODE_HEADER_SIZE] != b'd2:id20:' + me + b'5:nodesl' or \
-           data[-c.BENCODE_FOOTER_SIZE:] != b'ee':
-            return ret
-
-        nodes: bytes = data[c.BENCODE_HEADER_SIZE:-c.BENCODE_FOOTER_SIZE]
-
-        node_ids: List[bytes] = []
-        i: int = 0
-        while len(nodes) - c.NODE_ENTRY_COMPACT_SIZE > i:
-            length: bytes = nodes[i:i+3]
-            j: int
-            if length == b'26:':
-                j = c.NODE_ENTRY_COMPACT_SIZE
-            elif length == b'38:':
-                j = c.NODE_ENTRY_FULL_SIZE
-            else:
-                return ret
-            i += 3
-            node_ids.append(nodes[i:i+20])
-            i += j
-
-        return set(node_ids)
-
     # Expect each know all
-    nodes_set: set[bytes] = set(NODES)
+    nodes_set: set[bytes] = set(nodes)
     for i in range(NODES_LEN):
-        node_routes: set[bytes] = extract_routes(NODES[i], routes[i])
-        result: str
-        data: Optional[bytes]
-        if node_routes == nodes_set - {NODES[i]}:
-            result = "OK"
-            data = None
-        else:
+        node_routes: set[bytes] = extract_routes(nodes[i], routes[i])
+        result: str = "OK"
+        data: Optional[bytes] = None
+        if node_routes != nodes_set - {nodes[i]}:
             failures += 1
             result = "\033[31mFAIL\033[0m"
             data = routes[i]
         print(f"{i+1}/{NODES_LEN} routes_{i} .. {result}")
-        if data:
-            print(f"---\n   incorrect data {data!r}")
+        data = routes[i]
+        print(f"---\n   data {data!r}")
+        # if data:
+        #     print(f"---\n   incorrect data {data!r}")
 
-retcode: int = 1 if failures else 0
+retcode: int = c.TEST_FAIL if failures else c.TEST_OK
 sys.exit(retcode)

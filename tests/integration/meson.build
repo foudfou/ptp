@@ -10,8 +10,8 @@ integration_tests = [
    ['malformed', main_exe, '-c', '/NONEXISTENT_FOR_DEFAULTS']],
   ['listen_to_client.py bootstrap', 'listen_to_client.py', [main_exe]],
   ['multi_nodes.py bootstrap', 'multi_nodes.py', ['bootstrap', main_exe]],
-  ['multi_nodes.py scale 5', 'multi_nodes.py', ['scale_5', main_exe]],
-  ['multi_nodes.py scale 10', 'multi_nodes.py', ['scale_10', main_exe]],
+  ['multi_nodes.py scale=5', 'multi_nodes.py', ['scale_5', main_exe]],
+  ['multi_nodes.py scale=10', 'multi_nodes.py', ['scale_10', main_exe]],
 ]
 
 foreach t : integration_tests

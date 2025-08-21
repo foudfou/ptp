@@ -5,7 +5,6 @@
 
 import importlib
 import os
-import pty
 import socket
 import subprocess as sub
 import sys
@@ -34,22 +33,6 @@ server_cmd: List[str] = [
 ]  # pylint: disable=invalid-name
 server_cmd.extend(server_args)
 
-# It's generally hard to get the live output of a running subprocess in
-# python. One trick is to use an intermediary fd, and use `os.read(master_fd,
-# 512)`. But we want to avoid checking the logs and test server error handling
-# in unit tests.
-@contextmanager
-def pty_pair() -> Generator[Tuple[int, int], None, None]:
-    """Context manager for PTY file descriptor pairs."""
-    master_fd: int
-    slave_fd: int
-    master_fd, slave_fd = pty.openpty()
-    try:
-        yield master_fd, slave_fd
-    finally:
-        os.close(master_fd)
-        os.close(slave_fd)
-
 
 def poll_data(sock: socket.socket, msg: bytes) -> Optional[bytes]:
     data_rx: Optional[bytes] = None
@@ -76,7 +59,7 @@ if config_idx > 0:
         copy_tree(conf_dir, conf_tmp.name)
     server_cmd[config_idx+1] = conf_tmp.name
 
-with pty_pair() as (master_fd, slave_fd), \
+with c.pty_pair() as (master_fd, slave_fd), \
      c.managed_process(server_cmd, stderr=sub.STDOUT, close_fds=True) as server, \
      socket.socket(SERVER_AF, socket.SOCK_DGRAM) as s:
 

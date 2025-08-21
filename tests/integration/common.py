@@ -4,6 +4,7 @@
 """Common utilities and constants for integration tests."""
 
 import os
+import pty
 import re
 import socket
 import subprocess as sub
@@ -139,6 +140,22 @@ def create_kad_msg_ping_bogus_missing_id(tx_id: bytes = b"XX") -> bytes:
     """Create a malformed ping message missing the node ID for error testing."""
     return b'd1:ade1:q4:ping1:t2:' + tx_id + b'1:y1:qe'
 
+
+# It's generally hard to get the live output of a running subprocess in
+# python. One trick is to use an intermediary fd, and use `os.read(master_fd,
+# 512)`. But we want to avoid checking the logs and test server error handling
+# in unit tests.
+@contextmanager
+def pty_pair() -> Generator[Tuple[int, int], None, None]:
+    """Context manager for PTY file descriptor pairs."""
+    master_fd: int
+    slave_fd: int
+    master_fd, slave_fd = pty.openpty()
+    try:
+        yield master_fd, slave_fd
+    finally:
+        os.close(master_fd)
+        os.close(slave_fd)
 
 @contextmanager
 def managed_process(cmd: List[str], **kwargs) -> Generator[sub.Popen[bytes], None, None]:

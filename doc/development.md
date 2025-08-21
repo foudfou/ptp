@@ -60,7 +60,6 @@ Configure build:
 
 ## Tests
 
-
 Tests and linting are applied as a git pre-commit hook. Git hooks installed
 upon meson setup (`meson.build`).
 
@@ -100,6 +99,12 @@ A test usually starts a ptp server and checks its interaction with it.
     meson test --wrapper='valgrind --trace-children=yes'
     valgrind --leak-check=full --show-leak-kinds=all --trace-children=yes \
         tests/integration/send-to-server routes_state build/src/ptp -c tests/kad/data
+
+### Gotchas
+
+#### Tests fail with `mq_open WO: Too many open files`
+
+→ `rm /dev/mqueue/ptp_log*`
 
 ## Lint
 

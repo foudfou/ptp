@@ -544,7 +544,7 @@ static bool kad_schedule_timeout(const int round, struct kad_ctx *ctx)
 bool kad_refresh(void *data)
 {
     (void)data;
-    log_info("FIXME refresh cb");
+    log_warning("FIXME refresh cb");
     return true;
 }
 

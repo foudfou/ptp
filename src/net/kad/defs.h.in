@@ -7,4 +7,6 @@
 #define KAD_K_CONST             @k_const@
 #define KAD_ALPHA_CONST         @alpha_const@
 
+#define TIMER_KAD_REFRESH_MILLIS 300000
+
 #endif /* DEFS_H */

@@ -16,9 +16,6 @@
 
 #define POLL_EVENTS POLLIN|POLLPRI
 
-// FIXME move to defs.h
-#define TIMER_KAD_REFRESH_MILLIS 300000
-
 static int pollfds_update(struct pollfd fds[], const int nlisten,
                           struct list_item *peers)
 {
