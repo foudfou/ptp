@@ -26,6 +26,13 @@ The Kad implementation is thus built into 2 libs:
 - `libptpkadalt.a` integrated into a lib `libptpalt.so`[^2], itself used in few
   tests.
 
+There is an additional shared library `libptptest.so` for test utility
+functions only used in test executatbles.
+
+`globals.c` contains static variables that are only included in the main
+lib. This isolation prevents ODR (One Definition Rule) issues, as some some
+tests directly include `.c` files to test static functions.
+
 ### static vs shared lib
 
 **FIXME** We should probably aim for a single shared main lib:

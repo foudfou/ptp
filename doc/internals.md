@@ -130,7 +130,10 @@ Messages are dictionaries[^2].
 "e" list: error code (int), error msg (str).
 ```
 
-TODO
+> Parsing consists in building a representation of the bencode object. This is
+> done via 2 data structures: a tree of nodes and a list of literal values for
+> str|int. Nodes can be of type: dict|dict_entry|list|literal. In practice
+> nodes are stored into an array. Each node points to other nodes.
 
 #### Bootstrap
 

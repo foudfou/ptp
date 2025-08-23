@@ -11,19 +11,10 @@
 
 #define BENC_NODES_MAX 4096
 
-/**
- * INITIALIZE WITH benc_repr_reset() on every use!
- *
- * Static storage prevents risking blowing up the stack (1280+ objects,
- * benc_lit 272B benc_node 2328B).
- *
- * TODO optimize storage. 1. explore (m)allocated storage: no shared state, not
- * so many objects in practice, threads get their own; 2. reduce size of
- * benc_lit and benc_node.
- */
-struct benc_literal repr_literals[BENC_ROUTES_LITERAL_MAX];
-struct benc_node repr_nodes[BENC_ROUTES_NODES_MAX];
-struct benc_repr repr;
+/* Global storage defined in globals.c to avoid ODR violations */
+extern struct benc_literal repr_literals[BENC_ROUTES_LITERAL_MAX];
+extern struct benc_node repr_nodes[BENC_ROUTES_NODES_MAX];
+extern struct benc_repr repr;
 
 /* https://github.com/willemt/heapless-bencode/blob/master/bencode.c */
 static bool benc_extract_int(struct benc_parser *p, struct benc_literal *lit)
@@ -135,8 +126,6 @@ static bool benc_stack_pop(struct benc_parser *p)
     p->stack[p->stack_off] = NULL;
     return true;
 }
-
-extern struct benc_repr repr;
 
 static struct benc_node*
 benc_repr_add_node(struct benc_repr *repr,

@@ -1,7 +1,8 @@
 /* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <errno.h>
 #include <time.h>
-#include "net/kad/rpc.c"
+#include "net/kad/rpc.c" // access static functions
+#include "utils/time.h"
 #include "net/socket.h"
 #include "kad/test_util.h"
 

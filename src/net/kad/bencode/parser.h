@@ -41,7 +41,7 @@ enum benc_node_type {
     BENC_NODE_TYPE_DICT_ENTRY,  /* 4 */
 };
 
-/* Parsing consists in building a representation of the bncode object. This is
+/* Parsing consists in building a representation of the bencode object. This is
    done via 2 data structures: a tree of nodes and a list of literal values for
    str|int. Nodes can be of type: dict|dict_entry|list|literal. In practice
    nodes are stored into an array. Each node points to other nodes.
