@@ -55,3 +55,5 @@ Then
 - threadpool
   http://people.clarkson.edu/~jmatthew/cs644.archive/cs644.fa2001/proj/locksmith/code/ExampleTest/threadpool.c
 - read bootstrap nodes from text file in background
+- make integration (from consumers) [more flexible](./doc/kad_event_loops.md),
+  especially with regards to event loop
