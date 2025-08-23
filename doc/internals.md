@@ -135,6 +135,24 @@ Messages are dictionaries[^2].
 > str|int. Nodes can be of type: dict|dict_entry|list|literal. In practice
 > nodes are stored into an array. Each node points to other nodes.
 
+##### Compact node info
+
+Kad node info is serialized as a string comprising IP address + port. For
+certain responses, noticeably `FIND_NODE`, [**our implementation diverges from
+the standard BitTorrent
+implementation**](https://github.com/arvidn/libtorrent/blob/e2b12e72d89d3037a4d927bef70d663b1fbb2530/src/kademlia/node.cpp#L759):
+BitTorrent uses a single string for multiple nodes where we use a list.
+
+##### Parser Types
+
+There a different parser types, based on use cases, each with a different allocation strategy:
+
+- **`BENC_PARSER_GLOBAL`**: large static buffers (~3.2MB) for routing table serialization and bootstrap data
+- **`BENC_PARSER_NET`**: small stack buffers (~3KB) for network messages
+
+The parser validates syntax during traversal, ensuring malformed bencode
+triggers immediate failure regardless of allocation strategy.
+
 #### Bootstrap
 
 When the server starts, it schedules 2 actions:

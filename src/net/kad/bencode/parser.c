@@ -439,3 +439,35 @@ bool benc_parse(struct benc_repr *repr, const char buf[], const size_t slen)
 
     return ret;
 }
+
+/**
+ * Parse @buf based on parser @type.
+ *
+ * @param type parser type determining memory allocation strategy
+ * @param buf input buffer to parse
+ * @param slen buffer length
+ * @param result_repr pointer to store repr result (required all types)
+ * @param network_bufs network buffers (BENC_PARSER_NET only)
+ */
+bool benc_parse_typed(enum benc_parser_type type, const char buf[], const size_t slen,
+                      struct benc_repr *result_repr, struct benc_net_bufs *bufs)
+{
+    switch (type) {
+    case BENC_PARSER_GLOBAL:
+        benc_repr_init();
+        *result_repr = repr;
+        return benc_parse(result_repr, buf, slen);
+
+    case BENC_PARSER_NET:
+        if (!bufs) {
+            log_error("bufs required for BENC_PARSER_NET");
+            return false;
+        }
+        benc_repr_net_init(result_repr, bufs);
+        return benc_parse(result_repr, buf, slen);
+
+    default:
+        log_error("Unknown parser type: %d", type);
+        return false;
+    }
+}
