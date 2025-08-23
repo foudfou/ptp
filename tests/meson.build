@@ -10,7 +10,7 @@ libtest_so = shared_library(
   c_args : lib_cargs,
   include_directories : main_inc,
   dependencies : lib_deps,
-  link_with : libmain_a,
+  link_with : libmain_so,
 )
 
 tests_sources = [
@@ -44,7 +44,7 @@ foreach fname : tests_sources
                    # propagated for inclusion of .c files in tests.
                    c_args : lib_cargs,
                    dependencies : lib_deps,
-                   link_with : [libtest_so],
+                   link_with : [libtest_so, libmain_so],
                   )
   test('unit/'+test_name, exe, args : meson.project_source_root())
 endforeach

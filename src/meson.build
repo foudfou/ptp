@@ -33,19 +33,20 @@ lib_cargs = ['-D_XOPEN_SOURCE=700L', '-D_DEFAULT_SOURCE']
 
 subdir('net/kad')
 
-libmain_a = static_library(
+libmain_so = shared_library(
   proj_name, libmain_sources,
   c_args : lib_cargs,
   include_directories : main_inc,
   dependencies : lib_deps,
   link_with : libkad_a,
+  install : true,
 )
 
 main_exe = executable(
   proj_name, 'main.c',
   c_args : lib_cargs,
   include_directories : main_inc,
-  link_with : libmain_a,
+  link_with : libmain_so,
   dependencies : lib_deps,
   install : true
 )

@@ -15,8 +15,8 @@ The build configuration is defined in `meson.build` files, which explicitely inc
 
 We mainly build the main executable `ptp` and tests executables.
 
-A main lib `libptp.a` is used to share code between the main executable and
-tests.
+A main lib `libptp.so` is used to share code between the main executable and
+tests[^4].
 
 We use 2 sets of Kad constants: `net/kad/.full` for the normal implementation
 and `net/kad/.tiny` used in some tests to simplify reasoning.
@@ -32,14 +32,6 @@ functions only used in test executatbles.
 `globals.c` contains static variables that are only included in the main
 lib. This isolation prevents ODR (One Definition Rule) issues, as some some
 tests directly include `.c` files to test static functions.
-
-### static vs shared lib
-
-**FIXME** We should probably aim for a single shared main lib:
-
-- avoid embedding main code in all tests executables;
-- potentially make kad code available to other programs; plus no need to build
-a shared version, plus an additional static one for the main executable.
 
 ### Usage
 
@@ -172,3 +164,7 @@ We don't have a minimum coverage target yet.
 
 [^3]: We do cut corners and may skip unit testing in favor of integration
     tests, for example when a lot of setup is needed.
+
+[^4]: The main arguments in favor of a dyn main lib are: 1. avoid embedding
+    main code in all tests executables, 2. potentially make kad code available
+    to other programs.
