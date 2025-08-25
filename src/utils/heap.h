@@ -38,7 +38,7 @@
 #define HEAP_PEEK(h) h.buf[0]
 
 #define HEAP_GENERATE(name, type)               \
-    GROWABLE_GENERATE(name, type)               \
+    GROWABLE_GENERATE(name, type, 8, 2)         \
     HEAP_GENERATE_BASE(name, type)              \
     HEAP_GENERATE_PUSH(name, type)              \
     HEAP_GENERATE_POP(name, type)
@@ -57,13 +57,13 @@ static inline void name##_heapify_down(struct name *h, size_t i)        \
         size_t largest = i;                                             \
         size_t l = LEFT(i);                                             \
         size_t r = RIGHT(i);                                            \
-        if (l < h->len && name##_cmp(h->buf[i], h->buf[l]) < 0)     \
+        if (l < h->len && name##_cmp(h->buf[i], h->buf[l]) < 0)         \
             largest = l;                                                \
-        if (r < h->len && name##_cmp(h->buf[largest], h->buf[r]) < 0) \
+        if (r < h->len && name##_cmp(h->buf[largest], h->buf[r]) < 0)   \
             largest = r;                                                \
         if (largest == i)                                               \
             break;                                                      \
-        name##_swap(&h->buf[i], &h->buf[largest]);                  \
+        name##_swap(&h->buf[i], &h->buf[largest]);                      \
         i = largest;                                                    \
     }                                                                   \
 }

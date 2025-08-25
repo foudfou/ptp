@@ -520,7 +520,7 @@ bool routes_write_file(const struct kad_routes *routes, const char state_path[])
     }
 
     log_debug("Writing routes state file (%s)", state_path);
-    if (!file_write(state_path, buf.buf, buf.pos)) {
+    if (!file_write(state_path, buf.buf, buf.len)) {
         log_error("Failed to write routes state file (%s).", state_path);
         res = false; goto cleanup;
     }

@@ -51,11 +51,11 @@ bool node_handle_data(struct kad_ctx *kctx)
     memset(rsp, 0, sizeof(struct iobuf));
 
     bool resp = kad_rpc_handle(kctx, &node_addr, buf, (size_t)slen, rsp);
-    if (rsp->pos == 0) {
+    if (rsp->len == 0) {
         log_info("Handling incoming message doesn't need further response.");
         ret = resp; goto cleanup;
     }
-    if (rsp->pos > SERVER_UDP_BUFLEN) {
+    if (rsp->len > SERVER_UDP_BUFLEN) {
         log_error("Response too large.");
         ret = false; goto cleanup;
     }
@@ -92,7 +92,7 @@ bool kad_response(int sock, struct iobuf *rsp, struct sockaddr_storage addr)
     bool ret = true;
 
     socklen_t addr_len = sizeof(struct sockaddr_storage);
-    ssize_t slen = sendto(sock, rsp->buf, rsp->pos, 0,
+    ssize_t slen = sendto(sock, rsp->buf, rsp->len, 0,
                           (struct sockaddr *)&addr, addr_len);
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
@@ -406,7 +406,7 @@ static bool kad_query(struct kad_ctx *kctx,
     log_info("Sending kad msg [%d] to %s (id=%s)", query->msg.meth, node.addr_str, tx_id);
 
     socklen_t addr_len = sizeof(struct sockaddr_storage);
-    ssize_t slen = sendto(kctx->sock, qbuf.buf, qbuf.pos, 0, (struct sockaddr *)&node.addr, addr_len);
+    ssize_t slen = sendto(kctx->sock, qbuf.buf, qbuf.len, 0, (struct sockaddr *)&node.addr, addr_len);
     if (slen < 0) {
         if (errno != EWOULDBLOCK) {
             log_perror(LOG_ERR, "Failed sendto: %s", errno);

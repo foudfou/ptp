@@ -146,6 +146,14 @@ We don't have a minimum coverage target yet.
 - Naming: from most generic to most specific; name then verb. So things, and
   especially functions, are easily sorted.
 
+### Macros
+
+We make extensive use of macros to generate utility structures. See [src/utils](src/utils).
+
+One way to debug them is to replace the generation code with the generated one:
+
+    gcc -E -P -Isrc -Isrc/utils -Ibuild/src/net/kad/.full src/net/iobuf.h > /tmp/iobug.h
+
 ### Practices
 
 - Favor stack allocation to heap allocation.

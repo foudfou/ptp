@@ -91,11 +91,11 @@ bool proto_msg_parse(struct proto_msg_parser *parser,
 
             /* We check for the length of actually received data after having
                copied it for fear of losing some. */
-            if (parser->msg_data.pos > parser->msg_len.dd) {
+            if (parser->msg_data.len > parser->msg_len.dd) {
                 log_warning("Received more data than expected.");
                 parser->stage = PROTO_MSG_STAGE_ERROR;
             }
-            if (parser->msg_data.pos == parser->msg_len.dd)
+            if (parser->msg_data.len == parser->msg_len.dd)
                 parser->stage = PROTO_MSG_STAGE_NONE;
 
             goto while_end; // we've got all we need from this chunk

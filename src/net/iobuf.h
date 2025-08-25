@@ -2,19 +2,9 @@
 #ifndef IOBUF_H
 #define IOBUF_H
 
-#include <stdbool.h>
-#include <stdlib.h>
+#include "utils/growable.h"
 
-#define IOBUF_SIZE_INITIAL 512
-#define IOBUF_SIZE_FACTOR  2
-
-struct iobuf {
-    char     *buf;
-    size_t    pos;
-    unsigned  capa;
-};
-
-void iobuf_reset(struct iobuf *buf);
-bool iobuf_append(struct iobuf *buf, const char *data, const size_t len);
+GROWABLE_GENERATE(iobuf, char, 32, 2)
+GROWABLE_GENERATE_APPEND(iobuf, char)
 
 #endif /* IOBUF_H */

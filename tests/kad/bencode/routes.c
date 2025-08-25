@@ -29,11 +29,12 @@ int main ()
     }
 
     struct iobuf routesbuf = {0};
+    assert(iobuf_init(&routesbuf, 64));
     memset(&encoded, 0, sizeof(encoded));
     encoded.self_id = (kad_guid){.bytes = "0123456789abcdefghij"};
     assert(benc_encode_routes(&routesbuf, &encoded));
-    assert(strncmp(routesbuf.buf, "d2:id20:0123456789abcdefghij5:nodeslee", routesbuf.pos) == 0);
-    assert(routesbuf.pos == 38);
+    assert(strncmp(routesbuf.buf, "d2:id20:0123456789abcdefghij5:nodeslee", routesbuf.len) == 0);
+    assert(routesbuf.len == 38);
     iobuf_reset(&routesbuf);
 
     memset(&encoded, 0, sizeof(encoded));
@@ -45,8 +46,8 @@ int main ()
     encoded.nodes_len = ARRAY_LEN(kad_test_nodes);
 
     assert(benc_encode_routes(&routesbuf, &encoded));
-    assert(strncmp(routesbuf.buf, KAD_TEST_ROUTES, routesbuf.pos) == 0);
-    assert(routesbuf.pos == 178);
+    assert(strncmp(routesbuf.buf, KAD_TEST_ROUTES, routesbuf.len) == 0);
+    assert(routesbuf.len == 178);
     iobuf_reset(&routesbuf);
 
 

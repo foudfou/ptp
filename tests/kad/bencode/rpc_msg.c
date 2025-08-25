@@ -13,15 +13,15 @@ check_encoded_msg(const struct kad_rpc_msg *msg, struct iobuf *msgbuf,
                   const char str[], const size_t str_len)
 {
     return benc_encode_rpc_msg(msgbuf, msg)
-        && (msgbuf->pos == str_len)
-        && (strncmp(msgbuf->buf, str, msgbuf->pos) == 0);
+        && (msgbuf->len == str_len)
+        && (strncmp(msgbuf->buf, str, msgbuf->len) == 0);
 }
 
 static bool
 check_msg_decode_and_reset(struct kad_rpc_msg *msg, struct iobuf *msgbuf)
 {
     memset(msg, 0, sizeof(*msg));
-    bool ret = benc_decode_rpc_msg(msg, msgbuf->buf, msgbuf->pos);
+    bool ret = benc_decode_rpc_msg(msg, msgbuf->buf, msgbuf->len);
     iobuf_reset(msgbuf);
     return ret;
 }
