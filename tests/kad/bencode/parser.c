@@ -8,6 +8,8 @@
 
 int main ()
 {
+    assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
+
     char buf[BENC_PARSER_BUF_MAX] = "i-300e";
     struct benc_parser parser = {0};
     benc_parser_init(&parser, buf, strlen(buf));
@@ -48,8 +50,6 @@ int main ()
     assert(parser.err);
 
 
-    assert(log_init(LOG_TYPE_STDOUT, LOG_UPTO(LOG_CRIT)));
-
     benc_repr_init();
 
     // {d:["a",1,{v:"none"}],i:42}
@@ -66,15 +66,15 @@ int main ()
     struct benc_node *p = NULL;
     p = benc_node_find_key(&repr.n[0], "d", 1);
     assert(p->typ == BENC_NODE_TYPE_DICT_ENTRY);
-    assert(p->chd_off == 1);
-    assert(p->chd[0]->typ == BENC_NODE_TYPE_LIST);
-    assert(p->chd[0]->chd_off == 3);
+    assert(p->chd.len == 1);
+    assert(p->chd.buf[0]->typ == BENC_NODE_TYPE_LIST);
+    assert(p->chd.buf[0]->chd.len == 3);
 
     // list find where elt == dict with "v" key
-    p = p->chd[0];
+    p = p->chd.buf[0];
     struct benc_node *d = NULL;
-    for (size_t i = 0; i < p->chd_off; ++i) {
-        const struct benc_node *n = p->chd[i];
+    for (size_t i = 0; i < p->chd.len; ++i) {
+        const struct benc_node *n = p->chd.buf[i];
         if (n->typ == BENC_NODE_TYPE_DICT) {
             d = benc_node_find_key(n, "v", 1);
             if (d) {
@@ -84,56 +84,57 @@ int main ()
     }
     assert(d);
     assert(d->typ == BENC_NODE_TYPE_DICT_ENTRY);
-    assert(d->chd_off == 1);
-    assert(d->chd[0]->typ == BENC_NODE_TYPE_LITERAL);
-    assert(d->chd[0]->lit->t == BENC_LITERAL_TYPE_STR);
-    assert(d->chd[0]->lit->s.len == 4);
-    assert(strncmp(d->chd[0]->lit->s.p, "none", d->chd[0]->lit->s.len) == 0);
+    assert(d->chd.len == 1);
+    assert(d->chd.buf[0]->typ == BENC_NODE_TYPE_LITERAL);
+    assert(d->chd.buf[0]->lit->t == BENC_LITERAL_TYPE_STR);
+    assert(d->chd.buf[0]->lit->s.len == 4);
+    assert(strncmp(d->chd.buf[0]->lit->s.p, "none", d->chd.buf[0]->lit->s.len) == 0);
 
     // int conversion ok
     p = benc_node_find_key(&repr.n[0], "i", 1);
     assert(p->typ == BENC_NODE_TYPE_DICT_ENTRY);
-    assert(p->chd_off == 1);
-    assert(p->chd[0]->typ == BENC_NODE_TYPE_LITERAL);
-    assert(p->chd[0]->chd_off == 0);
-    assert(p->chd[0]->lit->t == BENC_LITERAL_TYPE_INT);
-    assert(p->chd[0]->lit->i == 42);
+    assert(p->chd.len == 1);
+    assert(p->chd.buf[0]->typ == BENC_NODE_TYPE_LITERAL);
+    // Literal nodes don't have children, so don't check chd.len
+    /* assert(p->chd.buf[0]->chd.len == 0); */
+    assert(p->chd.buf[0]->lit->t == BENC_LITERAL_TYPE_INT);
+    assert(p->chd.buf[0]->lit->i == 42);
 
 
     strcpy(buf,"d");
-    repr.lit_off=0; repr.n_off=0;
+    benc_repr_terminate(); benc_repr_init();
     assert(!benc_parse(&repr, buf, strlen(buf)));
 
     strcpy(buf,"de");
-    repr.lit_off=0; repr.n_off=0;
+    benc_repr_terminate(); benc_repr_init();
     assert(benc_parse(&repr, buf, strlen(buf)));
 
     strcpy(buf, "dede");
-    repr.lit_off=0; repr.n_off=0;
+    benc_repr_terminate(); benc_repr_init();
     assert(!benc_parse(&repr, buf, strlen(buf)));
 
     strcpy(buf, "i5e");
-    repr.lit_off=0; repr.n_off=0;
+    benc_repr_terminate(); benc_repr_init();
     assert(benc_parse(&repr, buf, strlen(buf)));
 
     strcpy(buf, "i5e3:ddd");
-    repr.lit_off=0; repr.n_off=0;
+    benc_repr_terminate(); benc_repr_init();
     assert(!benc_parse(&repr, buf, strlen(buf)));
 
     // duplicate key entry
     strcpy(buf,"d2:abi12e2:abi34ee");
-    repr.lit_off=0; repr.n_off=0;
+    benc_repr_terminate(); benc_repr_init();
     assert(!benc_parse(&repr, buf, strlen(buf)));
     strcpy(buf,"d2:abi12e3:abci34ee");
-    repr.lit_off=0; repr.n_off=0;
-    assert(!benc_parse(&repr, buf, strlen(buf)));
+    benc_repr_terminate(); benc_repr_init();
+    assert(benc_parse(&repr, buf, strlen(buf)));
 
     // FIXME to be continued...
 
+    benc_repr_terminate();
+    benc_parser_terminate(&parser);
 
     log_shutdown(LOG_TYPE_STDOUT);
-
-    benc_parser_terminate(&parser);
 
 
     return 0;

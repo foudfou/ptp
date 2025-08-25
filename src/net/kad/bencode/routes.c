@@ -33,32 +33,37 @@ bool benc_decode_routes(struct kad_routes_encoded *routes, const char buf[], con
     benc_repr_init();
 
     if (!benc_parse(&repr, buf, slen)) {
-        return false;
+        goto fail;
     }
 
     if (repr.n[0].typ != BENC_NODE_TYPE_DICT) {
         log_error("Decoded bencode object not a dict.");
-        return false;
+        goto fail;
     }
 
     const char *key = lookup_by_id(kad_routes_encoded_key_names, KAD_ROUTES_ENCODED_KEY_NODE_ID);
     const struct benc_node *n = benc_node_find_literal_str(&repr.n[0], key, strlen(key));
-    if (!n || n->chd[0]->lit->s.len != KAD_GUID_SPACE_IN_BYTES) {
-        return false;
+    if (!n || n->chd.buf[0]->lit->s.len != KAD_GUID_SPACE_IN_BYTES) {
+        goto fail;
     }
-    if (!benc_read_guid(&routes->self_id, n->chd[0]->lit)) {
+    if (!benc_read_guid(&routes->self_id, n->chd.buf[0]->lit)) {
         log_error("Node_id copy failed.");
-        return false;
+        goto fail;
     }
     int nnodes = benc_read_nodes_from_key(routes->nodes, ARRAY_LEN(routes->nodes), &repr.n[0],
                                           kad_routes_encoded_key_names,
                                           KAD_ROUTES_ENCODED_KEY_NODES, KAD_ROUTES_ENCODED_KEY_NONE);
     if (nnodes < 0) {
-        return false;
+        goto fail;
     }
     routes->nodes_len = nnodes;
 
+    benc_repr_terminate();
     return true;
+
+fail:
+    benc_repr_terminate();
+    return false;
 }
 
 /**
@@ -105,20 +110,25 @@ int benc_decode_bootstrap_nodes(struct kad_node_info nodes[],
     benc_repr_init();
 
     if (!benc_parse(&repr, buf, slen)) {
-        return -1;
+        goto fail;
     }
 
     const struct benc_node *n = &repr.n[0];
     if (n->typ != BENC_NODE_TYPE_LIST) {
         log_error("Object is not a list.");
-        return -1;
+        goto fail;
     }
 
     int nnodes = benc_read_nodes(nodes, nodes_len, n);
     if (nnodes < 0) {
         log_error("Reading bencoded nodes addresses failed.");
-        return -1;
+        goto fail;
     }
 
+    benc_repr_terminate();  // Clean up on success
     return nnodes;
+
+fail:
+    benc_repr_terminate();  // Clean up on failure
+    return -1;
 }

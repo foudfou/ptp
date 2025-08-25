@@ -9,8 +9,6 @@
 
 #define POINTER_OFFSET(beg, end) (((end) - (beg)) / sizeof(*beg))
 
-#define BENC_NODES_MAX 4096
-
 /* Global storage defined in globals.c to avoid ODR violations */
 extern struct benc_literal repr_literals[BENC_ROUTES_LITERAL_MAX];
 extern struct benc_node repr_nodes[BENC_ROUTES_NODES_MAX];
@@ -151,6 +149,7 @@ benc_repr_add_node(struct benc_repr *repr,
         return NULL;
     }
     n = &repr->n[repr->n_off];
+    memset(n, 0, sizeof(*n));   // defensive
 
     if (typ == BENC_NODE_TYPE_LITERAL) {
         n->typ = typ;
@@ -180,14 +179,9 @@ benc_repr_add_node(struct benc_repr *repr,
 
 
 static bool
-benc_repr_attach_node(struct benc_node *parent, struct benc_node *n)
+benc_repr_attach_node(struct benc_node *parent, const struct benc_node *n)
 {
-    if (parent->chd_off >= BENC_NODE_CHILDREN_MAX - 1) {
-        return false;
-    }
-    parent->chd[parent->chd_off] = n;
-    parent->chd_off++;
-    return true;
+    return benc_node_lst_append(&parent->chd, &n, 1);
 }
 
 /*
@@ -211,8 +205,8 @@ benc_node_find_key(const struct benc_node *dict,
     }
 
     struct benc_node *entry = NULL;
-    for (size_t i = 0; i < dict->chd_off; ++i) {
-        struct benc_node *n = dict->chd[i];
+    for (size_t i = 0; i < dict->chd.len; ++i) {
+        struct benc_node *n = dict->chd.buf[i];
         if (n->typ == BENC_NODE_TYPE_DICT_ENTRY &&
             n->k_len == key_len &&
             strncmp(n->k, key, key_len) == 0) {
@@ -438,36 +432,4 @@ bool benc_parse(struct benc_repr *repr, const char buf[], const size_t slen)
     benc_parser_terminate(&parser);
 
     return ret;
-}
-
-/**
- * Parse @buf based on parser @type.
- *
- * @param type parser type determining memory allocation strategy
- * @param buf input buffer to parse
- * @param slen buffer length
- * @param result_repr pointer to store repr result (required all types)
- * @param network_bufs network buffers (BENC_PARSER_NET only)
- */
-bool benc_parse_typed(enum benc_parser_type type, const char buf[], const size_t slen,
-                      struct benc_repr *result_repr, struct benc_net_bufs *bufs)
-{
-    switch (type) {
-    case BENC_PARSER_GLOBAL:
-        benc_repr_init();
-        *result_repr = repr;
-        return benc_parse(result_repr, buf, slen);
-
-    case BENC_PARSER_NET:
-        if (!bufs) {
-            log_error("bufs required for BENC_PARSER_NET");
-            return false;
-        }
-        benc_repr_net_init(result_repr, bufs);
-        return benc_parse(result_repr, buf, slen);
-
-    default:
-        log_error("Unknown parser type: %d", type);
-        return false;
-    }
 }

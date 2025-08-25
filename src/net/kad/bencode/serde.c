@@ -13,8 +13,8 @@ benc_node_find_literal_str(const struct benc_node *dict,
         log_error("Missing entry (%s) in decoded bencode object.", key);
         return NULL;
     }
-    if (n->chd[0]->typ != BENC_NODE_TYPE_LITERAL ||
-        n->chd[0]->lit->t != BENC_LITERAL_TYPE_STR) {
+    if (n->chd.buf[0]->typ != BENC_NODE_TYPE_LITERAL ||
+        n->chd.buf[0]->lit->t != BENC_LITERAL_TYPE_STR) {
         log_error("Invalid entry %s.", key);
         return NULL;
     }
@@ -50,12 +50,12 @@ benc_node_navigate_to_key(const struct benc_node *dict,
         return n;
     }
 
-    if (n->chd[0]->typ != BENC_NODE_TYPE_DICT) {
+    if (n->chd.buf[0]->typ != BENC_NODE_TYPE_DICT) {
         log_error("Invalid entry %s.", key);
         return NULL;
     }
     key = lookup_by_id(k_names, k2);
-    n = benc_node_find_key(n->chd[0], key, strlen(key));
+    n = benc_node_find_key(n->chd.buf[0], key, strlen(key));
     if (!n) {
         log_warning("Missing entry (%s) in decoded bencode object.", key);
         return NULL;
@@ -95,14 +95,14 @@ static bool benc_read_single_addr(struct sockaddr_storage *addr, char *p, size_t
 int benc_read_nodes(struct kad_node_info nodes[], const size_t nodes_len,
                     const struct benc_node *list)
 {
-    int nnodes = list->chd_off;
+    int nnodes = list->chd.len;
     if ((size_t)nnodes > nodes_len) {
         log_error("Insufficent array size for read nodes.");
         return -1;
     }
 
     for (int i = 0; i < nnodes; i++) {
-        const struct benc_node *node = list->chd[i];
+        const struct benc_node *node = list->chd.buf[i];
         if (node->typ != BENC_NODE_TYPE_LITERAL ||
             node->lit->t != BENC_LITERAL_TYPE_STR) {
             log_error("Invalid node entry #%d.", i);
@@ -136,12 +136,12 @@ int benc_read_nodes_from_key(struct kad_node_info nodes[], const size_t nodes_le
     }
 
     const char *key = lookup_by_id(k_names, k2 == 0 ? k1 : k2);
-    if (n->chd[0]->typ != BENC_NODE_TYPE_LIST) {
+    if (n->chd.buf[0]->typ != BENC_NODE_TYPE_LIST) {
         log_error("Invalid entry %s.", key);
         return -1;
     }
 
-    int nnodes = benc_read_nodes(nodes, nodes_len, n->chd[0]);
+    int nnodes = benc_read_nodes(nodes, nodes_len, n->chd.buf[0]);
     if (nnodes < 0) {
         log_error("Failed to read nodes from bencode object.");
         return nnodes;
