@@ -29,7 +29,7 @@ int main ()
 {
     struct int_heap ints = {0};
     assert(int_heap_init(&ints, 4));
-    assert(memcmp(ints.items, (int[N]){0}, N) == 0);
+    assert(memcmp(ints.buf, (int[N]){0}, N) == 0);
 
     for (size_t i=0; i<N; ++i)
         assert(int_heap_push(&ints, i));
@@ -42,18 +42,18 @@ int main ()
      */
     const int expect_ints[N] = {9,8,5,6,7,1,4,0,3,2};
     assert(ints.len == N);
-    assert(memcmp(ints.items, expect_ints, N) == 0);
+    assert(memcmp(ints.buf, expect_ints, N) == 0);
 
     for (size_t i=0; i<N; ++i)
         assert(int_heap_pop(&ints) == N - 1 - (int)i);
-    assert(memcmp(ints.items, (int[N]){0}, N) == 0);
+    assert(memcmp(ints.buf, (int[N]){0}, N) == 0);
 
-    free_safer(ints.items);
+    int_heap_reset(&ints);
 
 
     struct min_heap somes = {0};
     assert(min_heap_init(&somes, 4));
-    assert(memcmp(somes.items, (int[N]){0}, N) == 0);
+    assert(memcmp(somes.buf, (int[N]){0}, N) == 0);
 
     struct some have[N] = {{74},{73},{72},{71},{70},{69},{68},{67},{66},{65}};
 
@@ -78,8 +78,8 @@ int main ()
      */
     struct some expect_some[N] = {{65},{66},{69},{68},{67},{73},{70},{74},{71},{72}};
     for (size_t i=0; i<N; ++i) {
-        /* printf("heap[%zu] -> %d; underlying[%zu]=%d\n", i, somes.items[i]->c, i, have[i].c); */
-        assert(somes.items[i]->c == expect_some[i].c);
+        /* printf("heap[%zu] -> %d; underlying[%zu]=%d\n", i, somes.buf[i]->c, i, have[i].c); */
+        assert(somes.buf[i]->c == expect_some[i].c);
     }
 
     // replace_top
@@ -94,8 +94,8 @@ int main ()
     */
     struct some expect_some2[] = {{66},{67},{69},{68},{72},{73},{70},{74},{71},{75}};
     for (size_t i=0; i<N; ++i) {
-        /* printf("heap[%zu] -> %d; underlying[%zu]=%d\n", i, somes.items[i]->c, i, have[i].c); */
-        assert(somes.items[i]->c == expect_some2[i].c);
+        /* printf("heap[%zu] -> %d; underlying[%zu]=%d\n", i, somes.buf[i]->c, i, have[i].c); */
+        assert(somes.buf[i]->c == expect_some2[i].c);
     }
 
 
@@ -104,10 +104,10 @@ int main ()
         const struct some *got = min_heap_pop(&somes);
         assert(got->c == expect_pop[(int)i].c);
     }
-    assert(memcmp(somes.items, (int[N]){0}, N) == 0);
+    assert(memcmp(somes.buf, (int[N]){0}, N) == 0);
 
 
-    free_safer(somes.items);
+    min_heap_reset(&somes);
 
 
     return 0;

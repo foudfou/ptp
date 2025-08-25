@@ -1,5 +1,4 @@
 /* Copyright (c) 2025 Foudil Brétel.  All rights reserved. */
-
 #ifndef HEAP_H
 #define HEAP_H
 
@@ -17,8 +16,8 @@
  * otain a min-heap.
  */
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
+#include "utils/growable.h"
 
 #define HEAP_SIZE_INITIAL 64
 #define HEAP_SIZE_FACTOR 2
@@ -36,48 +35,16 @@
 #define RIGHT(i)  (2*(i) + 2)
 #define PARENT(i) (size_t)(((i) - 1)/2)
 
-#define HEAP_PEEK(h) h.items[0]
+#define HEAP_PEEK(h) h.buf[0]
 
-#define HEAP_GENERATE(name, type)     \
-    HEAP_GENERATE_BASE(name, type)    \
-    HEAP_GENERATE_PUSH(name, type)    \
+#define HEAP_GENERATE(name, type)               \
+    GROWABLE_GENERATE(name, type)               \
+    HEAP_GENERATE_BASE(name, type)              \
+    HEAP_GENERATE_PUSH(name, type)              \
     HEAP_GENERATE_POP(name, type)
 //  HEAP_GENERATE_REPLACE_TOP(name, type) implement on demand
 
 #define HEAP_GENERATE_BASE(name, type)                                  \
-    struct name {                                                       \
-        size_t  len;                                                    \
-        size_t  cap;                                                    \
-        type   *items;                                                  \
-    };                                                                  \
-                                                                        \
-/**
- * Allocates the heap array.
- *
- * CAUTION: Consumers MUST free items after use.
- */                                                                     \
-static inline                                                           \
-bool name##_init(struct name *h, size_t capa) {                         \
-    h->items = calloc(capa, sizeof(type));                              \
-    if (h->items == NULL)                                               \
-        return false;                                                   \
-    h->cap = capa;                                                      \
-    h->len = 0;                                                         \
-    return true;                                                        \
-}                                                                       \
-                                                                        \
-static inline                                                           \
-bool name##_grow(struct name *h) {                                      \
-    /* FIXME overflow */                                                \
-    size_t cap_new = h->cap * 2;                                        \
-    type *items_new = realloc(h->items, sizeof(*h->items) * cap_new);   \
-    if (items_new == NULL)                                              \
-        return false;                                                   \
-    h->cap = cap_new;                                                   \
-    h->items = items_new;                                               \
-    return true;                                                        \
-}                                                                       \
-                                                                        \
 static inline void name##_swap(type *a, type *b) {                      \
     type tmp = *b;                                                      \
     *b = *a;                                                            \
@@ -90,13 +57,13 @@ static inline void name##_heapify_down(struct name *h, size_t i)        \
         size_t largest = i;                                             \
         size_t l = LEFT(i);                                             \
         size_t r = RIGHT(i);                                            \
-        if (l < h->len && name##_cmp(h->items[i], h->items[l]) < 0)     \
+        if (l < h->len && name##_cmp(h->buf[i], h->buf[l]) < 0)     \
             largest = l;                                                \
-        if (r < h->len && name##_cmp(h->items[largest], h->items[r]) < 0) \
+        if (r < h->len && name##_cmp(h->buf[largest], h->buf[r]) < 0) \
             largest = r;                                                \
         if (largest == i)                                               \
             break;                                                      \
-        name##_swap(&h->items[i], &h->items[largest]);                  \
+        name##_swap(&h->buf[i], &h->buf[largest]);                  \
         i = largest;                                                    \
     }                                                                   \
 }
@@ -107,14 +74,14 @@ static inline void name##_heapify_down(struct name *h, size_t i)        \
  */                                                                     \
 static inline bool name##_push(struct name *h, type item)               \
 {                                                                       \
-    if (h->len >= h->cap && !name##_grow(h))                            \
+    if (h->len >= h->cap && !name##_grow(h, 1))                         \
         return false;                                                   \
-    h->items[h->len] = item;                                            \
+    h->buf[h->len] = item;                                              \
     h->len++;                                                           \
                                                                         \
     size_t i = h->len - 1;                                              \
-    while (i > 0 && name##_cmp(h->items[PARENT(i)], h->items[i]) < 0) { \
-        name##_swap(&h->items[PARENT(i)], &h->items[i]);                \
+    while (i > 0 && name##_cmp(h->buf[PARENT(i)], h->buf[i]) < 0) {     \
+        name##_swap(&h->buf[PARENT(i)], &h->buf[i]);                    \
         i = PARENT(i);                                                  \
     }                                                                   \
                                                                         \
@@ -128,10 +95,10 @@ static inline type name##_pop(struct name *h)                           \
         /* FIXME ok for pointers, but not for other types */            \
         return (type)0;                                                 \
                                                                         \
-    type ret = h->items[0];                                             \
+    type ret = h->buf[0];                                               \
     h->len--;                                                           \
-    h->items[0] = h->items[h->len];                                     \
-    h->items[h->len] = (type)0;                                         \
+    h->buf[0] = h->buf[h->len];                                         \
+    h->buf[h->len] = (type)0;                                           \
                                                                         \
     name##_heapify_down(h, 0);                                          \
                                                                         \
@@ -151,7 +118,7 @@ static inline void name##_replace_top(struct name *h, type item)        \
         return;                                                         \
     }                                                                   \
                                                                         \
-    h->items[0] = item;                                                 \
+    h->buf[0] = item;                                                   \
     name##_heapify_down(h, 0);                                          \
 }
 

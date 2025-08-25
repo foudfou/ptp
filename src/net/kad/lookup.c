@@ -14,8 +14,8 @@ void kad_lookup_init(struct kad_lookup *lookup)
 void kad_lookup_terminate(struct kad_lookup *lookup)
 {
     kad_lookup_reset(lookup);
-    free_safer(lookup->next.items);
-    free_safer(lookup->past.items);
+    node_heap_reset(&lookup->next);
+    node_heap_reset(&lookup->past);
 }
 
 void kad_lookup_reset(struct kad_lookup *lookup)

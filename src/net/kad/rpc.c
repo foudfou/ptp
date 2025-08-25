@@ -163,9 +163,9 @@ kad_lookup_recv(struct kad_ctx *ctx,
         }
     }
 
-    if (ctx->lookup.next.items[0] && ctx->lookup.past.items[0]) {
-        int next_closer = node_heap_cmp(ctx->lookup.next.items[0],
-                                        ctx->lookup.past.items[0]);
+    if (ctx->lookup.next.buf[0] && ctx->lookup.past.buf[0]) {
+        int next_closer = node_heap_cmp(ctx->lookup.next.buf[0],
+                                        ctx->lookup.past.buf[0]);
         // FIXME log_debug() node id's with corresponding distance to target.
         if (next_closer == INT_MIN)
             log_error("Comparing lookups for different targets.");

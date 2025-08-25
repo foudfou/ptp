@@ -41,7 +41,7 @@ enum benc_literal_type {
             struct {                                \
                 /* TODO use an iobuf instead ? */   \
                 size_t     len;                     \
-                char       p[str_max];         \
+                char       p[str_max];              \
             } s;                                    \
         };                                          \
     };

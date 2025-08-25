@@ -683,6 +683,6 @@ bool kad_lookup_timeout(const int round, struct kad_ctx *ctx)
 
     lookup_par_discard(ctx);
 
-    return kad_lookup_start(ctx->lookup.past.items[0]->target, ctx);
+    return kad_lookup_start(ctx->lookup.past.buf[0]->target, ctx);
 
 }

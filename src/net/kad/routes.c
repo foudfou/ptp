@@ -265,7 +265,7 @@ size_t routes_find_closest(struct kad_routes *routes, struct kad_node_info nodes
         }
     }
 
-    free_safer(sorted.items);
+    candidate_heap_reset(&sorted);
 
     return nodes_len;
 }
