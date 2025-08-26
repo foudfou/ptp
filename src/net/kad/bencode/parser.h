@@ -68,14 +68,14 @@ GROWABLE_GENERATE_APPEND(index_lst, size_t)
      literals=["a", 1, "none", 42]
 */
 struct benc_node {
-    enum benc_node_type       typ;
+    enum benc_node_type  typ;
     /* could be 'attr' or a list of, but actually only used for
        BENC_NODE_TYPE_DICT_ENTRY */
-    char                      k[BENC_PARSER_STR_LEN_MAX];
-    size_t                    k_len;
+    char                 k[BENC_PARSER_STR_LEN_MAX];
+    size_t               k_len;
     union {
-        struct benc_literal  *lit;
-        struct index_lst      chd;
+        size_t           lit;  // index into repr.lit.buf
+        struct index_lst chd;  // indices into repr.n.buf
     };
 };
 
@@ -87,31 +87,30 @@ enum benc_tok {
     BENC_TOK_END,
 };
 
-GROWABLE_GENERATE(benc_node_lst, struct benc_node, 8, 2)
+// Real kad mesage vary in size: ping ~7 nodes,find_node query ~11 nodes,
+// find_node response ~21 nodes, bootstrap responses potentially larger.
+GROWABLE_GENERATE(benc_node_lst, struct benc_node, 16, 2)
 GROWABLE_GENERATE_APPEND(benc_node_lst, struct benc_node)
 
+GROWABLE_GENERATE(benc_literal_lst, struct benc_literal, 8, 2)
+GROWABLE_GENERATE_APPEND(benc_literal_lst, struct benc_literal)
+
 struct benc_repr {
-    struct benc_literal *lit;
-    size_t               lit_len;
-    size_t               lit_off;
-    struct benc_node_lst n;
+    struct benc_literal_lst lit;
+    struct benc_node_lst    n;
 };
 
 // Global representations for parser. Static as quite large and might blow the
 // stack.
-extern struct benc_literal repr_literals[];
 extern struct benc_repr repr;
 
 static inline void benc_repr_init() {
-    memset(repr_literals, 0, sizeof(struct benc_literal) * BENC_ROUTES_LITERAL_MAX);
-    repr.lit = repr_literals;
-    repr.lit_len = (BENC_ROUTES_LITERAL_MAX);
-    repr.lit_off = 0;
-    memset(&repr.n, 0, sizeof(struct index_lst));
+    memset(&repr.lit, 0, sizeof(struct benc_literal_lst));
+    memset(&repr.n, 0, sizeof(struct benc_node_lst));
 }
 
 static inline void benc_repr_terminate() {
-    repr.lit_off = 0;
+    benc_literal_lst_reset(&repr.lit);
 
     for (size_t i = 0; i < repr.n.len; ++i) {
         struct benc_node *n = &repr.n.buf[i];
@@ -147,6 +146,15 @@ static inline struct benc_node *
 benc_node_get_first_child(const struct benc_node *parent)
 {
     return benc_node_get_child(parent, 0);
+}
+
+static inline struct benc_literal *
+benc_node_get_literal(const struct benc_node *node)
+{
+    if (node->typ != BENC_NODE_TYPE_LITERAL || node->lit >= repr.lit.len) {
+        return NULL;
+    }
+    return &repr.lit.buf[node->lit];
 }
 
 struct benc_node *

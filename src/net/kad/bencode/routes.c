@@ -47,10 +47,14 @@ bool benc_decode_routes(struct kad_routes_encoded *routes, const char buf[], con
         goto fail;
     }
     struct benc_node *child = benc_node_get_first_child(n);
-    if (!child || child->lit->s.len != KAD_GUID_SPACE_IN_BYTES) {
+    if (!child) {
         goto fail;
     }
-    if (!benc_read_guid(&routes->self_id, child->lit)) {
+    const struct benc_literal *lit = benc_node_get_literal(child);
+    if (!lit || lit->s.len != KAD_GUID_SPACE_IN_BYTES) {
+        goto fail;
+    }
+    if (!benc_read_guid(&routes->self_id, lit)) {
         log_error("Node_id copy failed.");
         goto fail;
     }

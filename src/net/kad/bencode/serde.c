@@ -14,8 +14,12 @@ benc_node_find_literal_str(const struct benc_node *dict,
         return NULL;
     }
     struct benc_node *child = benc_node_get_first_child(n);
-    if (!child || child->typ != BENC_NODE_TYPE_LITERAL ||
-        child->lit->t != BENC_LITERAL_TYPE_STR) {
+    if (!child || child->typ != BENC_NODE_TYPE_LITERAL) {
+        log_error("Invalid entry %s.", key);
+        return NULL;
+    }
+    struct benc_literal *lit = benc_node_get_literal(child);
+    if (!lit || lit->t != BENC_LITERAL_TYPE_STR) {
         log_error("Invalid entry %s.", key);
         return NULL;
     }
@@ -106,21 +110,26 @@ int benc_read_nodes(struct kad_node_info nodes[], const size_t nodes_len,
     for (int i = 0; i < nnodes; i++) {
         size_t node_idx = list->chd.buf[i];
         const struct benc_node *node = &repr.n.buf[node_idx];
-        if (node->typ != BENC_NODE_TYPE_LITERAL ||
-            node->lit->t != BENC_LITERAL_TYPE_STR) {
+        if (node->typ != BENC_NODE_TYPE_LITERAL) {
             log_error("Invalid node entry #%d.", i);
             return -1;
         }
 
-        if (node->lit->s.len < KAD_GUID_SPACE_IN_BYTES ||
+        const struct benc_literal *lit = benc_node_get_literal(node);
+        if (!lit || lit->t != BENC_LITERAL_TYPE_STR) {
+            log_error("Invalid node entry #%d.", i);
+            return -1;
+        }
+
+        if (lit->s.len < KAD_GUID_SPACE_IN_BYTES ||
             !benc_read_single_addr(&nodes[i].addr,
-                                   node->lit->s.p + KAD_GUID_SPACE_IN_BYTES,
-                                   node->lit->s.len - KAD_GUID_SPACE_IN_BYTES)) {
+                                   (char*)(lit->s.p + KAD_GUID_SPACE_IN_BYTES),
+                                   lit->s.len - KAD_GUID_SPACE_IN_BYTES)) {
             log_error("Invalid node info in position #%d.", i);
             return -1;
         }
         // only set guid when necessary
-        kad_guid_set(&nodes[i].id, (unsigned char*)node->lit->s.p);
+        kad_guid_set(&nodes[i].id, (unsigned char*)lit->s.p);
 
         sockaddr_storage_fmt(nodes[i].addr_str, &nodes[i].addr);
     }

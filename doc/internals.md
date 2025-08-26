@@ -138,6 +138,8 @@ BitTorrent uses a single string for multiple nodes where we use a list.
 > str|int. Nodes can be of type: dict|dict_entry|list|literal. In practice
 > nodes are stored into an array. Each node points to other nodes.
 
+I.e. a *dict_entry* is not a literal. It a node with a key `k` and a child.
+
 ```
 benc_decode_rpc_msg(&msg, buf, strlen(buf) → generates kad msg from buf
 benc_parse(&repr, buf, slen)               → actual parsing, ends up calling…

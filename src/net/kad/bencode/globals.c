@@ -13,5 +13,4 @@
  * so many objects in practice, threads get their own; 2. reduce size of
  * benc_lit and benc_node.
  */
-struct benc_literal repr_literals[BENC_ROUTES_LITERAL_MAX];
 struct benc_repr repr;

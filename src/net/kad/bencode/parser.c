@@ -11,7 +11,6 @@
 #define POINTER_OFFSET(beg, end) ((ptrdiff_t)((end) - (beg)))
 
 /* Global storage defined in globals.c to avoid ODR violations */
-extern struct benc_literal repr_literals[BENC_ROUTES_LITERAL_MAX];
 extern struct benc_repr repr;
 
 /* https://github.com/willemt/heapless-bencode/blob/master/bencode.c */
@@ -134,20 +133,17 @@ benc_repr_add_node(struct benc_repr *repr,
     struct benc_literal *litp = NULL;
 
     if (typ == BENC_NODE_TYPE_LITERAL) {
-        if (repr->lit_off >= repr->lit_len - 1) {
+        if (!benc_literal_lst_append(&repr->lit, lit, 1)) {
+            log_error("repr literal append failed");
             return INVALID_INDEX;
         }
-        litp = &repr->lit[repr->lit_off];
-        *litp = *lit;
+        size_t lit_idx = repr->lit.len - 1;
+        litp = &repr->lit.buf[lit_idx];
         if (lit->t == BENC_LITERAL_TYPE_STR) {
             memcpy(litp->s.p, lit->s.p, lit->s.len);
         }
-        repr->lit_off++;
-    }
-
-    if (typ == BENC_NODE_TYPE_LITERAL) {
         n.typ = typ;
-        n.lit = litp;
+        n.lit = lit_idx;
     }
 
     else if (typ == BENC_NODE_TYPE_DICT_ENTRY) {

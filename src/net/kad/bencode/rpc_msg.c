@@ -61,7 +61,11 @@ benc_get_rpc_msg_meth(const struct benc_node *dict)
     if (!child) {
         return KAD_RPC_METH_NONE;
     }
-    return lookup_by_name(kad_rpc_meth_names, child->lit->s.p, 10);
+    const struct benc_literal *lit = benc_node_get_literal(child);
+    if (!lit) {
+        return KAD_RPC_METH_NONE;
+    }
+    return lookup_by_name(kad_rpc_meth_names, lit->s.p, 10);
 }
 
 static bool
@@ -75,7 +79,12 @@ benc_read_guid_from_key(kad_guid *guid,
         return false;
     }
     struct benc_node *child = benc_node_get_first_child(n);
-    if (!child || !benc_read_guid(guid, child->lit)) {
+    if (!child) {
+        log_error("Failed to get key child.");
+        return false;
+    }
+    const struct benc_literal *lit = benc_node_get_literal(child);
+    if (!lit || !benc_read_guid(guid, lit)) {
         log_error("Node_id copy failed.");
         return false;
     }
@@ -115,22 +124,31 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
     const char *key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_TX_ID);
     const struct benc_node *n = benc_node_find_literal_str(&repr.n.buf[0], key, 1);
     struct benc_node *child = benc_node_get_first_child(n);
-    if (!n || !child || child->lit->s.len != 2) {
+    if (!n || !child) {
         goto fail;
     }
-    if (!benc_read_rpc_msg_tx_id(&msg->tx_id, child->lit)) {
+    const struct benc_literal *lit = benc_node_get_literal(child);
+    if (!lit || lit->s.len != 2) {
+        goto fail;
+    }
+    if (!benc_read_rpc_msg_tx_id(&msg->tx_id, lit)) {
         log_error("Tx_id copy failed.");
         goto fail;
     }
 
     key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_TYPE);
     n = benc_node_find_literal_str(&repr.n.buf[0], key, 1);
-    if (!n || benc_node_get_first_child(n)->lit->s.len != 1) {
+    if (!n) {
         goto fail;
     }
-    msg->type = lookup_by_name(kad_rpc_type_names, benc_node_get_first_child(n)->lit->s.p, 1);
+    child = benc_node_get_first_child(n);
+    lit = benc_node_get_literal(child);
+    if (!lit || lit->s.len != 1) {
+        goto fail;
+    }
+    msg->type = lookup_by_name(kad_rpc_type_names, lit->s.p, 1);
     if (msg->type == KAD_RPC_TYPE_NONE) {
-        log_error("Unknown message type '%c'.", benc_node_get_first_child(n)->lit->s.p);
+        log_error("Unknown message type '%c'.", lit->s.p);
         goto fail;
     }
 
@@ -147,25 +165,37 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
             goto fail;
         }
         n = benc_node_get_first_child(n);
-        if (benc_node_get_first_child(n)->typ != BENC_NODE_TYPE_LITERAL ||
-            benc_node_get_first_child(n)->lit->t != BENC_LITERAL_TYPE_INT) {
+
+        struct benc_node *err_code_node = benc_node_get_first_child(n);
+        if (!err_code_node || err_code_node->typ != BENC_NODE_TYPE_LITERAL) {
             log_error("Invalid value type for elt[0] of %s.", key);
             goto fail;
         }
-        msg->err_code = benc_node_get_first_child(n)->lit->i;
-        if (benc_node_get_child(n, 1)->typ != BENC_NODE_TYPE_LITERAL ||
-            benc_node_get_child(n, 1)->lit->t != BENC_LITERAL_TYPE_STR) {
+        const struct benc_literal *err_code_lit = benc_node_get_literal(err_code_node);
+        if (!err_code_lit || err_code_lit->t != BENC_LITERAL_TYPE_INT) {
             log_error("Invalid value type for elt[0] of %s.", key);
             goto fail;
         }
-        memcpy(msg->err_msg, benc_node_get_child(n, 1)->lit->s.p, benc_node_get_child(n, 1)->lit->s.len);
+        msg->err_code = err_code_lit->i;
+
+        struct benc_node *err_msg_node = benc_node_get_child(n, 1);
+        if (!err_msg_node || err_msg_node->typ != BENC_NODE_TYPE_LITERAL) {
+            log_error("Invalid value type for elt[1] of %s.", key);
+            goto fail;
+        }
+        const struct benc_literal *err_msg_lit = benc_node_get_literal(err_msg_node);
+        if (!err_msg_lit || err_msg_lit->t != BENC_LITERAL_TYPE_STR) {
+            log_error("Invalid value type for elt[1] of %s.", key);
+            goto fail;
+        }
+        memcpy(msg->err_msg, err_msg_lit->s.p, err_msg_lit->s.len);
         break;
     }
 
     case KAD_RPC_TYPE_QUERY: {
         msg->meth = benc_get_rpc_msg_meth(&repr.n.buf[0]);
         if (msg->meth == KAD_RPC_METH_NONE) {
-            log_error("Unknown message method '%c'.", benc_node_get_first_child(n)->lit->s.p);
+            log_error("Unknown message method.");
             goto fail;
         }
 
