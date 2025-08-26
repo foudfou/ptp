@@ -12,7 +12,6 @@
 #define BENC_PARSER_STR_LEN_MAX 48 // our error messages may be >32
 
 #define BENC_ROUTES_LITERAL_MAX KAD_GUID_SPACE_IN_BITS * KAD_K_CONST + 10
-#define BENC_ROUTES_NODES_MAX   KAD_GUID_SPACE_IN_BITS * KAD_K_CONST + 32
 
 enum benc_literal_type {
     BENC_LITERAL_TYPE_NONE,
@@ -41,8 +40,12 @@ enum benc_node_type {
     BENC_NODE_TYPE_DICT_ENTRY,  /* 4 */
 };
 
-GROWABLE_GENERATE(benc_node_lst, struct benc_node *, 8, 2)
-GROWABLE_GENERATE_APPEND(benc_node_lst, struct benc_node *)
+// Indices to underlying benc_node array. Since this underlying array is
+// dynamic (realloc), we can't store pointers to them directly.
+GROWABLE_GENERATE(index_lst, size_t, 8, 2)
+GROWABLE_GENERATE_APPEND(index_lst, size_t)
+
+#define INVALID_INDEX SIZE_MAX
 
 /* Parsing consists in building a representation of the bencode object. This is
    done via 2 data structures: a tree of nodes and a list of literal values for
@@ -72,7 +75,7 @@ struct benc_node {
     size_t                    k_len;
     union {
         struct benc_literal  *lit;
-        struct benc_node_lst  chd;
+        struct index_lst      chd;
     };
 };
 
@@ -84,44 +87,41 @@ enum benc_tok {
     BENC_TOK_END,
 };
 
+GROWABLE_GENERATE(benc_node_lst, struct benc_node, 8, 2)
+GROWABLE_GENERATE_APPEND(benc_node_lst, struct benc_node)
+
 struct benc_repr {
     struct benc_literal *lit;
     size_t               lit_len;
     size_t               lit_off;
-    struct benc_node    *n;
-    size_t               n_len;
-    size_t               n_off;
+    struct benc_node_lst n;
 };
 
 // Global representations for parser. Static as quite large and might blow the
 // stack.
 extern struct benc_literal repr_literals[];
-extern struct benc_node repr_nodes[];
 extern struct benc_repr repr;
 
 static inline void benc_repr_init() {
     memset(repr_literals, 0, sizeof(struct benc_literal) * BENC_ROUTES_LITERAL_MAX);
-    memset(repr_nodes, 0, sizeof(struct benc_node) * BENC_ROUTES_NODES_MAX);
     repr.lit = repr_literals;
     repr.lit_len = (BENC_ROUTES_LITERAL_MAX);
     repr.lit_off = 0;
-    repr.n = repr_nodes;
-    repr.n_len = (BENC_ROUTES_NODES_MAX);
-    repr.n_off = 0;
+    memset(&repr.n, 0, sizeof(struct index_lst));
 }
 
 static inline void benc_repr_terminate() {
-    for (size_t i = 0; i < repr.n_off; ++i) {
-        struct benc_node *n = &repr.n[i];
+    repr.lit_off = 0;
+
+    for (size_t i = 0; i < repr.n.len; ++i) {
+        struct benc_node *n = &repr.n.buf[i];
         if ((n->typ == BENC_NODE_TYPE_LIST ||
              n->typ == BENC_NODE_TYPE_DICT ||
              n->typ == BENC_NODE_TYPE_DICT_ENTRY) &&
             n->chd.len > 0)
-            benc_node_lst_reset(&n->chd);
+            index_lst_reset(&n->chd);
     }
-
-    repr.lit_off = 0;
-    repr.n_off = 0;
+    benc_node_lst_reset(&repr.n);
 }
 
 struct benc_parser {
@@ -130,9 +130,24 @@ struct benc_parser {
     const char       *end;      /* pointer to end of buffer */
     bool              err;
     char              err_msg[BENC_PARSER_STR_LEN_MAX];
-    struct benc_node *stack[BENC_PARSER_STACK_MAX];
+    size_t            stack[BENC_PARSER_STACK_MAX];  // indices into repr.n
     size_t            stack_off;
 };
+
+static inline struct benc_node *
+benc_node_get_child(const struct benc_node *parent, size_t child_idx)
+{
+    if (child_idx >= parent->chd.len)
+        return NULL;
+    size_t node_idx = parent->chd.buf[child_idx];
+    return &repr.n.buf[node_idx];
+}
+
+static inline struct benc_node *
+benc_node_get_first_child(const struct benc_node *parent)
+{
+    return benc_node_get_child(parent, 0);
+}
 
 struct benc_node *
 benc_node_find_key(const struct benc_node *dict,

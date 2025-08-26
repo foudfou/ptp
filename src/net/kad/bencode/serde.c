@@ -13,8 +13,9 @@ benc_node_find_literal_str(const struct benc_node *dict,
         log_error("Missing entry (%s) in decoded bencode object.", key);
         return NULL;
     }
-    if (n->chd.buf[0]->typ != BENC_NODE_TYPE_LITERAL ||
-        n->chd.buf[0]->lit->t != BENC_LITERAL_TYPE_STR) {
+    struct benc_node *child = benc_node_get_first_child(n);
+    if (!child || child->typ != BENC_NODE_TYPE_LITERAL ||
+        child->lit->t != BENC_LITERAL_TYPE_STR) {
         log_error("Invalid entry %s.", key);
         return NULL;
     }
@@ -50,12 +51,13 @@ benc_node_navigate_to_key(const struct benc_node *dict,
         return n;
     }
 
-    if (n->chd.buf[0]->typ != BENC_NODE_TYPE_DICT) {
+    struct benc_node *child = benc_node_get_first_child(n);
+    if (!child || child->typ != BENC_NODE_TYPE_DICT) {
         log_error("Invalid entry %s.", key);
         return NULL;
     }
     key = lookup_by_id(k_names, k2);
-    n = benc_node_find_key(n->chd.buf[0], key, strlen(key));
+    n = benc_node_find_key(child, key, strlen(key));
     if (!n) {
         log_warning("Missing entry (%s) in decoded bencode object.", key);
         return NULL;
@@ -102,7 +104,8 @@ int benc_read_nodes(struct kad_node_info nodes[], const size_t nodes_len,
     }
 
     for (int i = 0; i < nnodes; i++) {
-        const struct benc_node *node = list->chd.buf[i];
+        size_t node_idx = list->chd.buf[i];
+        const struct benc_node *node = &repr.n.buf[node_idx];
         if (node->typ != BENC_NODE_TYPE_LITERAL ||
             node->lit->t != BENC_LITERAL_TYPE_STR) {
             log_error("Invalid node entry #%d.", i);
@@ -136,12 +139,12 @@ int benc_read_nodes_from_key(struct kad_node_info nodes[], const size_t nodes_le
     }
 
     const char *key = lookup_by_id(k_names, k2 == 0 ? k1 : k2);
-    if (n->chd.buf[0]->typ != BENC_NODE_TYPE_LIST) {
+    if (benc_node_get_first_child(n)->typ != BENC_NODE_TYPE_LIST) {
         log_error("Invalid entry %s.", key);
         return -1;
     }
 
-    int nnodes = benc_read_nodes(nodes, nodes_len, n->chd.buf[0]);
+    int nnodes = benc_read_nodes(nodes, nodes_len, benc_node_get_first_child(n));
     if (nnodes < 0) {
         log_error("Failed to read nodes from bencode object.");
         return nnodes;

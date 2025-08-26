@@ -1,17 +1,17 @@
 /* Copyright (c) 2019 Foudil Brétel.  All rights reserved. */
 #include <ctype.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "log.h"
 #include "net/kad/bencode/parser.h"
 
-#define POINTER_OFFSET(beg, end) (((end) - (beg)) / sizeof(*beg))
+#define POINTER_OFFSET(beg, end) ((ptrdiff_t)((end) - (beg)))
 
 /* Global storage defined in globals.c to avoid ODR violations */
 extern struct benc_literal repr_literals[BENC_ROUTES_LITERAL_MAX];
-extern struct benc_node repr_nodes[BENC_ROUTES_NODES_MAX];
 extern struct benc_repr repr;
 
 /* https://github.com/willemt/heapless-bencode/blob/master/bencode.c */
@@ -30,7 +30,7 @@ static bool benc_extract_int(struct benc_parser *p, struct benc_literal *lit)
     do {
         if (!isdigit(*p->cur)) {
             sprintf(p->err_msg, "Invalid character in bencode at %zu.",
-                    (size_t)POINTER_OFFSET(p->beg, p->cur));
+                    POINTER_OFFSET(p->beg, p->cur));
             p->err = true;
             return false;
         }
@@ -39,7 +39,7 @@ static bool benc_extract_int(struct benc_parser *p, struct benc_literal *lit)
         long long val_digit = *p->cur - '0';
         if (val_tmp > LLONG_MAX - val_digit) {
             sprintf(p->err_msg, "Overflow in int parsing at %zu.",
-                    (size_t)POINTER_OFFSET(p->beg, p->cur));
+                    POINTER_OFFSET(p->beg, p->cur));
             p->err = true;
             return false;
         }
@@ -64,7 +64,7 @@ static bool benc_extract_str(struct benc_parser *p, struct benc_literal *lit)
     do {
         if (!isdigit(*p->cur)) {
             sprintf(p->err_msg, "Invalid character in bencode at %zu.",
-                    (size_t)POINTER_OFFSET(p->beg, p->cur));
+                    POINTER_OFFSET(p->beg, p->cur));
             p->err = true;
             return false;
         }
@@ -76,7 +76,7 @@ static bool benc_extract_str(struct benc_parser *p, struct benc_literal *lit)
 
     if (lit->s.len > BENC_PARSER_STR_LEN_MAX) {
         sprintf(p->err_msg, "String too long at %zu.",
-                (size_t)POINTER_OFFSET(p->beg, p->cur));
+                POINTER_OFFSET(p->beg, p->cur));
         p->err = true;
         return false;
     }
@@ -101,14 +101,14 @@ static void benc_parser_terminate(struct benc_parser *parser)
     (void)parser; // FIXME:
 }
 
-static bool benc_stack_push(struct benc_parser *p, struct benc_node * const n)
+static bool benc_stack_push(struct benc_parser *p, const size_t node_idx)
 {
     if (p->stack_off >= BENC_PARSER_STACK_MAX - 1) {
         p->err = true;
         strcpy(p->err_msg, "Parser stack reached maximum nested level.");
         return false;
     }
-    p->stack[p->stack_off] = n;
+    p->stack[p->stack_off] = node_idx;
     p->stack_off++;
     return true;
 }
@@ -121,21 +121,21 @@ static bool benc_stack_pop(struct benc_parser *p)
         return false;
     }
     p->stack_off--;
-    p->stack[p->stack_off] = NULL;
+    // No need to clear index, just decrement stack_off
     return true;
 }
 
-static struct benc_node*
+static size_t
 benc_repr_add_node(struct benc_repr *repr,
                    const enum benc_node_type typ,
                    const struct benc_literal *lit)
 {
-    struct benc_node *n = NULL;
+    struct benc_node n = {0};
     struct benc_literal *litp = NULL;
 
     if (typ == BENC_NODE_TYPE_LITERAL) {
         if (repr->lit_off >= repr->lit_len - 1) {
-            return NULL;
+            return INVALID_INDEX;
         }
         litp = &repr->lit[repr->lit_off];
         *litp = *lit;
@@ -145,43 +145,41 @@ benc_repr_add_node(struct benc_repr *repr,
         repr->lit_off++;
     }
 
-    if (repr->n_off >= repr->n_len - 1) {
-        return NULL;
-    }
-    n = &repr->n[repr->n_off];
-    memset(n, 0, sizeof(*n));   // defensive
-
     if (typ == BENC_NODE_TYPE_LITERAL) {
-        n->typ = typ;
-        n->lit = litp;
+        n.typ = typ;
+        n.lit = litp;
     }
 
     else if (typ == BENC_NODE_TYPE_DICT_ENTRY) {
-        n->typ = typ;
-        memcpy(n->k, lit->s.p, lit->s.len);
-        n->k_len = lit->s.len;
+        n.typ = typ;
+        memcpy(n.k, lit->s.p, lit->s.len);
+        n.k_len = lit->s.len;
     }
 
     else if (typ == BENC_NODE_TYPE_LIST ||
              typ == BENC_NODE_TYPE_DICT) {
-        n->typ = typ;
+        n.typ = typ;
     }
 
     else {
-        return NULL;
+        return INVALID_INDEX;
     }
 
-    repr->n_off++;
+    size_t node_idx = repr->n.len;
+    if (!benc_node_lst_append(&repr->n, &n, 1)) {
+        log_error("repr node append failed");
+        return INVALID_INDEX;
+    }
 
-    log_debug("node typ=%d added", n->typ);
-    return n;
+    log_debug("node typ=%d added at index %zu", n.typ, node_idx);
+    return node_idx;
 }
 
 
 static bool
-benc_repr_attach_node(struct benc_node *parent, const struct benc_node *n)
+benc_repr_attach_node(struct benc_node *parent, const size_t node_idx)
 {
-    return benc_node_lst_append(&parent->chd, &n, 1);
+    return index_lst_append(&parent->chd, &node_idx, 1);
 }
 
 /*
@@ -206,7 +204,8 @@ benc_node_find_key(const struct benc_node *dict,
 
     struct benc_node *entry = NULL;
     for (size_t i = 0; i < dict->chd.len; ++i) {
-        struct benc_node *n = dict->chd.buf[i];
+        size_t node_idx = dict->chd.buf[i];
+        struct benc_node *n = &repr.n.buf[node_idx];
         if (n->typ == BENC_NODE_TYPE_DICT_ENTRY &&
             n->k_len == key_len &&
             strncmp(n->k, key, key_len) == 0) {
@@ -221,41 +220,49 @@ static bool
 benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
                 const struct benc_literal *lit, const enum benc_tok tok)
 {
-    struct benc_node *n = NULL;
-    struct benc_node *stack_top = p->stack_off > 0
-        ? p->stack[p->stack_off - 1]
-        : NULL;
+    size_t node_idx = INVALID_INDEX;
+    size_t stack_top_idx = INVALID_INDEX;
+    struct benc_node *stack_top = NULL;
+
+    if (p->stack_off > 0) {
+        stack_top_idx = p->stack[p->stack_off - 1];
+    }
 
     /* We only allow a single object, no juxtaposition. There is a single
-       entry point in a benc_repr: the root node, repr->n[0]. */
-    if (!stack_top && repr->n_off > 0 && tok != BENC_TOK_END) {
+       entry point in a benc_repr: the root node, repr->n.buf[0]. */
+    if (stack_top_idx == INVALID_INDEX && repr->n.len > 0 && tok != BENC_TOK_END) {
         log_error("Orphan node not allowed");
         return false;
     }
 
     switch (tok) {
     case BENC_TOK_LITERAL:
+        /* log_debug("  lit->t=%d stack_top=%zu stack_top->typ=%d", lit->t, stack_top_idx, repr->n.buf[stack_top_idx].typ); */
         // dict key
         if (lit->t == BENC_LITERAL_TYPE_STR &&
-            stack_top && stack_top->typ == BENC_NODE_TYPE_DICT) {
-            const struct benc_node *dup = benc_node_find_key(stack_top, lit->s.p, lit->s.len);
+            stack_top_idx != INVALID_INDEX &&
+            repr->n.buf[stack_top_idx].typ == BENC_NODE_TYPE_DICT)
+        {
+            const struct benc_node *dup =
+                benc_node_find_key(&repr->n.buf[stack_top_idx], lit->s.p, lit->s.len);
             if (dup) {
                 log_error("Duplicate dict_entry");
                 return false;
             };
 
-            n = benc_repr_add_node(repr, BENC_NODE_TYPE_DICT_ENTRY, lit);
-            if (!n) {
+            node_idx = benc_repr_add_node(repr, BENC_NODE_TYPE_DICT_ENTRY, lit);
+            if (node_idx == INVALID_INDEX) {
                 log_error("Can't add dict_entry node");
                 return false;
             }
 
-            if (!benc_repr_attach_node(stack_top, n)) {
+            stack_top = &repr->n.buf[stack_top_idx]; // fresh pointer (potential realloc in benc_repr_add_node)
+            if (!benc_repr_attach_node(stack_top, node_idx)) {
                 log_error("Can't attach dict_entry node to dict");
                 return false;
             }
 
-            if (!benc_stack_push(p, n)) {
+            if (!benc_stack_push(p, node_idx)) {
                 log_error("Can't stack_push dict_entry node");
                 return false;
             }
@@ -263,22 +270,23 @@ benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
 
         // normal case
         else {
-            n = benc_repr_add_node(repr, BENC_NODE_TYPE_LITERAL, lit);
-            if (!n) {
+            node_idx = benc_repr_add_node(repr, BENC_NODE_TYPE_LITERAL, lit);
+            if (node_idx == INVALID_INDEX) {
                 log_error("Can't add literal node");
                 return false;
             }
 
-            if (stack_top) {
+            if (stack_top_idx != INVALID_INDEX) {
+                stack_top = &repr->n.buf[stack_top_idx]; // fresh pointer
                 if (stack_top->typ == BENC_NODE_TYPE_DICT_ENTRY) {
-                    if (!benc_repr_attach_node(stack_top, n) ||
+                    if (!benc_repr_attach_node(stack_top, node_idx) ||
                         !benc_stack_pop(p)) {
                         log_error("Can't attach literal node to dict_entry or stack_pop");
                         return false;
                     }
                 }
                 else if (stack_top->typ == BENC_NODE_TYPE_LIST) {
-                    if (!benc_repr_attach_node(stack_top, n)) {
+                    if (!benc_repr_attach_node(stack_top, node_idx)) {
                         log_error("Can't attach literal node to list");
                         return false;
                     }
@@ -299,22 +307,23 @@ benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
         } else if (tok == BENC_TOK_DICT) {
             node_type = BENC_NODE_TYPE_DICT;
         }
-        n = benc_repr_add_node(repr, node_type, lit);
-        if (!n) {
+        node_idx = benc_repr_add_node(repr, node_type, lit);
+        if (node_idx == INVALID_INDEX) {
             log_error("Can't add list/dict node");
             return false;
         }
 
-        if (stack_top) {
+        if (stack_top_idx != INVALID_INDEX) {
+            stack_top = &repr->n.buf[stack_top_idx]; // fresh pointer
             if (stack_top->typ == BENC_NODE_TYPE_DICT_ENTRY) {
-                if (!benc_repr_attach_node(stack_top, n) ||
+                if (!benc_repr_attach_node(stack_top, node_idx) ||
                     !benc_stack_pop(p)) {
                     log_error("Can't attach list/dict node to dict_entry or stack_pop");
                     return false;
                 }
             }
             else if (stack_top->typ == BENC_NODE_TYPE_LIST) {
-                if (!benc_repr_attach_node(stack_top, n)) {
+                if (!benc_repr_attach_node(stack_top, node_idx)) {
                     log_error("Can't attach list/dict node to list");
                     return false;
                 }
@@ -324,7 +333,7 @@ benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
             }
         }
 
-        if (!benc_stack_push(p, n)) return false;
+        if (!benc_stack_push(p, node_idx)) return false;
 
         break;
     }

@@ -5,7 +5,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-// Reminder: free(0) is noop
+// Reminder: free(0) is nop
 #define free_safer(p) do {                      \
         free(p);                                \
         p = NULL;                               \

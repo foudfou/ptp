@@ -102,19 +102,12 @@ Messages are encoded in [Bencode](https://www.bittorrent.org/beps/bep_0003.html)
 
 #### Bencode
 
-```
-benc_decode_rpc_msg(&msg, buf, strlen(buf) ⇒ generates kad msg from buf
-benc_parse(&repr, buf, slen) ⇒ actual parsing, ends up calling…
-benc_repr_build(repr, &parser, &lit, tok)) ⇒ creates representation
-```
-
 * string: `<length>:<contents>`. Ex: `4:spam`.
 * integer: `i<number>e`. Ex: `i3e`.
 * list: `l<elements>e`. Ex: `l4:spami3ee` (`['spam',3]`).
 * dictionary: `d<contents>e`. Ex: `d4:spaml1:a1:bee` (`{'spam':['a','b']}`).
 
 > Keys must be strings and appear in sorted order.
-
 
 Messages are dictionaries[^2].
 
@@ -130,11 +123,6 @@ Messages are dictionaries[^2].
 "e" list: error code (int), error msg (str).
 ```
 
-> Parsing consists in building a representation of the bencode object. This is
-> done via 2 data structures: a tree of nodes and a list of literal values for
-> str|int. Nodes can be of type: dict|dict_entry|list|literal. In practice
-> nodes are stored into an array. Each node points to other nodes.
-
 ##### Compact node info
 
 Kad node info is serialized as a string comprising IP address + port. For
@@ -143,15 +131,24 @@ the standard BitTorrent
 implementation**](https://github.com/arvidn/libtorrent/blob/e2b12e72d89d3037a4d927bef70d663b1fbb2530/src/kademlia/node.cpp#L759):
 BitTorrent uses a single string for multiple nodes where we use a list.
 
-##### Parser Types
+##### Parser
 
-There a different parser types, based on use cases, each with a different allocation strategy:
+> Parsing consists in building a representation of the bencode object. This is
+> done via 2 data structures: a tree of nodes and a list of literal values for
+> str|int. Nodes can be of type: dict|dict_entry|list|literal. In practice
+> nodes are stored into an array. Each node points to other nodes.
 
-- **`BENC_PARSER_GLOBAL`**: large static buffers (~3.2MB) for routing table serialization and bootstrap data
-- **`BENC_PARSER_NET`**: small stack buffers (~3KB) for network messages
+```
+benc_decode_rpc_msg(&msg, buf, strlen(buf) → generates kad msg from buf
+benc_parse(&repr, buf, slen)               → actual parsing, ends up calling…
+benc_repr_build(repr, &parser, &lit, tok)) → creates representation
+```
+FIXME continue explaining the parser passes: 1. build AST-like benc_node
+tree, 2. try to recognize a kad message.
 
-The parser validates syntax during traversal, ensuring malformed bencode
-triggers immediate failure regardless of allocation strategy.
+The parser stores representation structures into uses growable arrays. When
+tracking them (stack or node children), we employ indices into these arrays
+instead of pointers, as their memory location may vary across reallocs.
 
 #### Bootstrap
 

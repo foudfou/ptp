@@ -25,6 +25,7 @@
 
 #define GROWABLE_FACTOR 2
 
+// FIXME add optional limit
 #define GROWABLE_GENERATE(name, type, sz_init, factor)     \
     GROWABLE_GENERATE_BASE(name, type)                     \
     GROWABLE_GENERATE_INIT(name, type)                     \

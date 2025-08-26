@@ -36,21 +36,25 @@ bool benc_decode_routes(struct kad_routes_encoded *routes, const char buf[], con
         goto fail;
     }
 
-    if (repr.n[0].typ != BENC_NODE_TYPE_DICT) {
+    if (repr.n.buf[0].typ != BENC_NODE_TYPE_DICT) {
         log_error("Decoded bencode object not a dict.");
         goto fail;
     }
 
     const char *key = lookup_by_id(kad_routes_encoded_key_names, KAD_ROUTES_ENCODED_KEY_NODE_ID);
-    const struct benc_node *n = benc_node_find_literal_str(&repr.n[0], key, strlen(key));
-    if (!n || n->chd.buf[0]->lit->s.len != KAD_GUID_SPACE_IN_BYTES) {
+    const struct benc_node *n = benc_node_find_literal_str(&repr.n.buf[0], key, strlen(key));
+    if (!n) {
         goto fail;
     }
-    if (!benc_read_guid(&routes->self_id, n->chd.buf[0]->lit)) {
+    struct benc_node *child = benc_node_get_first_child(n);
+    if (!child || child->lit->s.len != KAD_GUID_SPACE_IN_BYTES) {
+        goto fail;
+    }
+    if (!benc_read_guid(&routes->self_id, child->lit)) {
         log_error("Node_id copy failed.");
         goto fail;
     }
-    int nnodes = benc_read_nodes_from_key(routes->nodes, ARRAY_LEN(routes->nodes), &repr.n[0],
+    int nnodes = benc_read_nodes_from_key(routes->nodes, ARRAY_LEN(routes->nodes), &repr.n.buf[0],
                                           kad_routes_encoded_key_names,
                                           KAD_ROUTES_ENCODED_KEY_NODES, KAD_ROUTES_ENCODED_KEY_NONE);
     if (nnodes < 0) {
@@ -113,7 +117,7 @@ int benc_decode_bootstrap_nodes(struct kad_node_info nodes[],
         goto fail;
     }
 
-    const struct benc_node *n = &repr.n[0];
+    const struct benc_node *n = &repr.n.buf[0];
     if (n->typ != BENC_NODE_TYPE_LIST) {
         log_error("Object is not a list.");
         goto fail;

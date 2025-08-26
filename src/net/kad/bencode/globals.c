@@ -14,5 +14,4 @@
  * benc_lit and benc_node.
  */
 struct benc_literal repr_literals[BENC_ROUTES_LITERAL_MAX];
-struct benc_node repr_nodes[BENC_ROUTES_NODES_MAX];
 struct benc_repr repr;
