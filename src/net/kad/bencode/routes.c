@@ -30,7 +30,7 @@ static const lookup_entry kad_routes_encoded_key_names[] = {
  * all in network byte order))".
  */
 bool benc_decode_routes(struct kad_routes_encoded *routes, const char buf[], const size_t slen) {
-    benc_repr_init();
+    struct benc_repr repr = {0};
 
     if (!benc_parse(&repr, buf, slen)) {
         goto fail;
@@ -42,15 +42,15 @@ bool benc_decode_routes(struct kad_routes_encoded *routes, const char buf[], con
     }
 
     const char *key = lookup_by_id(kad_routes_encoded_key_names, KAD_ROUTES_ENCODED_KEY_NODE_ID);
-    const struct benc_node *n = benc_node_find_literal_str(&repr.n.buf[0], key, strlen(key));
+    const struct benc_node *n = benc_node_find_literal_str(&repr, &repr.n.buf[0], key, strlen(key));
     if (!n) {
         goto fail;
     }
-    struct benc_node *child = benc_node_get_first_child(n);
+    struct benc_node *child = benc_node_get_first_child(&repr, n);
     if (!child) {
         goto fail;
     }
-    const struct benc_literal *lit = benc_node_get_literal(child);
+    const struct benc_literal *lit = benc_node_get_literal(&repr, child);
     if (!lit || lit->s.len != KAD_GUID_SPACE_IN_BYTES) {
         goto fail;
     }
@@ -58,7 +58,7 @@ bool benc_decode_routes(struct kad_routes_encoded *routes, const char buf[], con
         log_error("Node_id copy failed.");
         goto fail;
     }
-    int nnodes = benc_read_nodes_from_key(routes->nodes, ARRAY_LEN(routes->nodes), &repr.n.buf[0],
+    int nnodes = benc_read_nodes_from_key(&repr, routes->nodes, ARRAY_LEN(routes->nodes), &repr.n.buf[0],
                                           kad_routes_encoded_key_names,
                                           KAD_ROUTES_ENCODED_KEY_NODES, KAD_ROUTES_ENCODED_KEY_NONE);
     if (nnodes < 0) {
@@ -66,11 +66,11 @@ bool benc_decode_routes(struct kad_routes_encoded *routes, const char buf[], con
     }
     routes->nodes_len = nnodes;
 
-    benc_repr_terminate();
+    benc_repr_terminate(&repr);
     return true;
 
 fail:
-    benc_repr_terminate();
+    benc_repr_terminate(&repr);
     return false;
 }
 
@@ -115,7 +115,7 @@ int benc_decode_bootstrap_nodes(struct kad_node_info nodes[],
                                 const size_t nodes_len,
                                 const char buf[], const size_t slen)
 {
-    benc_repr_init();
+    struct benc_repr repr = {0};
 
     if (!benc_parse(&repr, buf, slen)) {
         goto fail;
@@ -127,16 +127,16 @@ int benc_decode_bootstrap_nodes(struct kad_node_info nodes[],
         goto fail;
     }
 
-    int nnodes = benc_read_nodes(nodes, nodes_len, n);
+    int nnodes = benc_read_nodes(&repr, nodes, nodes_len, n);
     if (nnodes < 0) {
         log_error("Reading bencoded nodes addresses failed.");
         goto fail;
     }
 
-    benc_repr_terminate();  // Clean up on success
+    benc_repr_terminate(&repr);
     return nnodes;
 
 fail:
-    benc_repr_terminate();  // Clean up on failure
+    benc_repr_terminate(&repr);
     return -1;
 }

@@ -5,20 +5,21 @@
 #include "net/kad/bencode/serde.h"
 
 const struct benc_node*
-benc_node_find_literal_str(const struct benc_node *dict,
+benc_node_find_literal_str(const struct benc_repr *repr,
+                           const struct benc_node *dict,
                            const char key[], const size_t key_len)
 {
-    struct benc_node *n = benc_node_find_key(dict, key, key_len);
+    struct benc_node *n = benc_node_find_key(repr, dict, key, key_len);
     if (!n) {
         log_error("Missing entry (%s) in decoded bencode object.", key);
         return NULL;
     }
-    struct benc_node *child = benc_node_get_first_child(n);
+    struct benc_node *child = benc_node_get_first_child(repr, n);
     if (!child || child->typ != BENC_NODE_TYPE_LITERAL) {
         log_error("Invalid entry %s.", key);
         return NULL;
     }
-    struct benc_literal *lit = benc_node_get_literal(child);
+    struct benc_literal *lit = benc_node_get_literal(repr, child);
     if (!lit || lit->t != BENC_LITERAL_TYPE_STR) {
         log_error("Invalid entry %s.", key);
         return NULL;
@@ -41,12 +42,13 @@ bool benc_read_guid(kad_guid *id, const struct benc_literal *lit)
 }
 
 const struct benc_node*
-benc_node_navigate_to_key(const struct benc_node *dict,
+benc_node_navigate_to_key(const struct benc_repr *repr,
+                          const struct benc_node *dict,
                           const lookup_entry k_names[],
                           const int k1, const int k2)
 {
     const char *key = lookup_by_id(k_names, k1);
-    struct benc_node *n = benc_node_find_key(dict, key, strlen(key));
+    struct benc_node *n = benc_node_find_key(repr, dict, key, strlen(key));
     if (!n) {
         log_warning("Missing entry (%s) in decoded bencode object.", key);
         return NULL;
@@ -55,13 +57,13 @@ benc_node_navigate_to_key(const struct benc_node *dict,
         return n;
     }
 
-    struct benc_node *child = benc_node_get_first_child(n);
+    struct benc_node *child = benc_node_get_first_child(repr, n);
     if (!child || child->typ != BENC_NODE_TYPE_DICT) {
         log_error("Invalid entry %s.", key);
         return NULL;
     }
     key = lookup_by_id(k_names, k2);
-    n = benc_node_find_key(child, key, strlen(key));
+    n = benc_node_find_key(repr, child, key, strlen(key));
     if (!n) {
         log_warning("Missing entry (%s) in decoded bencode object.", key);
         return NULL;
@@ -98,7 +100,8 @@ static bool benc_read_single_addr(struct sockaddr_storage *addr, char *p, size_t
     return true;
 }
 
-int benc_read_nodes(struct kad_node_info nodes[], const size_t nodes_len,
+int benc_read_nodes(const struct benc_repr *repr,
+                    struct kad_node_info nodes[], const size_t nodes_len,
                     const struct benc_node *list)
 {
     int nnodes = list->chd.len;
@@ -109,13 +112,13 @@ int benc_read_nodes(struct kad_node_info nodes[], const size_t nodes_len,
 
     for (int i = 0; i < nnodes; i++) {
         size_t node_idx = list->chd.buf[i];
-        const struct benc_node *node = &repr.n.buf[node_idx];
+        const struct benc_node *node = &repr->n.buf[node_idx];
         if (node->typ != BENC_NODE_TYPE_LITERAL) {
             log_error("Invalid node entry #%d.", i);
             return -1;
         }
 
-        const struct benc_literal *lit = benc_node_get_literal(node);
+        const struct benc_literal *lit = benc_node_get_literal(repr, node);
         if (!lit || lit->t != BENC_LITERAL_TYPE_STR) {
             log_error("Invalid node entry #%d.", i);
             return -1;
@@ -137,23 +140,24 @@ int benc_read_nodes(struct kad_node_info nodes[], const size_t nodes_len,
     return nnodes;
 }
 
-int benc_read_nodes_from_key(struct kad_node_info nodes[], const size_t nodes_len,
+int benc_read_nodes_from_key(const struct benc_repr *repr,
+                             struct kad_node_info nodes[], const size_t nodes_len,
                              const struct benc_node *dict,
                              const lookup_entry k_names[],
                              const int k1, const int k2)
 {
-    const struct benc_node *n = benc_node_navigate_to_key(dict, k_names, k1, k2);
+    const struct benc_node *n = benc_node_navigate_to_key(repr, dict, k_names, k1, k2);
     if (!n) {
         return -1;
     }
 
     const char *key = lookup_by_id(k_names, k2 == 0 ? k1 : k2);
-    if (benc_node_get_first_child(n)->typ != BENC_NODE_TYPE_LIST) {
+    if (benc_node_get_first_child(repr, n)->typ != BENC_NODE_TYPE_LIST) {
         log_error("Invalid entry %s.", key);
         return -1;
     }
 
-    int nnodes = benc_read_nodes(nodes, nodes_len, benc_node_get_first_child(n));
+    int nnodes = benc_read_nodes(repr, nodes, nodes_len, benc_node_get_first_child(repr, n));
     if (nnodes < 0) {
         log_error("Failed to read nodes from bencode object.");
         return nnodes;

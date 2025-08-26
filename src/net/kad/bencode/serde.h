@@ -17,15 +17,19 @@
 #define BENC_KAD_NODE_INFO_IP6_LEN_IN_BYTES KAD_GUID_SPACE_IN_BYTES + BENC_IP6_ADDR_LEN_IN_BYTES + 2
 
 const struct benc_node*
-benc_node_find_literal_str(const struct benc_node *dict,
+benc_node_find_literal_str(const struct benc_repr *repr,
+                           const struct benc_node *dict,
                            const char key[], const size_t key_len);
 const struct benc_node*
-benc_node_navigate_to_key(const struct benc_node *dict,
+benc_node_navigate_to_key(const struct benc_repr *repr,
+                          const struct benc_node *dict,
                           const lookup_entry k_names[],
                           const int k1, const int k2);
-int benc_read_nodes(struct kad_node_info nodes[], const size_t nodes_len,
+int benc_read_nodes(const struct benc_repr *repr,
+                    struct kad_node_info nodes[], const size_t nodes_len,
                     const struct benc_node *list);
-int benc_read_nodes_from_key(struct kad_node_info nodes[], const size_t nodes_len,
+int benc_read_nodes_from_key(const struct benc_repr *repr,
+                             struct kad_node_info nodes[], const size_t nodes_len,
                              const struct benc_node *dict,
                              const lookup_entry k_names[],
                              const int k1, const int k2);

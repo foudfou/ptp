@@ -5,13 +5,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
-#include "kad_defs.h"
 #include "utils/growable.h"
 
 #define BENC_PARSER_STACK_MAX   32
 #define BENC_PARSER_STR_LEN_MAX 48 // our error messages may be >32
-
-#define BENC_ROUTES_LITERAL_MAX KAD_GUID_SPACE_IN_BITS * KAD_K_CONST + 10
 
 enum benc_literal_type {
     BENC_LITERAL_TYPE_NONE,
@@ -95,32 +92,25 @@ GROWABLE_GENERATE_APPEND(benc_node_lst, struct benc_node)
 GROWABLE_GENERATE(benc_literal_lst, struct benc_literal, 8, 2)
 GROWABLE_GENERATE_APPEND(benc_literal_lst, struct benc_literal)
 
+// Make sure to FREE-AFTER-USE with benc_repr_temrinate()!
 struct benc_repr {
     struct benc_literal_lst lit;
     struct benc_node_lst    n;
 };
 
-// Global representations for parser. Static as quite large and might blow the
-// stack.
-extern struct benc_repr repr;
 
-static inline void benc_repr_init() {
-    memset(&repr.lit, 0, sizeof(struct benc_literal_lst));
-    memset(&repr.n, 0, sizeof(struct benc_node_lst));
-}
+static inline void benc_repr_terminate(struct benc_repr *repr) {
+    benc_literal_lst_reset(&repr->lit);
 
-static inline void benc_repr_terminate() {
-    benc_literal_lst_reset(&repr.lit);
-
-    for (size_t i = 0; i < repr.n.len; ++i) {
-        struct benc_node *n = &repr.n.buf[i];
+    for (size_t i = 0; i < repr->n.len; ++i) {
+        struct benc_node *n = &repr->n.buf[i];
         if ((n->typ == BENC_NODE_TYPE_LIST ||
              n->typ == BENC_NODE_TYPE_DICT ||
              n->typ == BENC_NODE_TYPE_DICT_ENTRY) &&
             n->chd.len > 0)
             index_lst_reset(&n->chd);
     }
-    benc_node_lst_reset(&repr.n);
+    benc_node_lst_reset(&repr->n);
 }
 
 struct benc_parser {
@@ -134,31 +124,32 @@ struct benc_parser {
 };
 
 static inline struct benc_node *
-benc_node_get_child(const struct benc_node *parent, size_t child_idx)
+benc_node_get_child(const struct benc_repr *repr, const struct benc_node *parent, size_t child_idx)
 {
     if (child_idx >= parent->chd.len)
         return NULL;
     size_t node_idx = parent->chd.buf[child_idx];
-    return &repr.n.buf[node_idx];
+    return &repr->n.buf[node_idx];
 }
 
 static inline struct benc_node *
-benc_node_get_first_child(const struct benc_node *parent)
+benc_node_get_first_child(const struct benc_repr *repr, const struct benc_node *parent)
 {
-    return benc_node_get_child(parent, 0);
+    return benc_node_get_child(repr, parent, 0);
 }
 
 static inline struct benc_literal *
-benc_node_get_literal(const struct benc_node *node)
+benc_node_get_literal(const struct benc_repr *repr, const struct benc_node *node)
 {
-    if (node->typ != BENC_NODE_TYPE_LITERAL || node->lit >= repr.lit.len) {
+    if (node->typ != BENC_NODE_TYPE_LITERAL || node->lit >= repr->lit.len) {
         return NULL;
     }
-    return &repr.lit.buf[node->lit];
+    return &repr->lit.buf[node->lit];
 }
 
 struct benc_node *
-benc_node_find_key(const struct benc_node *dict,
+benc_node_find_key(const struct benc_repr *repr,
+                   const struct benc_node *dict,
                    const char              key[],
                    const size_t            key_len);
 

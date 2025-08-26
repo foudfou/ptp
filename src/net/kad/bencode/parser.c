@@ -10,8 +10,6 @@
 
 #define POINTER_OFFSET(beg, end) ((ptrdiff_t)((end) - (beg)))
 
-/* Global storage defined in globals.c to avoid ODR violations */
-extern struct benc_repr repr;
 
 /* https://github.com/willemt/heapless-bencode/blob/master/bencode.c */
 static bool benc_extract_int(struct benc_parser *p, struct benc_literal *lit)
@@ -191,7 +189,8 @@ void log_debug_literal(const struct benc_literal *lit)
 */
 
 struct benc_node*
-benc_node_find_key(const struct benc_node *dict,
+benc_node_find_key(const struct benc_repr *repr,
+                   const struct benc_node *dict,
                    const char key[], const size_t key_len)
 {
     if (dict->typ != BENC_NODE_TYPE_DICT) {
@@ -201,7 +200,7 @@ benc_node_find_key(const struct benc_node *dict,
     struct benc_node *entry = NULL;
     for (size_t i = 0; i < dict->chd.len; ++i) {
         size_t node_idx = dict->chd.buf[i];
-        struct benc_node *n = &repr.n.buf[node_idx];
+        struct benc_node *n = &repr->n.buf[node_idx];
         if (n->typ == BENC_NODE_TYPE_DICT_ENTRY &&
             n->k_len == key_len &&
             strncmp(n->k, key, key_len) == 0) {
@@ -240,7 +239,7 @@ benc_repr_build(struct benc_repr *repr, struct benc_parser *p,
             repr->n.buf[stack_top_idx].typ == BENC_NODE_TYPE_DICT)
         {
             const struct benc_node *dup =
-                benc_node_find_key(&repr->n.buf[stack_top_idx], lit->s.p, lit->s.len);
+                benc_node_find_key(repr, &repr->n.buf[stack_top_idx], lit->s.p, lit->s.len);
             if (dup) {
                 log_error("Duplicate dict_entry");
                 return false;

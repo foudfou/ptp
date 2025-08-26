@@ -50,18 +50,18 @@ benc_read_rpc_msg_tx_id(kad_rpc_msg_tx_id *id, const struct benc_literal *lit)
 }
 
 static enum kad_rpc_meth
-benc_get_rpc_msg_meth(const struct benc_node *dict)
+benc_get_rpc_msg_meth(const struct benc_repr *repr, const struct benc_node *dict)
 {
     const char *key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_METH);
-    const struct benc_node *n = benc_node_find_literal_str(dict, key, 1);
+    const struct benc_node *n = benc_node_find_literal_str(repr, dict, key, 1);
     if (!n) {
         return KAD_RPC_METH_NONE;
     }
-    struct benc_node *child = benc_node_get_first_child(n);
+    struct benc_node *child = benc_node_get_first_child(repr, n);
     if (!child) {
         return KAD_RPC_METH_NONE;
     }
-    const struct benc_literal *lit = benc_node_get_literal(child);
+    const struct benc_literal *lit = benc_node_get_literal(repr, child);
     if (!lit) {
         return KAD_RPC_METH_NONE;
     }
@@ -69,21 +69,22 @@ benc_get_rpc_msg_meth(const struct benc_node *dict)
 }
 
 static bool
-benc_read_guid_from_key(kad_guid *guid,
+benc_read_guid_from_key(const struct benc_repr *repr,
+                        kad_guid *guid,
                         const struct benc_node *dict,
                         const enum kad_rpc_msg_key k1,
                         const enum kad_rpc_msg_key k2)
 {
-    const struct benc_node *n = benc_node_navigate_to_key(dict, kad_rpc_msg_key_names, k1, k2);
+    const struct benc_node *n = benc_node_navigate_to_key(repr, dict, kad_rpc_msg_key_names, k1, k2);
     if (!n) {
         return false;
     }
-    struct benc_node *child = benc_node_get_first_child(n);
+    struct benc_node *child = benc_node_get_first_child(repr, n);
     if (!child) {
         log_error("Failed to get key child.");
         return false;
     }
-    const struct benc_literal *lit = benc_node_get_literal(child);
+    const struct benc_literal *lit = benc_node_get_literal(repr, child);
     if (!lit || !benc_read_guid(guid, lit)) {
         log_error("Node_id copy failed.");
         return false;
@@ -109,7 +110,7 @@ benc_read_guid_from_key(kad_guid *guid,
  * network byte order))".
  */
 bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t slen) {
-    benc_repr_init();
+    struct benc_repr repr = {0};
 
     if (!benc_parse(&repr, buf, slen)) {
         goto fail;
@@ -122,12 +123,12 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
     }
 
     const char *key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_TX_ID);
-    const struct benc_node *n = benc_node_find_literal_str(&repr.n.buf[0], key, 1);
-    struct benc_node *child = benc_node_get_first_child(n);
+    const struct benc_node *n = benc_node_find_literal_str(&repr, &repr.n.buf[0], key, 1);
+    struct benc_node *child = benc_node_get_first_child(&repr, n);
     if (!n || !child) {
         goto fail;
     }
-    const struct benc_literal *lit = benc_node_get_literal(child);
+    const struct benc_literal *lit = benc_node_get_literal(&repr, child);
     if (!lit || lit->s.len != 2) {
         goto fail;
     }
@@ -137,12 +138,12 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
     }
 
     key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_TYPE);
-    n = benc_node_find_literal_str(&repr.n.buf[0], key, 1);
+    n = benc_node_find_literal_str(&repr, &repr.n.buf[0], key, 1);
     if (!n) {
         goto fail;
     }
-    child = benc_node_get_first_child(n);
-    lit = benc_node_get_literal(child);
+    child = benc_node_get_first_child(&repr, n);
+    lit = benc_node_get_literal(&repr, child);
     if (!lit || lit->s.len != 1) {
         goto fail;
     }
@@ -155,35 +156,35 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
     switch (msg->type) {
     case KAD_RPC_TYPE_ERROR: {
         key = lookup_by_id(kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_ERROR);
-        n = benc_node_find_key(&repr.n.buf[0], key, 1);
+        n = benc_node_find_key(&repr, &repr.n.buf[0], key, 1);
         if (!n) {
             log_error("Missing entry (%s) in decoded bencode object.", key);
             goto fail;
         }
-        if (benc_node_get_first_child(n)->typ != BENC_NODE_TYPE_LIST) {
+        if (benc_node_get_first_child(&repr, n)->typ != BENC_NODE_TYPE_LIST) {
             log_error("Invalid entry %s.", key);
             goto fail;
         }
-        n = benc_node_get_first_child(n);
+        n = benc_node_get_first_child(&repr, n);
 
-        struct benc_node *err_code_node = benc_node_get_first_child(n);
+        struct benc_node *err_code_node = benc_node_get_first_child(&repr, n);
         if (!err_code_node || err_code_node->typ != BENC_NODE_TYPE_LITERAL) {
             log_error("Invalid value type for elt[0] of %s.", key);
             goto fail;
         }
-        const struct benc_literal *err_code_lit = benc_node_get_literal(err_code_node);
+        const struct benc_literal *err_code_lit = benc_node_get_literal(&repr, err_code_node);
         if (!err_code_lit || err_code_lit->t != BENC_LITERAL_TYPE_INT) {
             log_error("Invalid value type for elt[0] of %s.", key);
             goto fail;
         }
         msg->err_code = err_code_lit->i;
 
-        struct benc_node *err_msg_node = benc_node_get_child(n, 1);
+        struct benc_node *err_msg_node = benc_node_get_child(&repr, n, 1);
         if (!err_msg_node || err_msg_node->typ != BENC_NODE_TYPE_LITERAL) {
             log_error("Invalid value type for elt[1] of %s.", key);
             goto fail;
         }
-        const struct benc_literal *err_msg_lit = benc_node_get_literal(err_msg_node);
+        const struct benc_literal *err_msg_lit = benc_node_get_literal(&repr, err_msg_node);
         if (!err_msg_lit || err_msg_lit->t != BENC_LITERAL_TYPE_STR) {
             log_error("Invalid value type for elt[1] of %s.", key);
             goto fail;
@@ -193,7 +194,7 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
     }
 
     case KAD_RPC_TYPE_QUERY: {
-        msg->meth = benc_get_rpc_msg_meth(&repr.n.buf[0]);
+        msg->meth = benc_get_rpc_msg_meth(&repr, &repr.n.buf[0]);
         if (msg->meth == KAD_RPC_METH_NONE) {
             log_error("Unknown message method.");
             goto fail;
@@ -201,16 +202,16 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
 
         if (msg->meth == KAD_RPC_METH_PING) {
             // get "a":{"id":"abcdefghij0123456789"}
-            if (!benc_read_guid_from_key(&msg->node_id, &repr.n.buf[0], KAD_RPC_MSG_KEY_ARG, KAD_RPC_MSG_KEY_NODE_ID)) {
+            if (!benc_read_guid_from_key(&repr, &msg->node_id, &repr.n.buf[0], KAD_RPC_MSG_KEY_ARG, KAD_RPC_MSG_KEY_NODE_ID)) {
                 goto fail;
             }
         }
 
         else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
-            if (!benc_read_guid_from_key(&msg->node_id, &repr.n.buf[0], KAD_RPC_MSG_KEY_ARG, KAD_RPC_MSG_KEY_NODE_ID)) {
+            if (!benc_read_guid_from_key(&repr, &msg->node_id, &repr.n.buf[0], KAD_RPC_MSG_KEY_ARG, KAD_RPC_MSG_KEY_NODE_ID)) {
                 goto fail;
             }
-            if (!benc_read_guid_from_key(&msg->target, &repr.n.buf[0], KAD_RPC_MSG_KEY_ARG, KAD_RPC_MSG_KEY_TARGET)) {
+            if (!benc_read_guid_from_key(&repr, &msg->target, &repr.n.buf[0], KAD_RPC_MSG_KEY_ARG, KAD_RPC_MSG_KEY_TARGET)) {
                 goto fail;
             }
         }
@@ -228,7 +229,7 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
         // Responses do not have any method name.
 
         // get "r":{"id":"abcdefghij0123456789"}
-        if (!benc_read_guid_from_key(&msg->node_id, &repr.n.buf[0], KAD_RPC_MSG_KEY_RES, KAD_RPC_MSG_KEY_NODE_ID)) {
+        if (!benc_read_guid_from_key(&repr, &msg->node_id, &repr.n.buf[0], KAD_RPC_MSG_KEY_RES, KAD_RPC_MSG_KEY_NODE_ID)) {
             goto fail;
         }
 
@@ -236,7 +237,7 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
         /* NOTE the protocol says « a string containing the compact node info
            for the target node or the K (8) closest good nodes ». For now
            we're always expecting/giving a list.  */
-        int nnodes = benc_read_nodes_from_key(msg->nodes, ARRAY_LEN(msg->nodes), &repr.n.buf[0],
+        int nnodes = benc_read_nodes_from_key(&repr, msg->nodes, ARRAY_LEN(msg->nodes), &repr.n.buf[0],
                                               kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_RES, KAD_RPC_MSG_KEY_NODES);
         if (nnodes > 0) {
             msg->nodes_len = nnodes;
@@ -252,11 +253,11 @@ bool benc_decode_rpc_msg(struct kad_rpc_msg *msg, const char buf[], const size_t
         break;
     }
 
-    benc_repr_terminate();
+    benc_repr_terminate(&repr);
     return true;
 
 fail:
-    benc_repr_terminate();
+    benc_repr_terminate(&repr);
     return false;
 }
 
