@@ -207,6 +207,39 @@ int main ()
                              114));
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
+    // round-trip serialization tests
+    struct {
+        const char *data;
+        enum kad_rpc_type type;
+        enum kad_rpc_meth meth;
+        unsigned long long err_code;
+    } roundtrip_tests[] = {
+        {KAD_TEST_ERROR, KAD_RPC_TYPE_ERROR, KAD_RPC_METH_NONE, 201},
+        {KAD_TEST_PING_QUERY, KAD_RPC_TYPE_QUERY, KAD_RPC_METH_PING, 0},
+        {KAD_TEST_FIND_NODE_QUERY, KAD_RPC_TYPE_QUERY, KAD_RPC_METH_FIND_NODE, 0},
+        {NULL, 0, 0, 0}
+    };
+
+    struct iobuf roundtrip_buf = {0};
+    assert(iobuf_init(&roundtrip_buf, 256));
+
+    for (size_t i = 0; roundtrip_tests[i].data; i++) {
+        strcpy(buf, roundtrip_tests[i].data);
+        memset(&msg, 0, sizeof(msg));
+        assert(benc_decode_rpc_msg(&msg, buf, strlen(buf)));
+        assert(benc_encode_rpc_msg(&roundtrip_buf, &msg));
+        memset(&msg, 0, sizeof(msg));
+        assert(benc_decode_rpc_msg(&msg, roundtrip_buf.buf, roundtrip_buf.len));
+        assert(msg.type == roundtrip_tests[i].type);
+        if (roundtrip_tests[i].meth != KAD_RPC_METH_NONE)
+            assert(msg.meth == roundtrip_tests[i].meth);
+        if (roundtrip_tests[i].err_code != 0)
+            assert(msg.err_code == roundtrip_tests[i].err_code);
+        iobuf_reset(&roundtrip_buf);
+    }
+
+    iobuf_reset(&roundtrip_buf);
+
     log_shutdown(LOG_TYPE_STDOUT);
 
 

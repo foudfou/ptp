@@ -130,7 +130,7 @@ int main ()
     strcpy(buf,"d2:abi12e2:abi34ee");
     benc_repr_terminate(&repr);
     assert(!benc_parse(&repr, buf, strlen(buf)));
-    strcpy(buf,"d2:abi12e3:abci34ee");
+    strcpy(buf,"d2:abi12e3:abci34ee"); // no dup
     benc_repr_terminate(&repr);
     assert(benc_parse(&repr, buf, strlen(buf)));
 
@@ -248,6 +248,14 @@ int main ()
      assert(node_lit->t == BENC_LITERAL_TYPE_STR);
      assert(node_lit->s.len == 4);
      assert(node_lit->s.p[0] == 0 && node_lit->s.p[3] == 3);
+
+     // Unicode/binary string content
+     memcpy(buf, "8:😋💚", 10);
+     benc_repr_terminate(&repr);
+     assert(benc_parse(&repr, buf, 10));
+     node_lit = benc_node_get_literal(&repr, &repr.n.buf[0]);
+     assert(node_lit->t == BENC_LITERAL_TYPE_STR);
+     assert(node_lit->s.len == 8);
 
      // malformed input variations
      strcpy(buf, "i-e"); // invalid integer
