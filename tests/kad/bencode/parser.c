@@ -134,13 +134,162 @@ int main ()
     benc_repr_terminate(&repr);
     assert(benc_parse(&repr, buf, strlen(buf)));
 
-    // FIXME to be continued...
-
+    // empty list and dictionary edge cases
+    strcpy(buf, "le");
     benc_repr_terminate(&repr);
-    benc_parser_terminate(&parser);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+    assert(repr.n.buf[0].typ == BENC_NODE_TYPE_LIST);
+    assert(repr.n.buf[0].chd.len == 0);
 
-    log_shutdown(LOG_TYPE_STDOUT);
+    // empty string
+    strcpy(buf, "0:");
+    benc_repr_terminate(&repr);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+    node_lit = benc_node_get_literal(&repr, &repr.n.buf[0]);
+    assert(node_lit->t == BENC_LITERAL_TYPE_STR);
+    assert(node_lit->s.len == 0);
+
+    // malformed inputs
+    strcpy(buf, "");
+    benc_repr_terminate(&repr);
+    assert(!benc_parse(&repr, buf, strlen(buf)));
+
+    strcpy(buf, "i42");
+    benc_repr_terminate(&repr);
+    assert(!benc_parse(&repr, buf, strlen(buf)));
+
+    strcpy(buf, "lllli42eeeee"); // 4 levels of nesting
+    benc_repr_terminate(&repr);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+
+    strcpy(buf, "llllllli42eeeeeeee"); // 7 levels of nesting
+    benc_repr_terminate(&repr);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+
+    // nested dictionary structure
+    strcpy(buf, "d1:ad1:bd1:ci42eeee"); // {a:{b:{c:42}}}
+    benc_repr_terminate(&repr);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+
+    // mixed structure (list containing dictionary)
+    strcpy(buf, "ld1:ai1eee");
+    benc_repr_terminate(&repr);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+
+    // small dictionary
+    strcpy(buf, "d1:ai1e1:bi2e1:ci3ee");
+    benc_repr_terminate(&repr);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+
+    // larger dictionary
+    strcpy(buf, "d1:ai1e1:bi2e1:ci3e1:di4e1:ei5ee");
+    benc_repr_terminate(&repr);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+
+    // small list
+    strcpy(buf, "li1ei2ei3ei4ei5ee");
+    benc_repr_terminate(&repr);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+
+    // larger list
+    strcpy(buf, "li1ei2ei3ei4ei5ei6ei7ei8ee");
+    benc_repr_terminate(&repr);
+    assert(benc_parse(&repr, buf, strlen(buf)));
+
+    // realistic bittorrent-like structure
+    strcpy(buf, "d"
+           "8:announce" "8:test.com"
+           "7:comment" "12:test torrent"
+           "13:creation date" "i1234567890e"
+           "4:info"
+           "d"
+           "4:name" "8:test.txt"
+           "12:piece length" "i32768e"
+           "6:pieces" "20:aaaaaaaaaaaaaaaaaaaa"
+           "6:length" "i1024e"
+           "ee");
+     benc_repr_terminate(&repr);
+     assert(benc_parse(&repr, buf, strlen(buf)));
+
+     d = benc_node_find_key(&repr, &repr.n.buf[0], "info", 4);
+     assert(d && d->typ == BENC_NODE_TYPE_DICT_ENTRY);
+     child = benc_node_get_first_child(&repr, d);
+     assert(child);
+     child = benc_node_find_key(&repr, child, "name", 4);
+     assert(child);
+
+     // integer overflow/underflow edge cases
+     strcpy(buf, "i9223372036854775807e"); // LLONG_MAX
+     benc_repr_terminate(&repr);
+     assert(benc_parse(&repr, buf, strlen(buf)));
+     node_lit = benc_node_get_literal(&repr, &repr.n.buf[0]);
+     assert(node_lit->i == 9223372036854775807LL);
+
+     strcpy(buf, "i-9223372036854775807e"); // LLONG_MIN + 1 (safer than LLONG_MIN)
+     benc_repr_terminate(&repr);
+     assert(benc_parse(&repr, buf, strlen(buf)));
+     node_lit = benc_node_get_literal(&repr, &repr.n.buf[0]);
+     assert(node_lit->i == -9223372036854775807LL);
+
+     // string parsing with non-null binary data
+     strcpy(buf, "4:\x01\x02\x03\x04");
+     benc_repr_terminate(&repr);
+     assert(benc_parse(&repr, buf, strlen(buf)));
+     node_lit = benc_node_get_literal(&repr, &repr.n.buf[0]);
+     assert(node_lit->t == BENC_LITERAL_TYPE_STR);
+     assert(node_lit->s.len == 4);
+     assert(node_lit->s.p[0] == 1 && node_lit->s.p[3] == 4);
+
+     // string with null-byte
+     memcpy(buf, "4:\x00\x01\x02\x03", 6);
+     benc_repr_terminate(&repr);
+     assert(benc_parse(&repr, buf, 6));
+     node_lit = benc_node_get_literal(&repr, &repr.n.buf[0]);
+     assert(node_lit->t == BENC_LITERAL_TYPE_STR);
+     assert(node_lit->s.len == 4);
+     assert(node_lit->s.p[0] == 0 && node_lit->s.p[3] == 3);
+
+     // malformed input variations
+     strcpy(buf, "i-e"); // invalid integer
+     benc_repr_terminate(&repr);
+     assert(!benc_parse(&repr, buf, strlen(buf)));
+
+     strcpy(buf, "i12.5e"); // float in integer
+     benc_repr_terminate(&repr);
+     assert(!benc_parse(&repr, buf, strlen(buf)));
+
+     strcpy(buf, "d1:ae"); // dictionary missing value
+     benc_repr_terminate(&repr);
+     assert(!benc_parse(&repr, buf, strlen(buf)));
+
+     strcpy(buf, "di42e1:ae"); // dictionary with non-string key
+     benc_repr_terminate(&repr);
+     assert(!benc_parse(&repr, buf, strlen(buf)));
+
+     strcpy(buf, "l"); // unterminated list
+     benc_repr_terminate(&repr);
+     assert(!benc_parse(&repr, buf, strlen(buf)));
+
+     strcpy(buf, "d"); // unterminated dictionary
+     benc_repr_terminate(&repr);
+     assert(!benc_parse(&repr, buf, strlen(buf)));
+
+     strcpy(buf, "6:short"); // string shorter than declared
+     benc_repr_terminate(&repr);
+     assert(!benc_parse(&repr, buf, strlen(buf)));
+     strcpy(buf, "l6:shorti42ee");
+     benc_repr_terminate(&repr);
+     assert(!benc_parse(&repr, buf, strlen(buf)));
+
+     strcpy(buf, "i42egarbage"); // trailing data
+     benc_repr_terminate(&repr);
+     assert(!benc_parse(&repr, buf, strlen(buf)));
+
+     benc_repr_terminate(&repr);
+     benc_parser_terminate(&parser);
+
+     log_shutdown(LOG_TYPE_STDOUT);
 
 
-    return 0;
+     return 0;
 }
