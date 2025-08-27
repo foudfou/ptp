@@ -46,7 +46,7 @@ int node_heap_cmp(const struct kad_node_lookup *a,
 }
 
 // cppcheck-suppress ctunullpointer
-HEAP_GENERATE(node_heap, struct kad_node_lookup *)
+HEAP_GENERATE(node_heap, struct kad_node_lookup *, 128 /* arbitray limit can be adapted */)
 
 struct kad_lookup {
     int                   round;

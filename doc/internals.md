@@ -123,13 +123,20 @@ Messages are dictionaries[^2].
 "e" list: error code (int), error msg (str).
 ```
 
-##### Compact node info
+##### Mainline DHT incompatibilities
 
-Kad node info is serialized as a string comprising IP address + port. For
-certain responses, noticeably `FIND_NODE`, [**our implementation diverges from
-the standard BitTorrent
-implementation**](https://github.com/arvidn/libtorrent/blob/e2b12e72d89d3037a4d927bef70d663b1fbb2530/src/kademlia/node.cpp#L759):
-BitTorrent uses a single string for multiple nodes where we use a list.
+###### Compact node info
+
+While the [standard BitTorrent
+implementation](https://github.com/arvidn/libtorrent/blob/e2b12e72d89d3037a4d927bef70d663b1fbb2530/src/kademlia/node.cpp#L759)
+uses a single string for multiple nodes (IP+port), noticeably in the
+`find_node` response, we use a *list*.
+
+Libtorrent separates IPv4 and IPv6 networking (BEP-32): distinct DHTs, distinct
+responses (`nodes`, `nodes6`).
+
+Regarding limits: we have a high benc_node limit and low string length
+limit. For libtorrent it's the opposite.
 
 ##### Parser
 

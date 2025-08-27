@@ -8,7 +8,7 @@ static inline int int_heap_cmp(const int a, const int b)
 {
     return a - b;
 }
-HEAP_GENERATE(int_heap, int)
+HEAP_GENERATE(int_heap, int, 32)
 
 
 struct some {
@@ -19,7 +19,7 @@ static inline int min_heap_cmp(const struct some *a, const struct some *b)
 {
     return b->c - a->c;
 }
-HEAP_GENERATE(min_heap, struct some *)
+HEAP_GENERATE(min_heap, struct some *, 32)
 HEAP_GENERATE_REPLACE_TOP(min_heap, struct some *)
 
 #define N 10

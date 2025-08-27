@@ -4,7 +4,7 @@
 
 #include "utils/growable.h"
 
-GROWABLE_GENERATE(iobuf, char, 32, 2)
+GROWABLE_GENERATE(iobuf, char, 32, 2, 512 /* arbitray limit can be adapted */)
 GROWABLE_GENERATE_APPEND(iobuf, char)
 
 #endif /* IOBUF_H */

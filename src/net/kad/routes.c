@@ -170,8 +170,8 @@ struct candidate {
 static int candidate_heap_cmp(const struct candidate *a, const struct candidate *b) {
     return BYTE_ARRAY_CMP(&a->dist, &b->dist, KAD_GUID_SPACE_IN_BYTES);
 }
-HEAP_GENERATE(candidate_heap, struct candidate*) // cppcheck-suppress ctunullpointer
-HEAP_GENERATE_REPLACE_TOP(candidate_heap, struct candidate*)  // Add this line
+HEAP_GENERATE(candidate_heap, struct candidate*, KAD_K_CONST+1) // cppcheck-suppress ctunullpointer
+HEAP_GENERATE_REPLACE_TOP(candidate_heap, struct candidate*)
 
 /**
  * Fills the given @nodes array with k nodes closest to the @target node,

@@ -26,10 +26,10 @@
 #define GROWABLE_FACTOR 2
 
 // FIXME add optional limit
-#define GROWABLE_GENERATE(name, type, sz_init, factor)     \
-    GROWABLE_GENERATE_BASE(name, type)                     \
-    GROWABLE_GENERATE_INIT(name, type)                     \
-    GROWABLE_GENERATE_GROW(name, type, sz_init, factor)    \
+#define GROWABLE_GENERATE(name, type, sz_init, factor, limit)    \
+    GROWABLE_GENERATE_BASE(name, type)                           \
+    GROWABLE_GENERATE_INIT(name, type)                           \
+    GROWABLE_GENERATE_GROW(name, type, sz_init, factor, limit)   \
     GROWABLE_GENERATE_RESET(name)
 //  GROWABLE_GENERATE_APPEND(name, type) implement on demand
 
@@ -56,11 +56,16 @@ static inline bool name##_init(struct name *g, size_t capa)             \
     return true;                                                        \
 }
 
-#define GROWABLE_GENERATE_GROW(name, type, sz_init, factor)             \
+#define GROWABLE_GENERATE_GROW(name, type, sz_init, factor, limit)      \
 static inline bool                                                      \
 name##_grow(struct name *g, const size_t len)                           \
 {                                                                       \
     size_t needed = g->len + len;                                       \
+                                                                        \
+    if (limit && needed > limit) {                                      \
+        log_error("Can't grow over limit.");                            \
+        return false;                                                   \
+    }                                                                   \
                                                                         \
     size_t capa = g->cap;                                               \
     if (capa < sz_init)                                                 \
