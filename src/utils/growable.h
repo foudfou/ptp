@@ -5,9 +5,12 @@
 /**
  * A growable append-only array of arbitrary data.
  *
- * Use x_init() to initialize the array with a given capacity. But this is not
- * mandatory, as x_append() will take care of growing the array to the
+ * Use _init() to initialize the array with a given capacity. But this is not
+ * mandatory, as _append() will take care of growing the array to the
  * appropriate size, defaulting to @sz_init.
+ *
+ * The optional @cap_limit is the capacity limit which is only checked during
+ * _init() and _grow().
  *
  * Used in growable structures like iobuf or binary heap.
  *
@@ -23,24 +26,24 @@
 #include "log.h"
 #include "utils/safer.h"
 
-#define GROWABLE_FACTOR 2
-
-// FIXME add optional limit
-#define GROWABLE_GENERATE(name, type, sz_init, factor, limit)    \
-    GROWABLE_GENERATE_BASE(name, type)                           \
-    GROWABLE_GENERATE_INIT(name, type)                           \
-    GROWABLE_GENERATE_GROW(name, type, sz_init, factor, limit)   \
+#define GROWABLE_GENERATE_BASIC(name, type, sz_init, factor, cap_limit) \
+    GROWABLE_GENERATE_BASE(name, type)                                  \
+    GROWABLE_GENERATE_INIT(name, type, cap_limit)                       \
+    GROWABLE_GENERATE_GROW(name, type, sz_init, factor, cap_limit)      \
     GROWABLE_GENERATE_RESET(name)
-//  GROWABLE_GENERATE_APPEND(name, type) implement on demand
 
-#define GROWABLE_GENERATE_BASE(name, type)                              \
-    struct name {                                                       \
-        size_t  len;                                                    \
-        size_t  cap;                                                    \
-        type   *buf;                                                    \
+#define GROWABLE_GENERATE(name, type, sz_init, factor, cap_limit)   \
+    GROWABLE_GENERATE_BASIC(name, type, sz_init, factor, cap_limit) \
+    GROWABLE_GENERATE_APPEND(name, type)
+
+#define GROWABLE_GENERATE_BASE(name, type)      \
+    struct name {                               \
+        size_t  len;                            \
+        size_t  cap;                            \
+        type   *buf;                            \
     };
 
-#define GROWABLE_GENERATE_INIT(name, type)      \
+#define GROWABLE_GENERATE_INIT(name, type, cap_limit)     \
 /**
  * Allocates the growable array.
  *
@@ -48,6 +51,9 @@
  */                                                                     \
 static inline bool name##_init(struct name *g, size_t capa)             \
 {                                                                       \
+    if (capa > cap_limit)\
+        return false;                                                   \
+                                                                        \
     g->buf = calloc(capa, sizeof(type));                                \
     if (g->buf == NULL)                                                 \
         return false;                                                   \
@@ -56,14 +62,14 @@ static inline bool name##_init(struct name *g, size_t capa)             \
     return true;                                                        \
 }
 
-#define GROWABLE_GENERATE_GROW(name, type, sz_init, factor, limit)      \
+#define GROWABLE_GENERATE_GROW(name, type, sz_init, factor, cap_limit)  \
 static inline bool                                                      \
 name##_grow(struct name *g, const size_t len)                           \
 {                                                                       \
     size_t needed = g->len + len;                                       \
                                                                         \
-    if (limit && needed > limit) {                                      \
-        log_error("Can't grow over limit.");                            \
+    if (cap_limit && needed > cap_limit) {                              \
+        log_error("Can't grow over cap limit.");                        \
         return false;                                                   \
     }                                                                   \
                                                                         \
@@ -94,9 +100,18 @@ static inline void name##_reset(struct name *g)   \
 }
 
 #define GROWABLE_GENERATE_APPEND(name, type)                        \
+/**
+ * Appends @len items from @data array to growable @g.
+ *
+ * CAUTION: appending more items than the @data array actually contains is
+ * undefined behavior and a SECURITY issue.
+ */                                                                 \
 static inline bool                                                  \
-name##_append(struct name *g, const type *data, const size_t len)   \
+name##_append(struct name *g, const type data[], const size_t len)  \
 {                                                                   \
+    if (len == 0)                                                   \
+        return true;                                                \
+                                                                    \
     /* log_debug("  buf_pos=%zu, len=%zu, capa=%zu", buf->pos, len, buf->capa); */ \
     if ((g->len + len > g->cap) && !name##_grow((g), len))          \
         return false;                                               \

@@ -1,14 +1,13 @@
 /* Copyright (c) 2017 Foudil Brétel.  All rights reserved. */
 #include <assert.h>
 #include <string.h>
-#include "utils/safer.h"
 #include "utils/heap.h"
 
 static inline int int_heap_cmp(const int a, const int b)
 {
     return a - b;
 }
-HEAP_GENERATE(int_heap, int, 32)
+HEAP_GENERATE(int_heap, int, 16)
 
 
 struct some {
@@ -21,6 +20,7 @@ static inline int min_heap_cmp(const struct some *a, const struct some *b)
 }
 HEAP_GENERATE(min_heap, struct some *, 32)
 HEAP_GENERATE_REPLACE_TOP(min_heap, struct some *)
+
 
 #define N 10
 
@@ -106,9 +106,23 @@ int main ()
     }
     assert(memcmp(somes.buf, (int[N]){0}, N) == 0);
 
-
     min_heap_reset(&somes);
 
+
+    assert(!int_heap_init(&ints, 20)); // over capacity
+
+    // Init within limit
+    assert(int_heap_init(&ints, 8)); // Within capacity limit
+    assert(ints.cap == 8);
+    assert(ints.len == 0);
+
+    for (int i = 0; i < 12; i++)
+        assert(int_heap_push(&ints, i * 10));
+
+    assert(ints.len == 12);
+    assert(ints.cap == 16);
+
+    int_heap_reset(&ints);
 
     return 0;
 }

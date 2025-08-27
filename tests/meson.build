@@ -28,6 +28,7 @@ tests_sources = [
   'utils/bits.c',
   'utils/bstree.c',
   'utils/byte_array.c',
+  'utils/growable.c',
   'utils/hash.c',
   'utils/heap.c',
   'utils/list.c',

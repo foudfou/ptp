@@ -37,10 +37,10 @@
 
 #define HEAP_PEEK(h) h.buf[0]
 
-#define HEAP_GENERATE(name, type, limit)        \
-    GROWABLE_GENERATE(name, type, 16, 2, limit) \
-    HEAP_GENERATE_BASE(name, type)              \
-    HEAP_GENERATE_PUSH(name, type)              \
+#define HEAP_GENERATE(name, type, limit)                \
+    GROWABLE_GENERATE_BASIC(name, type, 16, 2, limit)   \
+    HEAP_GENERATE_BASE(name, type)                      \
+    HEAP_GENERATE_PUSH(name, type)                      \
     HEAP_GENERATE_POP(name, type)
 //  HEAP_GENERATE_REPLACE_TOP(name, type) implement on demand
 

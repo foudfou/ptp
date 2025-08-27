@@ -43,7 +43,6 @@ enum benc_node_type {
 // Indices to underlying benc_node array. Since this underlying array is
 // dynamic (realloc), we can't store pointers to them directly.
 GROWABLE_GENERATE(index_lst, size_t, 8, 2, BENC_ROUTES_NODES_MAX)
-GROWABLE_GENERATE_APPEND(index_lst, size_t)
 
 #define INVALID_INDEX SIZE_MAX
 
@@ -90,10 +89,8 @@ enum benc_tok {
 // Real kad mesage vary in size: ping ~7 nodes,find_node query ~11 nodes,
 // find_node response ~21 nodes, bootstrap responses potentially larger.
 GROWABLE_GENERATE(benc_node_lst, struct benc_node, 16, 2, BENC_ROUTES_NODES_MAX)
-GROWABLE_GENERATE_APPEND(benc_node_lst, struct benc_node)
 
 GROWABLE_GENERATE(benc_literal_lst, struct benc_literal, 8, 2, BENC_ROUTES_NODES_MAX)
-GROWABLE_GENERATE_APPEND(benc_literal_lst, struct benc_literal)
 
 // Make sure to FREE-AFTER-USE with benc_repr_temrinate()!
 struct benc_repr {
