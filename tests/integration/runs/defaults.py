@@ -13,23 +13,23 @@ MESSAGES: Dict[str, Dict[str, Tuple[bytes, bytes]]] = {
     'ip4': {
         "ping request":
         (c.create_kad_msg_ping(SENDER_ID),
-         b'^d1:t2:aa1:y1:r1:rd2:id20:.{20}ee$'),
+         b'^d1:rd2:id20:.{20}e1:t2:aa1:y1:re$'),
         "ping request missing id":
         (c.create_kad_msg_ping_bogus_missing_id(),
-         b'^d1:t2:XX1:y1:e1:eli203e14:Protocol Erroree$'),
+         b'^d1:eli203e14:Protocol Errore1:t2:XX1:y1:ee$'),
         "find_node request":
         (c.create_kad_msg_find_node(QUERY_SENDER_ID, FIND_TARGET_ID),
-         b'^d1:t2:aa1:y1:r1:rd5:nodesl26:.*ee$'),
+         b'^d1:rd2:id20:.{20}5:nodesl26:.*ee1:t2:aa1:y1:re$'),
     },
     'ip6': {
         "ping request":
         (c.create_kad_msg_ping(SENDER_ID),
-         b'^d1:t2:aa1:y1:r1:rd2:id20:.{20}ee$'),
+         b'^d1:rd2:id20:.{20}e1:t2:aa1:y1:re$'),
         "ping request missing id":
         (c.create_kad_msg_ping_bogus_missing_id(),
-         b'^d1:t2:XX1:y1:e1:eli203e14:Protocol Erroree$'),
+         b'^d1:eli203e14:Protocol Errore1:t2:XX1:y1:ee$'),
         "find_node request":
         (c.create_kad_msg_find_node(QUERY_SENDER_ID, FIND_TARGET_ID),
-         b'^d1:t2:aa1:y1:r1:rd5:nodesl(26|38):.*ee$'),
+         b'^d1:rd2:id20:.{20}5:nodesl(26|38):.*ee1:t2:aa1:y1:re$'),
     },
 }

@@ -27,7 +27,7 @@ server_cmd.extend(server_args)
 EXPECTED_MESSAGES: List[Tuple[str, bytes]] = [
     (
         "find_node",
-        b"^d1:t2:(.){2}1:y1:q1:q9:find_node1:ad6:target20:(?P<id>.{20})2:id20:(?P=id)ee$"
+        b"^d1:ad2:id20:(?P<id>.{20})6:target20:(?P=id)e1:q9:find_node1:t2:(.){2}1:y1:qe$"
     )
 ]
 

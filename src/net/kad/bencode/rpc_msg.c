@@ -261,93 +261,124 @@ fail:
     return false;
 }
 
+static void
+benc_encode_rpc_msg_tx_and_typ(struct iobuf *buf, const struct kad_rpc_msg *msg,
+                               char tmps[], size_t tmps_len)
+{
+    // 't' (transaction ID) - always present
+    sprintf(tmps, "1:t%d:", KAD_RPC_MSG_TX_ID_LEN);
+    tmps_len = strlen(tmps);
+    memcpy(tmps + tmps_len, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
+    tmps_len += KAD_RPC_MSG_TX_ID_LEN;
+    iobuf_append(buf, tmps, tmps_len);
+
+    // 'y' (type) - always present
+    iobuf_append(buf, "1:y1:", 5);
+    iobuf_append(buf, lookup_by_id(kad_rpc_type_names, msg->type), 1);
+}
+
+// add node_id for queries and responses
+static void
+benc_encode_rpc_msg_nid(struct iobuf *buf, const struct kad_rpc_msg *msg,
+                        char tmps[], size_t tmps_len)
+{
+    sprintf(tmps, "2:id%d:", KAD_GUID_SPACE_IN_BYTES);
+    tmps_len = strlen(tmps);
+    memcpy(tmps + tmps_len, (char*)msg->node_id.bytes,
+           KAD_GUID_SPACE_IN_BYTES);
+    tmps_len += KAD_GUID_SPACE_IN_BYTES;
+    iobuf_append(buf, tmps, tmps_len);
+}
+
 /**
  * Straight-forward serialization. NO VALIDATION is performed.
  */
-// FIXME dict entries supposed to be sorted when serialized. Basically we just
-// need to reverse the current order.
 bool benc_encode_rpc_msg(struct iobuf *buf, const struct kad_rpc_msg *msg)
 {
     char tmps[2048];
     size_t tmps_len = 0;
 
-    /* we avoid the burden of looking up into kad_rpc_msg_key_names just for single chars. */
-    sprintf(tmps, "d1:t%d:", KAD_RPC_MSG_TX_ID_LEN);
-    tmps_len += strlen(tmps);
-    memcpy(tmps + tmps_len, msg->tx_id.bytes, KAD_RPC_MSG_TX_ID_LEN);
-    tmps_len += KAD_RPC_MSG_TX_ID_LEN;
-    iobuf_append(buf, tmps, tmps_len); // tx
-    iobuf_append(buf, "1:y1:", 5); // type
-    iobuf_append(buf, lookup_by_id(kad_rpc_type_names, msg->type), 1);
+    iobuf_append(buf, "d", 1); // start dictionary
 
-    if (msg->type == KAD_RPC_TYPE_ERROR) {
-        sprintf(tmps, "1:eli%llue%zu:%se", msg->err_code,
-                strlen(msg->err_msg), msg->err_msg);
-        iobuf_append(buf, tmps, strlen(tmps));
-    }
-    else {
+    // key order (a, e, q, r, t, y) is built by construction. I.e. unspecified
+    // keys are ignored.
 
-        if (msg->type == KAD_RPC_TYPE_QUERY) {
-            const char * meth_name = lookup_by_id(kad_rpc_meth_names, msg->meth);
-            sprintf(tmps, "1:q%zu:%s", strlen(meth_name), meth_name);
-            iobuf_append(buf, tmps, strlen(tmps));
-
-            if (msg->meth == KAD_RPC_METH_PING) {
-                iobuf_append(buf, "1:ad2:id", 8);
-            }
-            else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
-                const char *field_target = lookup_by_id(
-                    kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_TARGET);
-                sprintf(tmps, "1:ad%zu:%s%d:", strlen(field_target),
-                        field_target, KAD_GUID_SPACE_IN_BYTES);
-                tmps_len = strlen(tmps);
-                memcpy(tmps + tmps_len, (char*)msg->target.bytes,
-                       KAD_GUID_SPACE_IN_BYTES);
-                tmps_len += KAD_GUID_SPACE_IN_BYTES;
-                memcpy(tmps + tmps_len, "2:id", 4);
-                tmps_len += 4;
-                iobuf_append(buf, tmps, tmps_len); // target
-            }
-            else {
-                log_error("Unsupported msg method while encoding.");
-                return false;
-            }
-
+    // 'a' (arguments) - only for queries and responses
+    if (msg->type == KAD_RPC_TYPE_QUERY) {
+        if (msg->meth == KAD_RPC_METH_PING) {
+            iobuf_append(buf, "1:ad", 4);
+            benc_encode_rpc_msg_nid(buf, msg, tmps, tmps_len);
+            iobuf_append(buf, "e", 1); // close arguments dict
         }
-        else if (msg->type == KAD_RPC_TYPE_RESPONSE) {
+        else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
+            iobuf_append(buf, "1:ad", 4);
+            benc_encode_rpc_msg_nid(buf, msg, tmps, tmps_len);
 
-            if (msg->meth == KAD_RPC_METH_PING) {
-                iobuf_append(buf, "1:rd2:id", 8);
-            }
-            else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
-                const char *field_nodes = lookup_by_id(
-                    kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_NODES);
-                sprintf(tmps, "1:rd%zu:%sl", strlen(field_nodes), field_nodes);
-                iobuf_append(buf, tmps, strlen(tmps));
-                if (!benc_write_nodes(buf, msg->nodes, msg->nodes_len)) {
-                    return false;
-                }
-                iobuf_append(buf, "e2:id", 5);
-            }
-            else {
-                log_error("Unsupported msg method while encoding.");
-                return false;
-            }
+            const char *field_target = lookup_by_id(
+                kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_TARGET);
+            sprintf(tmps, "%zu:%s%d:", strlen(field_target),
+                    field_target, KAD_GUID_SPACE_IN_BYTES);
+            tmps_len = strlen(tmps);
+            memcpy(tmps + tmps_len, (char*)msg->target.bytes,
+                   KAD_GUID_SPACE_IN_BYTES);
+            tmps_len += KAD_GUID_SPACE_IN_BYTES;
 
+            memcpy(tmps + tmps_len, "e", 1);
+            tmps_len += 1;
+            iobuf_append(buf, tmps, tmps_len);
         }
         else {
-            log_error("Unsupported msg type while encoding.");
+            log_error("Unsupported msg method while encoding.");
             return false;
         }
 
-        sprintf(tmps, "%d:", KAD_GUID_SPACE_IN_BYTES);
-        tmps_len = strlen(tmps);
-        memcpy(tmps + tmps_len, (char*)msg->node_id.bytes,
-               KAD_GUID_SPACE_IN_BYTES);
-        tmps_len += KAD_GUID_SPACE_IN_BYTES;
-        iobuf_append(buf, tmps, tmps_len); // node_id
+        // 'q' (query) - only for query messages
+        const char * meth_name = lookup_by_id(kad_rpc_meth_names, msg->meth);
+        sprintf(tmps, "1:q%zu:%s", strlen(meth_name), meth_name);
+        iobuf_append(buf, tmps, strlen(tmps));
 
-        iobuf_append(buf, "e", 1);
+        benc_encode_rpc_msg_tx_and_typ(buf, msg, tmps, tmps_len);
+    }
+
+    else if (msg->type == KAD_RPC_TYPE_RESPONSE) {
+        if (msg->meth == KAD_RPC_METH_PING) {
+            iobuf_append(buf, "1:rd", 4);
+            benc_encode_rpc_msg_nid(buf, msg, tmps, tmps_len);
+            iobuf_append(buf, "e", 1);
+        }
+        else if (msg->meth == KAD_RPC_METH_FIND_NODE) {
+            iobuf_append(buf, "1:rd", 4);
+            benc_encode_rpc_msg_nid(buf, msg, tmps, tmps_len);
+
+            const char *field_nodes = lookup_by_id(
+                kad_rpc_msg_key_names, KAD_RPC_MSG_KEY_NODES);
+            sprintf(tmps, "%zu:%sl", strlen(field_nodes), field_nodes);
+            iobuf_append(buf, tmps, strlen(tmps));
+            if (!benc_write_nodes(buf, msg->nodes, msg->nodes_len)) {
+                return false;
+            }
+            iobuf_append(buf, "ee", 2);
+        }
+        else {
+            log_error("Unsupported msg method while encoding.");
+            return false;
+        }
+
+        benc_encode_rpc_msg_tx_and_typ(buf, msg, tmps, tmps_len);
+    }
+
+    // 'e' (error) - only for error messages
+    else if (msg->type == KAD_RPC_TYPE_ERROR) {
+        sprintf(tmps, "1:eli%llue%zu:%se", msg->err_code,
+                strlen(msg->err_msg), msg->err_msg);
+        iobuf_append(buf, tmps, strlen(tmps));
+
+        benc_encode_rpc_msg_tx_and_typ(buf, msg, tmps, tmps_len);
+    }
+
+    else {
+        log_error("Unsupported msg type while encoding.");
+        return false;
     }
 
     iobuf_append(buf, "e", 1);

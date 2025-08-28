@@ -8,6 +8,7 @@
 
 #define BENC_PARSER_BUF_MAX 1400
 
+
 static bool
 check_encoded_msg(const struct kad_rpc_msg *msg, struct iobuf *msgbuf,
                   const char str[], const size_t str_len)
@@ -142,10 +143,11 @@ int main ()
     msg.tx_id = TX_ID_CONST;
     msg.type = KAD_RPC_TYPE_ERROR;
     msg.err_code = 201;
-    strcpy(msg.err_msg, "A Generic Error Ocurred");
-    assert(check_encoded_msg(&msg, &msgbuf, "d1:t2:aa1:y1:e1:eli201e"
-                             "23:A Generic Error Ocurredee",
-                             51));
+    strcpy(msg.err_msg, "A Generic Error Occurred");
+    assert(check_encoded_msg(&msg, &msgbuf, "d"
+                             "1:e" "li201e" "24:A Generic Error Occurrede"
+                             "1:t2:aa" "1:y1:e" "e",
+                             52));
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
     // KAD_TEST_PING_QUERY
@@ -154,8 +156,8 @@ int main ()
     msg.type = KAD_RPC_TYPE_QUERY;
     msg.meth = KAD_RPC_METH_PING;
     msg.node_id = (kad_guid){.bytes = "abcdefghij0123456789"};
-    assert(check_encoded_msg(&msg, &msgbuf, "d1:t2:aa1:y1:q1:q4:ping1:ad2:id"
-                             "20:abcdefghij0123456789ee",
+    assert(check_encoded_msg(&msg, &msgbuf, "d1:a" "d2:id"
+                             "20:abcdefghij0123456789e" "1:q4:ping" "1:t2:aa1:y1:q" "e",
                              56));
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
@@ -165,8 +167,8 @@ int main ()
     msg.type = KAD_RPC_TYPE_RESPONSE;
     msg.meth = KAD_RPC_METH_PING;
     msg.node_id = (kad_guid){.bytes = "mnopqrstuvwxyz123456"};
-    assert(check_encoded_msg(&msg, &msgbuf, "d1:t2:aa1:y1:r1:rd2:id"
-                             "20:mnopqrstuvwxyz123456ee",
+    assert(check_encoded_msg(&msg, &msgbuf, "d1:rd2:id"
+                             "20:mnopqrstuvwxyz123456e" "1:t2:aa1:y1:r" "e",
                              47));
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
@@ -177,9 +179,10 @@ int main ()
     msg.meth = KAD_RPC_METH_FIND_NODE;
     msg.node_id = (kad_guid){.bytes = "abcdefghij0123456789"};
     msg.target = (kad_guid){.bytes = "mnopqrstuvwxyz123456"};
-    assert(check_encoded_msg(&msg, &msgbuf, "d1:t2:aa1:y1:q1:q9:find_node1:ad"
-                             "6:target20:mnopqrstuvwxyz1234562:id"
-                             "20:abcdefghij0123456789ee",
+    assert(check_encoded_msg(&msg, &msgbuf, "d1:ad"
+                             "2:id20:abcdefghij0123456789"
+                             "6:target20:mnopqrstuvwxyz123456"
+                             "e1:q9:find_node" "1:t2:aa1:y1:qe",
                              92));
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
@@ -200,10 +203,10 @@ int main ()
     sa->sin_addr.s_addr=htonl(0xc0a8a819); sa->sin_port=htons(0x2f59);
     msg.nodes[1].addr = ss;
     msg.nodes_len = 2;
-    assert(check_encoded_msg(&msg, &msgbuf, "d1:t2:aa1:y1:r1:rd5:nodesl"
+    assert(check_encoded_msg(&msg, &msgbuf, "d1:rd2:id20:0123456789abcdefghij5:nodesl"
                              "26:abcdefghij0123456789\xc0\xa8\xa8\x0f\x2f\x58"
                              "26:mnopqrstuvwxyz123456\xc0\xa8\xa8\x19\x2f\x59"
-                             "e2:id20:0123456789abcdefghijee",
+                             "ee1:t2:aa1:y1:re",
                              114));
     assert(check_msg_decode_and_reset(&msg, &msgbuf));
 
@@ -239,6 +242,27 @@ int main ()
     }
 
     iobuf_reset(&roundtrip_buf);
+
+    // dictionary key ordering tests
+    memset(&msg, 0, sizeof(msg));
+    msg.tx_id = TX_ID_CONST;
+    msg.type = KAD_RPC_TYPE_ERROR;
+    msg.err_code = 201;
+    strcpy(msg.err_msg, "Test Error");
+
+    struct iobuf order_buf = {0};
+    assert(iobuf_init(&order_buf, 256));
+    assert(benc_encode_rpc_msg(&order_buf, &msg));
+
+    const char *serialized = order_buf.buf;
+    const char *key_t = strstr(serialized, "1:t");
+    const char *key_y = strstr(serialized, "1:y");
+    const char *key_e = strstr(serialized, "1:e");
+    assert(key_t && key_y && key_e);
+    assert(key_e < key_t);
+    assert(key_t < key_y);
+
+    iobuf_reset(&order_buf);
 
     log_shutdown(LOG_TYPE_STDOUT);
 
